@@ -1,0 +1,46 @@
+// BodySense AI — Xcode Build Configuration
+// Team ID: 9VS5N5PW5N
+
+// Identity
+PRODUCT_NAME = BodySense AI
+PRODUCT_BUNDLE_IDENTIFIER = com.base693c0fe8f0479560056f69f4.app
+MARKETING_VERSION = 1.0.0
+CURRENT_PROJECT_VERSION = 1
+
+// Team & Signing
+DEVELOPMENT_TEAM = 9VS5N5PW5N
+CODE_SIGN_STYLE = Automatic
+CODE_SIGN_IDENTITY = Apple Development
+CODE_SIGN_IDENTITY[sdk=iphoneos*] = iPhone Developer
+PROVISIONING_PROFILE_SPECIFIER =
+CODE_SIGN_ENTITLEMENTS = body sense ai/BodySenseAI.entitlements
+
+// Deployment
+IPHONEOS_DEPLOYMENT_TARGET = 17.0
+TARGETED_DEVICE_FAMILY = 1,2
+SDKROOT = iphoneos
+
+// Architecture
+ARCHS = arm64
+VALID_ARCHS = arm64
+
+// Swift
+SWIFT_VERSION = 5.9
+
+// Compiler
+CLANG_ENABLE_MODULES = YES
+ENABLE_BITCODE = NO
+
+// Linker
+LD_RUNPATH_SEARCH_PATHS = @executable_path/Frameworks
+
+// Assets
+ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon
+ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor
+
+// Info.plist
+INFOPLIST_FILE = body sense ai/Info.plist
+GENERATE_INFOPLIST_FILE = NO
+
+// Encryption
+ITSAppUsesNonExemptEncryption = false

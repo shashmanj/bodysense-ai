@@ -1,0 +1,129 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <!-- Background gradient (white) -->
+    <radialGradient id="bgGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#fff8f5"/>
+    </radialGradient>
+
+    <!-- Heart fill gradient: bright orange top-right, dark red-orange bottom -->
+    <linearGradient id="heartGrad" x1="80%" y1="0%" x2="20%" y2="100%">
+      <stop offset="0%"   stop-color="#F28A3C"/>
+      <stop offset="45%"  stop-color="#E05820"/>
+      <stop offset="100%" stop-color="#C03800"/>
+    </linearGradient>
+
+    <!-- Heart highlight (glossy top-right sheen) -->
+    <radialGradient id="heartSheen" cx="70%" cy="22%" r="40%">
+      <stop offset="0%"  stop-color="#FFC17A" stop-opacity="0.65"/>
+      <stop offset="100%" stop-color="#F28A3C" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Hands gradient: same warm orange palette -->
+    <linearGradient id="handGrad" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%"   stop-color="#D94E10"/>
+      <stop offset="100%" stop-color="#F0803A"/>
+    </linearGradient>
+
+    <!-- Drop shadow filter -->
+    <filter id="shadow" x="-10%" y="-5%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="12" stdDeviation="18" flood-color="#C03800" flood-opacity="0.22"/>
+    </filter>
+    <filter id="handShadow" x="-5%" y="-5%" width="115%" height="120%">
+      <feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#C03800" flood-opacity="0.15"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1024" height="1024" fill="url(#bgGrad)" rx="0"/>
+
+  <!-- ═══════════════════════════════ LEFT HAND ═══════════════════════════════
+       Elegant curved arm rising from bottom-left, cradling the heart          -->
+  <g filter="url(#handShadow)">
+    <path
+      d="M 148 980
+         C 148 980, 165 840, 200 740
+         C 230 650, 270 590, 320 548
+         C 355 520, 395 510, 430 520
+         C 465 530, 485 555, 488 590
+         C 480 600, 465 605, 450 598
+         C 428 583, 408 575, 385 582
+         C 345 598, 310 640, 285 700
+         C 255 775, 242 870, 240 980
+         Z"
+      fill="url(#handGrad)"
+      stroke="#C84010"
+      stroke-width="1.5"
+      stroke-linejoin="round"
+    />
+    <!-- Finger suggestion / fingertip curl left -->
+    <path
+      d="M 488 590
+         C 495 572, 505 558, 498 542
+         C 490 525, 470 518, 452 522
+         C 436 527, 428 538, 430 552"
+      fill="url(#handGrad)"
+      stroke="#C84010"
+      stroke-width="1.5"
+      stroke-linejoin="round"
+    />
+  </g>
+
+  <!-- ═══════════════════════════════ RIGHT HAND ══════════════════════════════
+       Mirror arm from bottom-right                                             -->
+  <g filter="url(#handShadow)">
+    <path
+      d="M 876 980
+         C 876 980, 859 840, 824 740
+         C 794 650, 754 590, 704 548
+         C 669 520, 629 510, 594 520
+         C 559 530, 539 555, 536 590
+         C 544 600, 559 605, 574 598
+         C 596 583, 616 575, 639 582
+         C 679 598, 714 640, 739 700
+         C 769 775, 782 870, 784 980
+         Z"
+      fill="url(#handGrad)"
+      stroke="#C84010"
+      stroke-width="1.5"
+      stroke-linejoin="round"
+    />
+    <!-- Finger suggestion / fingertip curl right -->
+    <path
+      d="M 536 590
+         C 529 572, 519 558, 526 542
+         C 534 525, 554 518, 572 522
+         C 588 527, 596 538, 594 552"
+      fill="url(#handGrad)"
+      stroke="#C84010"
+      stroke-width="1.5"
+      stroke-linejoin="round"
+    />
+  </g>
+
+  <!-- ═══════════════════════════════ HEART ═══════════════════════════════════
+       Classic heart shape centred around (512, 440), width ~480, height ~430  -->
+  <g filter="url(#shadow)">
+    <path
+      d="M 512 660
+         C 512 660, 272 500, 248 358
+         C 228 238, 302 148, 390 140
+         C 444 136, 490 166, 512 200
+         C 534 166, 580 136, 634 140
+         C 722 148, 796 238, 776 358
+         C 752 500, 512 660, 512 660 Z"
+      fill="url(#heartGrad)"
+    />
+    <!-- Glossy sheen overlay on heart -->
+    <path
+      d="M 512 660
+         C 512 660, 272 500, 248 358
+         C 228 238, 302 148, 390 140
+         C 444 136, 490 166, 512 200
+         C 534 166, 580 136, 634 140
+         C 722 148, 796 238, 776 358
+         C 752 500, 512 660, 512 660 Z"
+      fill="url(#heartSheen)"
+    />
+  </g>
+</svg>

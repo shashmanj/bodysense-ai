@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+
+	<!-- ═══ Push Notifications ═══ -->
+	<!-- Use "development" while testing on device, change to "production" before App Store upload -->
+	<key>aps-environment</key>
+	<string>development</string>
+
+	<!-- ═══ App Groups (shared storage) ═══ -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.base693c0fe8f0479560056f69f4.shared</string>
+	</array>
+
+	<!-- ═══ Associated Domains (deep links to your site) ═══ -->
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:health-sense-ai-056f69f4.base44.app</string>
+	</array>
+
+	<!-- ═══ HealthKit (for future ring/Apple Health sync) ═══ -->
+	<key>com.apple.developer.healthkit</key>
+	<true/>
+
+</dict>
+</plist>
