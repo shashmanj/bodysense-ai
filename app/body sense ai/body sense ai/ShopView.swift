@@ -139,109 +139,158 @@ struct ShopProductsTab: View {
 struct RingHeroBanner: View {
     @Environment(HealthStore.self) var store
     let product: Product
-    @State private var selectedColor: RingColor = .black
-    @State private var showDetail = false
+    @State private var selectedColor: RingColor = .silver
+    @State private var showDetail   = false
+    @State private var floatUp      = false
 
     var body: some View {
         ZStack(alignment: .leading) {
-            // Background
-            RoundedRectangle(cornerRadius: 20)
-                .fill(LinearGradient(
-                    colors: [Color(hex: "#1a1a2e"), Color(hex: "#16213e"), Color(hex: "#0f3460")],
-                    startPoint: .topLeading, endPoint: .bottomTrailing
-                ))
+            // ── Glassmorphism background ──
+            RoundedRectangle(cornerRadius: 24)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 24)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color.brandPurple.opacity(0.08),
+                                    Color.brandTeal.opacity(0.06),
+                                    Color.white.opacity(0.35)
+                                ],
+                                startPoint: .topLeading, endPoint: .bottomTrailing
+                            )
+                        )
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 24)
+                        .stroke(Color.white.opacity(0.55), lineWidth: 1.2)
+                )
+                .shadow(color: Color.brandPurple.opacity(0.12), radius: 20, x: 0, y: 8)
 
-            HStack {
-                VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center, spacing: 0) {
+                VStack(alignment: .leading, spacing: 11) {
+
                     // Sale badge
-                    HStack(spacing: 6) {
-                        Image(systemName: "flame.fill").foregroundColor(.orange)
+                    HStack(spacing: 5) {
+                        Image(systemName: "flame.fill")
+                            .font(.caption2)
+                            .foregroundColor(.brandCoral)
                         Text("LIMITED SALE")
                             .font(.caption2).fontWeight(.bold)
+                            .foregroundColor(.brandCoral)
                     }
                     .padding(.horizontal, 10).padding(.vertical, 5)
-                    .background(Color.orange.opacity(0.25))
+                    .background(Color.brandCoral.opacity(0.1))
                     .cornerRadius(20)
-                    .foregroundColor(.orange)
 
                     Text("BodySense Ring")
-                        .font(.title2).fontWeight(.bold).foregroundColor(.white)
+                        .font(.title2).fontWeight(.bold)
+                        .foregroundColor(.primary)
 
                     Text("X3B · Medical Grade")
-                        .font(.caption).foregroundColor(.white.opacity(0.65))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
 
                     // Price
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text(product.priceString(currencyCode: store.userCurrency))
-                            .font(.system(size: 28, weight: .bold))
-                            .foregroundColor(.white)
+                            .font(.system(size: 26, weight: .bold))
+                            .foregroundStyle(
+                                LinearGradient(colors: [.brandPurple, .brandTeal],
+                                               startPoint: .leading, endPoint: .trailing)
+                            )
                         if product.originalPrice > product.price {
                             Text(product.originalPriceString(currencyCode: store.userCurrency))
                                 .font(.subheadline)
                                 .strikethrough()
-                                .foregroundColor(.white.opacity(0.4))
+                                .foregroundColor(.secondary.opacity(0.6))
                         }
                     }
 
                     let savings = CurrencyService.format(product.originalPrice - product.price, currencyCode: store.userCurrency)
                     Text("Save \(savings) · IP68 · 7–10 day battery")
-                        .font(.caption2).foregroundColor(.white.opacity(0.6))
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
 
                     // Colour picker
                     HStack(spacing: 10) {
-                        Text("Colour:").font(.caption).foregroundColor(.white.opacity(0.7))
+                        Text("Colour:")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                         ForEach(product.availableColors, id: \.self) { col in
                             Circle()
                                 .fill(col.color)
                                 .frame(width: 22, height: 22)
                                 .overlay(
                                     Circle()
-                                        .stroke(selectedColor == col ? Color.white : Color.clear, lineWidth: 2.5)
+                                        .stroke(
+                                            selectedColor == col
+                                                ? Color.brandPurple
+                                                : Color.gray.opacity(0.3),
+                                            lineWidth: 2.5
+                                        )
                                         .padding(-3)
                                 )
-                                .onTapGesture { selectedColor = col }
+                                .shadow(color: selectedColor == col ? col.glowColor.opacity(0.5) : .clear, radius: 5)
+                                .onTapGesture { withAnimation(.spring()) { selectedColor = col } }
                         }
                         Text(selectedColor.rawValue)
                             .font(.caption2)
-                            .foregroundColor(.white.opacity(0.7))
+                            .foregroundColor(.secondary)
                     }
 
+                    // Shop Now button — brandPurple fill
                     Button { showDetail = true } label: {
-                        Text("Shop Now →")
-                            .font(.subheadline).fontWeight(.semibold)
-                            .padding(.horizontal, 20).padding(.vertical, 10)
-                            .background(Color.white)
-                            .foregroundColor(Color(hex: "#0f3460"))
-                            .cornerRadius(12)
+                        HStack(spacing: 6) {
+                            Text("Shop Now")
+                                .font(.subheadline).fontWeight(.semibold)
+                            Image(systemName: "arrow.right")
+                                .font(.caption.bold())
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 20).padding(.vertical, 10)
+                        .background(
+                            LinearGradient(colors: [.brandPurple, .brandTeal],
+                                           startPoint: .leading, endPoint: .trailing)
+                        )
+                        .cornerRadius(14)
+                        .shadow(color: Color.brandPurple.opacity(0.35), radius: 8, y: 4)
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-                Spacer()
+                Spacer(minLength: 8)
 
-                // Ring product photo
+                // ── Floating ring photo ──
                 ZStack {
-                    // Soft glow behind photo
+                    // Ambient glow
                     Circle()
                         .fill(
                             RadialGradient(
-                                colors: [selectedColor.glowColor.opacity(0.35), .clear],
-                                center: .center, startRadius: 0, endRadius: 55
+                                colors: [selectedColor.glowColor.opacity(0.45), .clear],
+                                center: .center, startRadius: 0, endRadius: 70
                             )
                         )
-                        .frame(width: 110, height: 110)
-                        .blur(radius: 6)
+                        .frame(width: 150, height: 150)
+                        .blur(radius: 12)
 
                     Image(selectedColor.frontPhotoName)
                         .resizable()
                         .scaledToFit()
-                        .frame(width: 108, height: 108)
-                        .shadow(color: selectedColor.glowColor.opacity(0.4), radius: 14, x: 0, y: 6)
+                        .frame(width: 140, height: 140)
+                        .shadow(color: selectedColor.glowColor.opacity(0.5), radius: 20, x: 0, y: 10)
+                        .offset(y: floatUp ? -6 : 6)
+                        .animation(
+                            .easeInOut(duration: 2.2).repeatForever(autoreverses: true),
+                            value: floatUp
+                        )
                 }
-                .animation(.spring(response: 0.35, dampingFraction: 0.75), value: selectedColor)
+                .animation(.spring(response: 0.4, dampingFraction: 0.7), value: selectedColor)
+                .onAppear { floatUp = true }
             }
-            .padding(20)
+            .padding(.horizontal, 20).padding(.vertical, 22)
         }
-        .frame(height: 230)
+        .frame(height: 265)
         .padding(.horizontal)
         .sheet(isPresented: $showDetail) {
             ImmersiveRingProductView(product: product, preselectedColor: selectedColor)
@@ -371,9 +420,17 @@ struct ProductCard2: View {
                 }
             }
             .padding(12)
-            .background(Color(.systemBackground))
+            .background(.ultraThinMaterial)
+            .overlay(
+                RoundedRectangle(cornerRadius: 18)
+                    .fill(Color.white.opacity(0.6))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 18)
+                    .stroke(Color.white.opacity(0.7), lineWidth: 1)
+            )
             .cornerRadius(18)
-            .shadow(color: .black.opacity(0.07), radius: 8)
+            .shadow(color: Color(hex: product.color).opacity(0.12), radius: 10, y: 4)
         }
         .buttonStyle(.plain)
     }

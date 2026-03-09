@@ -532,6 +532,17 @@ struct HealthScoreDetailView: View {
     @Environment(HealthStore.self) var store
     @Environment(\.dismiss) var dismiss
 
+    // Today's vitals from step entries (HealthKit synced or manual)
+    var todayEntry: StepEntry? {
+        store.stepEntries.first(where: { Calendar.current.isDateInToday($0.date) })
+    }
+    var todayDistance: Double { (todayEntry?.distance ?? 0) / 1000.0 } // metres -> km
+    var todayCaloriesBurned: Int { todayEntry?.calories ?? 0 }
+    var todayStandMinutes: Int { todayEntry?.activeMinutes ?? 0 }
+
+    // Latest SpO2 from HealthKit manager cache
+    var latestSpO2: Double { HealthKitManager.shared.latestSpO2 ?? 0 }
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -567,6 +578,14 @@ struct HealthScoreDetailView: View {
                         scoreRow("Medications", value: store.medications.filter { $0.isActive }.isEmpty ? "None active" : "\(store.medications.filter { $0.isActive }.count) active", color: .brandPurple, icon: "pill.fill")
                         Divider().padding(.leading, 52)
                         scoreRow("Steps Today", value: "\(store.todaySteps) steps", color: .brandTeal, icon: "figure.walk")
+                        Divider().padding(.leading, 52)
+                        scoreRow("Distance", value: String(format: "%.1f km", todayDistance), color: .brandGreen, icon: "location.fill")
+                        Divider().padding(.leading, 52)
+                        scoreRow("Calories Burned", value: "\(todayCaloriesBurned) kcal", color: .brandAmber, icon: "flame.fill")
+                        Divider().padding(.leading, 52)
+                        scoreRow("Standing Time", value: "\(todayStandMinutes) min", color: .brandCoral, icon: "figure.stand")
+                        Divider().padding(.leading, 52)
+                        scoreRow("SpO₂", value: latestSpO2 > 0 ? String(format: "%.0f%%", latestSpO2) : "No data", color: latestSpO2 >= 95 ? .brandGreen : .brandCoral, icon: "lungs.fill")
                     }
                     .background(Color(.systemBackground))
                     .cornerRadius(16)

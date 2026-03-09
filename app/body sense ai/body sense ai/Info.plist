@@ -2,28 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-
-	<!-- ═══ Bundle Identity ═══ -->
-	<key>CFBundleDisplayName</key>
-	<string>BodySense AI</string>
-	<key>CFBundleName</key>
-	<string>BodySense AI</string>
-	<key>CFBundleIdentifier</key>
-	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
-	<key>CFBundleExecutable</key>
-	<string>$(EXECUTABLE_NAME)</string>
-	<key>CFBundlePackageType</key>
-	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
-	<key>CFBundleInfoDictionaryVersion</key>
-	<string>6.0</string>
-	<key>CFBundleShortVersionString</key>
-	<string>$(MARKETING_VERSION)</string>
-	<key>CFBundleVersion</key>
-	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
-
-	<!-- ═══ App Icon ═══ -->
+	<key>CFBundleDisplayName</key>
+	<string>BodySense AI</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIcons</key>
 	<dict>
 		<key>CFBundlePrimaryIcon</key>
@@ -32,82 +16,16 @@
 			<string>AppIcon</string>
 		</dict>
 	</dict>
-
-	<!-- ═══ Launch Screen (SwiftUI manages the window) ═══ -->
-	<key>UILaunchScreen</key>
-	<dict/>
-
-	<!-- ═══ UI Style ═══ -->
-	<key>UIUserInterfaceStyle</key>
-	<string>Automatic</string>
-	<key>UIStatusBarStyle</key>
-	<string>UIStatusBarStyleDefault</string>
-	<key>UIViewControllerBasedStatusBarAppearance</key>
-	<true/>
-
-	<!-- ═══ Orientations — iPhone ═══ -->
-	<key>UISupportedInterfaceOrientations</key>
-	<array>
-		<string>UIInterfaceOrientationPortrait</string>
-	</array>
-
-	<!-- ═══ Orientations — iPad ═══ -->
-	<key>UISupportedInterfaceOrientations~ipad</key>
-	<array>
-		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationPortraitUpsideDown</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
-	</array>
-
-	<!-- ═══ Device Support ═══ -->
-	<!-- UIDeviceFamily is managed by TARGETED_DEVICE_FAMILY build setting, not here -->
-	<key>LSRequiresIPhoneOS</key>
-	<true/>
-	<key>UIRequiredDeviceCapabilities</key>
-	<array>
-		<string>arm64</string>
-	</array>
-
-	<!-- ═══ Background Modes ═══ -->
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>remote-notification</string>
-	</array>
-
-	<!-- ═══ Privacy Permissions ═══ -->
-	<key>NSCameraUsageDescription</key>
-	<string>BodySense AI uses the camera to scan food labels and glucose meters.</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>BodySense AI accesses your photos to upload health-related images.</string>
-	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>BodySense AI saves health charts and reports to your photo library.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>BodySense AI uses the microphone for voice logging of meals and symptoms.</string>
-	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>BodySense AI transcribes your voice so you can log health entries hands-free.</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>BodySense AI uses your location to find nearby pharmacies and health services.</string>
-	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>BodySense AI connects to your BodySense ring to sync sleep and activity data.</string>
-	<key>NSBluetoothPeripheralUsageDescription</key>
-	<string>BodySense AI connects to your BodySense ring to sync health data.</string>
-	<key>NSMotionUsageDescription</key>
-	<string>BodySense AI counts your steps using the phone's motion sensor.</string>
-	<key>NSFaceIDUsageDescription</key>
-	<string>Use Face ID to securely open BodySense AI.</string>
-	<key>NSContactsUsageDescription</key>
-	<string>Add an emergency contact so BodySense AI can alert them if needed.</string>
-	<key>NSCalendarsUsageDescription</key>
-	<string>Sync medication schedules and appointments with your Calendar.</string>
-	<key>NSCalendarsWriteOnlyAccessUsageDescription</key>
-	<string>Add medication reminders and health appointments to your Calendar.</string>
-	<key>NSHealthShareUsageDescription</key>
-	<string>BodySense AI reads health data such as sleep, steps, and heart rate to give you personalised guidance.</string>
-	<key>NSHealthUpdateUsageDescription</key>
-	<string>BodySense AI may save water intake and weight entries to Apple Health.</string>
-
-	<!-- ═══ URL Schemes ═══ -->
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>BodySense AI</string>
+	<key>CFBundlePackageType</key>
+	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -121,10 +39,68 @@
 			</array>
 		</dict>
 	</array>
-
-	<!-- ═══ Encryption ═══ -->
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
-
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>BodySense AI connects to your BodySense ring to sync sleep and activity data.</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>BodySense AI connects to your BodySense ring to sync health data.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Sync medication schedules and appointments with your Calendar.</string>
+	<key>NSCalendarsWriteOnlyAccessUsageDescription</key>
+	<string>Add medication reminders and health appointments to your Calendar.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>BodySense AI uses the camera to scan food labels and glucose meters.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>Add an emergency contact so BodySense AI can alert them if needed.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Use Face ID to securely open BodySense AI.</string>
+	<key>NSHealthShareUsageDescription</key>
+	<string>BodySense AI reads health data such as sleep, steps, and heart rate to give you personalised guidance.</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>BodySense AI may save water intake and weight entries to Apple Health.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>BodySense AI uses your location to find nearby pharmacies and health services.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>BodySense AI uses the microphone for voice logging of meals and symptoms.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>BodySense AI counts your steps using the phone's motion sensor.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>BodySense AI saves health charts and reports to your photo library.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>BodySense AI accesses your photos to upload health-related images.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>BodySense AI transcribes your voice so you can log health entries hands-free.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
+	<key>UILaunchScreen</key>
+	<dict/>
+	<key>UIRequiredDeviceCapabilities</key>
+	<array>
+		<string>arm64</string>
+	</array>
+	<key>UIStatusBarStyle</key>
+	<string></string>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>UIUserInterfaceStyle</key>
+	<string>Automatic</string>
+	<key>UIViewControllerBasedStatusBarAppearance</key>
+	<true/>
 </dict>
 </plist>

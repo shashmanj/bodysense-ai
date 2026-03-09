@@ -12,6 +12,7 @@ import UserNotifications
 #if canImport(StripeCore)
 import StripeCore
 #endif
+import HealthKit
 
 @main
 struct body_sense_aiApp: App {
@@ -22,6 +23,14 @@ struct body_sense_aiApp: App {
         WindowGroup {
             ContentView()
                 .preferredColorScheme(.light)
+                .task {
+                    // Auto-sync HealthKit data on launch if enabled
+                    let store = HealthStore.shared
+                    if store.userProfile.healthKitEnabled {
+                        await HealthKitManager.shared.requestAuthorization()
+                        await HealthKitManager.shared.syncAll(to: store)
+                    }
+                }
         }
     }
 }

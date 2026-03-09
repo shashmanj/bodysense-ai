@@ -213,9 +213,10 @@ struct StepEntry: Codable, Identifiable, Equatable {
     var id            = UUID()
     var date          : Date
     var steps         : Int
-    var distance      : Double  // km
-    var calories      : Int
-    var activeMinutes : Int
+    var distance      : Double  = 0     // km
+    var calories      : Int     = 0
+    var activeMinutes : Int     = 0
+    var source        : String  = "manual"  // "manual" or "healthkit"
 }
 
 // MARK: - Water
@@ -237,6 +238,8 @@ struct NutritionLog: Codable, Identifiable, Equatable {
     var protein  : Double
     var fat      : Double
     var fiber    : Double
+    var sugar    : Double = 0
+    var salt     : Double = 0
     var foodName : String = ""
     var notes    : String = ""
 }
@@ -1213,6 +1216,7 @@ struct WearableDevice: Codable, Identifiable, Equatable {
     var batteryLevel: Int    = 100
     var lastSync    : Date?
     var color       : String = "#6C63FF"
+    var ringColor   : RingColor? = nil   // Set when device is BodySense Ring
 }
 
 /// What a device can measure
@@ -1395,6 +1399,91 @@ struct DailyGuidance: Codable, Equatable {
     var scoreChange  : Int  // delta vs yesterday
 }
 
+// MARK: - Body Metric Units
+
+enum WeightUnit: String, Codable, CaseIterable {
+    case kg     = "kg"
+    case lbs    = "lbs"
+    case stones = "stones"
+
+    var label: String { rawValue }
+
+    /// Convert FROM this unit TO kg
+    func toKg(_ value: Double) -> Double {
+        switch self {
+        case .kg:     return value
+        case .lbs:    return value * 0.453592
+        case .stones: return value * 6.35029
+        }
+    }
+
+    /// Convert FROM kg TO this unit
+    func fromKg(_ kg: Double) -> Double {
+        switch self {
+        case .kg:     return kg
+        case .lbs:    return kg / 0.453592
+        case .stones: return kg / 6.35029
+        }
+    }
+}
+
+enum HeightUnit: String, Codable, CaseIterable {
+    case cm     = "cm"
+    case inches = "inches"
+    case feet   = "ft/in"
+
+    var label: String { rawValue }
+
+    /// Convert FROM this unit TO cm
+    func toCm(_ value: Double) -> Double {
+        switch self {
+        case .cm:     return value
+        case .inches: return value * 2.54
+        case .feet:   return value * 2.54  // stored as total inches internally
+        }
+    }
+
+    /// Convert FROM cm TO this unit
+    func fromCm(_ cm: Double) -> Double {
+        switch self {
+        case .cm:     return cm
+        case .inches: return cm / 2.54
+        case .feet:   return cm / 2.54  // returns total inches; UI shows ft'in"
+        }
+    }
+
+    /// Format a cm value in the user's chosen unit
+    func format(_ cm: Double) -> String {
+        switch self {
+        case .cm:     return "\(Int(cm)) cm"
+        case .inches: return String(format: "%.1f in", cm / 2.54)
+        case .feet:
+            let totalIn = cm / 2.54
+            let ft = Int(totalIn) / 12
+            let inches = Int(totalIn) % 12
+            return "\(ft)'\(inches)\""
+        }
+    }
+}
+
+// MARK: - Notification Preferences
+
+struct NotificationPreferences: Codable, Equatable {
+    var medicationReminders  : Bool = true
+    var glucoseAlerts        : Bool = true
+    var bpAlerts             : Bool = true
+    var waterReminders       : Bool = true
+    var sleepReminders       : Bool = true
+    var exerciseReminders    : Bool = true
+    var aiInsights           : Bool = true
+    var communityUpdates     : Bool = false
+
+    // Timing
+    var morningReminderHour  : Int  = 8
+    var eveningReminderHour  : Int  = 21
+    var waterReminderInterval: Int  = 120  // minutes
+}
+
 // MARK: - User Profile
 
 struct UserProfile: Codable {
@@ -1407,8 +1496,10 @@ struct UserProfile: Codable {
     var targetGlucoseMax : Double  = 140
     var targetSystolic   : Int     = 130
     var targetDiastolic  : Int     = 85
-    var weight           : Double  = 70
-    var height           : Double  = 165
+    var weight           : Double  = 70     // always stored in kg internally
+    var height           : Double  = 165    // always stored in cm internally
+    var weightUnit       : WeightUnit = .kg
+    var heightUnit       : HeightUnit = .cm
     var emergencyName    : String  = ""
     var emergencyPhone   : String  = ""
     var targetSteps      : Int     = 8000
@@ -1438,6 +1529,22 @@ struct UserProfile: Codable {
 
     // ── Onboarding: user-selected health goals ──
     var selectedGoals: [String] = []
+
+    // ── Notification preferences ──
+    var notificationPreferences: NotificationPreferences = NotificationPreferences()
+
+    // ── HealthKit sync ──
+    var healthKitEnabled : Bool = false
+
+    // ── Nutrition goals (calculated from BMR/weight/goal) ──
+    var dailyCalorieGoal : Int    = 2000
+    var dailyProteinGoal : Double = 50    // grams
+    var dailyCarbGoal    : Double = 250
+    var dailyFatGoal     : Double = 65
+    var dailyFiberGoal   : Double = 25
+    var dailySugarGoal   : Double = 30    // NHS max
+    var dailySaltGoal    : Double = 6     // NHS max
+    var nutritionGoalType: String = "maintain" // "lose", "gain", "maintain"
 }
 
 // MARK: - HealthStore (shared observable state)
@@ -1518,6 +1625,21 @@ class HealthStore {
     var unreadAlerts: [HealthAlert]     { healthAlerts.filter { !$0.isRead } }
     var joinedGroups: [CommunityGroup]  { communityGroups.filter { $0.isJoined } }
     var earnedAchievements: [Achievement] { achievements.filter { $0.isEarned } }
+
+    // Ring colour from last purchase or cart
+    var lastPurchasedRingColor: RingColor? {
+        // Check order items for ring with a selected colour
+        for order in orders.reversed() {
+            if let ringItem = order.items.first(where: { $0.name.lowercased().contains("ring") }) {
+                return ringItem.selectedColor ?? .silver
+            }
+        }
+        // Fallback: check cart items
+        if let cartRing = cartItems.first(where: { $0.name.lowercased().contains("ring") }) {
+            return cartRing.selectedColor ?? .silver
+        }
+        return nil
+    }
 
     // Cart helpers
     var cartCount: Int { cartItems.reduce(0) { $0 + $1.quantity } }
@@ -1610,17 +1732,34 @@ class HealthStore {
     }
 
     var healthScore: Int {
-        var score = 60
+        var score = 40  // lower base for more dynamic range
+        // Glucose
         if let g = latestGlucose {
             let s = glucoseStatus(g.value)
-            if s.label == "Good" || s.label == "Normal" { score += 10 }
+            if s.label == "Good" || s.label == "Normal" { score += 12 }
             else if s.label == "High" || s.label == "Low" { score -= 5 }
         }
+        // Blood pressure
         if let b = latestBP, b.category == .normal { score += 10 }
-        if let s = lastSleep, s.quality == .good || s.quality == .excellent { score += 8 }
+        // Sleep
+        if let s = lastSleep, s.quality == .good || s.quality == .excellent { score += 10 }
+        // Stress
         if let st = latestStress, st.level <= 4 { score += 7 }
+        // Medications adherence
         let medCount = medications.filter { $0.isActive }.count
         if medCount > 0 { score += 5 }
+        // Water intake
+        if todayWaterML >= 2000 { score += 5 }
+        // Steps
+        if todaySteps >= userProfile.targetSteps { score += 8 }
+        else if todaySteps >= userProfile.targetSteps / 2 { score += 4 }
+        // Nutrition logged today
+        let todayCals = nutritionLogs.filter { Calendar.current.isDateInToday($0.date) }
+            .reduce(0) { $0 + $1.calories }
+        let goal = userProfile.dailyCalorieGoal
+        if todayCals > 0 && todayCals >= Int(Double(goal) * 0.8) && todayCals <= Int(Double(goal) * 1.2) {
+            score += 5
+        }
         return min(100, max(0, score))
     }
 

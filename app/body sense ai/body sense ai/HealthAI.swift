@@ -50,7 +50,18 @@ class HealthAIEngine {
         let thirtyDaysAgo = cal.date(byAdding: .day, value: -30, to: Date())!
 
         ctx += "Name: \(p.name.isEmpty ? "User" : p.name), Age: \(p.age), Gender: \(p.gender)\n"
-        ctx += "Weight: \(String(format: "%.1f", p.weight))kg, Height: \(String(format: "%.0f", p.height))cm\n"
+        // Weight in user's preferred unit
+        let displayWeight: String = {
+            switch p.weightUnit {
+            case .kg: return String(format: "%.1f kg", p.weight)
+            case .lbs: return String(format: "%.0f lbs", p.weight / 0.453592)
+            case .stones:
+                let totalLbs = p.weight / 0.453592
+                return "\(Int(totalLbs) / 14)st \(Int(totalLbs) % 14)lb"
+            }
+        }()
+        let displayHeight = p.heightUnit.format(p.height)
+        ctx += "Weight: \(displayWeight), Height: \(displayHeight)\n"
         let bmi = p.height > 0 ? p.weight / pow(p.height / 100, 2) : 0
         ctx += "BMI: \(String(format: "%.1f", bmi)) (\(bmi < 18.5 ? "underweight" : bmi < 25 ? "healthy" : bmi < 30 ? "overweight" : "obese"))\n"
 
@@ -221,7 +232,12 @@ class HealthAIEngine {
                 isTyping = false
                 return ChatMessage(content: reply, isUser: false)
             } catch {
-                // Fall through to rule-based if API call fails
+                // Log error and fall through to rule-based
+                print("⚠️ Claude API error: \(error.localizedDescription)")
+                // Remove the failed user message from history
+                if conversationHistory.last?.role == "user" {
+                    conversationHistory.removeLast()
+                }
             }
         }
 
@@ -287,8 +303,8 @@ class HealthAIEngine {
             return mealPlanReply(name: name)
         }
 
-        // ── Food / what to eat
-        if matches(text, ["eat", "food", "snack", "breakfast", "lunch", "dinner", "recipe", "cook", "hungry", "appetite", "meal", "calorie", "carb", "protein", "fat", "fibre", "fiber", "gluten", "lactose", "vegan", "vegetarian"]) {
+        // ── Food / what to eat / ingredients / specific foods
+        if matches(text, ["eat", "food", "snack", "breakfast", "lunch", "dinner", "recipe", "cook", "hungry", "appetite", "meal", "calorie", "carb", "protein", "fat", "fibre", "fiber", "gluten", "lactose", "vegan", "vegetarian", "coconut", "olive oil", "avocado", "banana", "rice", "bread", "egg", "chicken", "salmon", "turmeric", "cinnamon", "ginger", "garlic", "honey", "oats", "nuts", "almond", "walnut", "berry", "blueberry", "apple", "orange", "lemon", "tea", "coffee", "chocolate", "sugar", "salt", "butter", "cheese", "milk", "yogurt", "quinoa", "lentil", "beans", "tofu", "fish", "beef", "pork", "lamb", "shea butter", "seed", "flax", "chia", "hemp", "spirulina", "matcha", "acai", "mango", "kale", "spinach", "broccoli", "sweet potato", "potato", "pasta", "noodle"]) {
             return foodReply(name: name, mealHint: text)
         }
 
@@ -813,6 +829,22 @@ class HealthAIEngine {
         let g = store.latestGlucose?.value ?? 110
         let status = store.glucoseStatus(g)
 
+        // ── Check for specific food queries first ──
+        let specificFoodInfo = getSpecificFoodInfo(for: mealHint)
+        if let info = specificFoodInfo {
+            var reply = "\(info.emoji) **\(info.name)** — \(name)\n\n"
+            reply += "_Current glucose: \(Int(g)) mg/dL (\(status.label))_\n\n"
+            reply += info.details
+            // Add BMI-personalised context
+            let bmi = store.userProfile.height > 0 ? store.userProfile.weight / pow(store.userProfile.height / 100, 2) : 0
+            if bmi > 25 {
+                reply += "\n\n⚖️ _Based on your BMI of \(String(format: "%.1f", bmi)), watch portion sizes and focus on the lower-calorie preparation methods mentioned above._"
+            }
+            reply += "\n\n💡 _Use the **Food Search** in Track → Nutrition to look up exact calorie and macro data for any food._"
+            return msg(reply, chips: ["🔍 Search foods", "📅 7-day meal plan", "🩸 My glucose", "📋 Summary"])
+        }
+
+        // ── General food guide ──
         var reply = "🍽️ **Food Guide for \(name)**\n\n"
         reply += "_Current glucose: \(Int(g)) mg/dL (\(status.label))_\n\n"
 
@@ -838,6 +870,22 @@ class HealthAIEngine {
             reply += "**Dinner ideas 🌙**\n• Baked salmon + broccoli + brown rice (⅓ plate)\n• Grilled chicken + sweet potato + leafy greens\n• Tofu stir-fry with quinoa and pak choi\n• Baked cod + cauliflower mash\n• Chicken & lentil curry (light, low-fat)\n\nKeep dinner portions slightly smaller than lunch — you're less active at night."
         } else if mealHint.contains("snack") {
             reply += "**Healthy snacks 🍎**\n• Handful of almonds or walnuts (15–20 nuts)\n• Apple or pear + 1 tbsp almond/peanut butter\n• Oatcakes + low-fat cheese\n• Celery or carrot sticks + hummus\n• Hard-boiled egg\n• Low-fat Greek yoghurt"
+        } else if mealHint.contains("sugar") || mealHint.contains("cut sugar") || mealHint.contains("reduce sugar") {
+            reply += "**Cutting Sugar — Personalised Advice**\n\n"
+            let bmi = store.userProfile.height > 0 ? store.userProfile.weight / pow(store.userProfile.height / 100, 2) : 0
+            if bmi > 0 {
+                reply += "Your BMI: **\(String(format: "%.1f", bmi))** — "
+                reply += bmi > 25 ? "reducing sugar is especially important for weight management.\n\n" : "great range! Keeping sugar low will help maintain it.\n\n"
+            }
+            reply += "**Best foods to cut sugar:**\n"
+            reply += "• **Swap white bread → wholegrain** (50% less sugar impact)\n"
+            reply += "• **Greek yoghurt** instead of flavoured yoghurt (saves ~15g sugar)\n"
+            reply += "• **Berries** instead of tropical fruits (lower glycaemic load)\n"
+            reply += "• **Cinnamon** in coffee/porridge (may improve insulin sensitivity)\n"
+            reply += "• **Nuts & seeds** for snacking (virtually zero sugar)\n"
+            reply += "• **Eggs + avocado** for breakfast (keeps blood sugar stable for hours)\n"
+            reply += "• **Water + lemon** instead of fruit juice (saves ~25g sugar per glass)\n\n"
+            reply += "**Daily sugar target:** NHS recommends no more than 30g free sugars/day for adults."
         } else {
             reply += "**General eating principles:**\n\n"
             reply += "✅ **Eat more:** non-starchy vegetables, whole grains, legumes, lean protein (chicken, fish, tofu, eggs), healthy fats (avocado, nuts, olive oil), berries\n\n"
@@ -846,7 +894,244 @@ class HealthAIEngine {
             reply += "🕐 **Meal timing matters:**\nEat at consistent times, don't skip meals, and avoid large portions after 7 PM."
         }
 
-        return msg(reply, chips: ["📅 7-day meal plan", "🥗 Breakfast ideas", "🌙 Dinner ideas", "💧 Hydration"])
+        return msg(reply, chips: ["🔍 Search foods", "📅 7-day meal plan", "🥗 Breakfast ideas", "🌙 Dinner ideas"])
+    }
+
+    // ── Specific food knowledge base (used when API is unavailable) ──────
+    private struct FoodInfo {
+        let name: String
+        let emoji: String
+        let details: String
+    }
+
+    private func getSpecificFoodInfo(for text: String) -> FoodInfo? {
+        let t = text.lowercased()
+
+        if t.contains("coconut oil") {
+            return FoodInfo(name: "Coconut Oil", emoji: "🥥", details: """
+            **Nutritional profile (per 15ml/1 tbsp):**
+            • Calories: ~130 kcal | Fat: 14g (82% saturated) | Carbs: 0g | Protein: 0g
+
+            **Health benefits:**
+            • Contains **MCTs (medium-chain triglycerides)** — metabolised faster than other fats
+            • **Lauric acid** (~50% of fat) has antimicrobial and antiviral properties
+            • May boost HDL (good) cholesterol levels
+            • Good for **skin & hair** when applied topically (moisturising, antibacterial)
+            • Excellent for high-heat cooking (smoke point: 177°C)
+
+            **Considerations:**
+            • Very high in **saturated fat** — the British Heart Foundation recommends limiting saturated fat
+            • Use in moderation: 1–2 tablespoons per day maximum
+            • Not a miracle weight-loss food — it's still 862 kcal per 100g
+            • For heart health, **olive oil is generally preferred** (more unsaturated fats)
+
+            **Best uses:** cooking oil, smoothies, baking, skin moisturiser, hair treatment.
+            """)
+        }
+
+        if t.contains("olive oil") {
+            return FoodInfo(name: "Olive Oil (Extra Virgin)", emoji: "🫒", details: """
+            **Nutritional profile (per 15ml/1 tbsp):**
+            • Calories: ~130 kcal | Fat: 14g (mostly monounsaturated) | Carbs: 0g | Protein: 0g
+
+            **Health benefits:**
+            • Rich in **oleic acid** (omega-9) — lowers LDL, raises HDL cholesterol
+            • Packed with **polyphenols** — powerful antioxidants that reduce inflammation
+            • Part of the **Mediterranean diet** (strongest evidence for heart health)
+            • May reduce risk of stroke by up to 41% (meta-analysis data)
+            • Anti-inflammatory — comparable to low-dose ibuprofen (oleocanthal)
+            • Supports gut health and may reduce cancer risk
+
+            **Best uses:** salad dressings, drizzling on food, light cooking (smoke point ~190°C).
+            **Tip:** Choose **extra virgin** — cold-pressed, unrefined, highest in polyphenols.
+            """)
+        }
+
+        if t.contains("shea butter") {
+            return FoodInfo(name: "Shea Butter", emoji: "🧴", details: """
+            **What is Shea Butter?**
+            A natural fat extracted from the nuts of the African shea tree. Primarily used for skincare.
+
+            **Skin benefits:**
+            • **Deep moisturiser** — rich in vitamins A, E, and F (essential fatty acids)
+            • **Anti-inflammatory** — contains cinnamic acid, helps with eczema, psoriasis, dermatitis
+            • **Collagen support** — may help reduce wrinkles and fine lines
+            • **UV protection** — provides mild SPF ~6 (not a replacement for sunscreen)
+            • **Wound healing** — promotes cell regeneration
+            • **Stretch marks** — helps improve skin elasticity during pregnancy or weight changes
+            • **Non-comedogenic** — generally won't clog pores
+
+            **How to use on skin:**
+            • Apply unrefined shea butter directly to clean, damp skin
+            • Best applied after shower when pores are open
+            • Can mix with essential oils (tea tree, lavender) for enhanced benefits
+            • Use as lip balm, body butter, or hair conditioner
+
+            **Note:** While edible in some African cuisines, it's mainly a topical product in the UK. Rich in stearic and oleic acids.
+            """)
+        }
+
+        if t.contains("avocado") {
+            return FoodInfo(name: "Avocado", emoji: "🥑", details: """
+            **Nutritional profile (per 100g):**
+            • Calories: 160 kcal | Fat: 15g | Carbs: 8.5g | Protein: 2g | Fibre: 6.7g
+
+            **Health benefits:**
+            • Excellent source of **heart-healthy monounsaturated fats** (oleic acid)
+            • Very high in **fibre** — 6.7g per 100g, supports digestive health
+            • Rich in **potassium** (more than bananas!) — helps control blood pressure
+            • Contains **vitamins K, C, B5, B6, E** and **folate**
+            • May improve cholesterol: raises HDL, lowers LDL
+            • Low glycaemic index — doesn't spike blood sugar
+            • **Lutein** — supports eye health
+
+            **Best ways to eat:** on toast, in salads, smoothies, guacamole, or as egg topper.
+            **Portion:** Half an avocado (~80g) is a good serving — it's calorie-dense.
+            """)
+        }
+
+        if t.contains("turmeric") || t.contains("curcumin") {
+            return FoodInfo(name: "Turmeric", emoji: "🟡", details: """
+            **Active compound: Curcumin** (2–5% of turmeric powder)
+
+            **Health benefits:**
+            • **Powerful anti-inflammatory** — may help with arthritis, joint pain, inflammatory bowel disease
+            • **Antioxidant** — neutralises free radicals, protects cells
+            • **Brain health** — may increase BDNF (brain growth factor), potentially lowering Alzheimer risk
+            • **Heart health** — improves endothelial function (blood vessel lining)
+            • **Blood sugar** — some evidence it improves insulin sensitivity
+            • **Cancer research** — laboratory studies show anti-tumour properties (early research)
+
+            **How to take:**
+            • In cooking: curries, golden milk, smoothies, scrambled eggs
+            • Always combine with **black pepper** (piperine increases absorption by 2,000%)
+            • Take with **fat** (coconut oil, olive oil) for better absorption
+            • Supplement: 500–1000mg curcumin daily (check with your doctor)
+
+            **Caution:** High doses may interact with blood thinners and diabetes medication.
+            """)
+        }
+
+        if t.contains("cinnamon") {
+            return FoodInfo(name: "Cinnamon", emoji: "🟤", details: """
+            **Health benefits:**
+            • May **lower blood sugar** by improving insulin sensitivity (several clinical trials)
+            • **Antioxidant-rich** — one of the highest ORAC scores of any spice
+            • **Anti-inflammatory** — may reduce markers of inflammation
+            • May lower **LDL cholesterol** and triglycerides
+            • **Antimicrobial** — cinnamaldehyde fights bacteria and fungi
+
+            **For blood sugar:** Studies suggest 1–6g (½–1 tsp) daily can reduce fasting glucose by 10–29%.
+            **Best type:** **Ceylon cinnamon** (true cinnamon) is safer long-term than Cassia (contains coumarin).
+            **How to use:** in porridge, coffee, yoghurt, smoothies, baking, curries.
+            """)
+        }
+
+        if t.contains("banana") {
+            return FoodInfo(name: "Banana", emoji: "🍌", details: """
+            **Nutritional profile (1 medium banana ~120g):**
+            • Calories: 107 kcal | Carbs: 27g | Fibre: 3.1g | Protein: 1.3g | Sugar: 14g
+
+            **Health benefits:**
+            • Excellent source of **potassium** (422mg) — helps control blood pressure
+            • Good source of **vitamin B6** — supports brain function and mood
+            • Contains **resistant starch** (especially when slightly green) — feeds gut bacteria
+            • Natural **pre-workout fuel** — easily digestible carbs for energy
+            • May support **heart health** and reduce kidney disease risk
+
+            **Diabetes note:** Bananas are medium GI (51). Green/unripe bananas have lower GI. Pair with protein (peanut butter) to slow sugar absorption.
+            **Portion tip:** Stick to 1 medium banana per sitting for blood sugar control.
+            """)
+        }
+
+        if t.contains("egg") && !t.contains("eggplant") {
+            return FoodInfo(name: "Eggs", emoji: "🥚", details: """
+            **Nutritional profile (1 large egg ~60g):**
+            • Calories: 93 kcal | Protein: 7.8g | Fat: 6.6g | Carbs: 0.6g
+
+            **Health benefits:**
+            • **Complete protein** — all 9 essential amino acids, very bioavailable
+            • Rich in **choline** — critical for brain health and liver function
+            • Contains **lutein & zeaxanthin** — protects eyes from macular degeneration
+            • Good source of **vitamin D, B12, selenium**
+            • **Does NOT raise heart disease risk** — latest evidence (NICE/NHS) says eggs are fine for most people
+            • Keeps you full — great for weight management
+
+            **How many:** Up to 2–3 eggs per day is considered safe for most adults.
+            **Best prep:** Boiled or poached (no added fat). Scrambled in olive oil is good too.
+            **Blood sugar:** Eggs have virtually zero effect on blood glucose — excellent for diabetics.
+            """)
+        }
+
+        if t.contains("rice") && !t.contains("price") {
+            return FoodInfo(name: "Rice", emoji: "🍚", details: """
+            **Nutritional comparison (per 100g cooked):**
+            • **White rice:** 130 kcal | Carbs: 28g | Protein: 2.7g | Fibre: 0.4g
+            • **Brown rice:** 112 kcal | Carbs: 23g | Protein: 2.6g | Fibre: 1.8g
+            • **Basmati:** 121 kcal | Carbs: 25g | Protein: 3.5g | Fibre: 0.4g
+
+            **Health notes:**
+            • Brown rice has **4.5x more fibre** and more vitamins (B1, B3, magnesium)
+            • Basmati has the **lowest GI** among white rices (GI ~50 vs 73 for short-grain)
+            • **Cool rice trick:** cooking then cooling rice increases resistant starch by 2–3x (even reheated!) — lowers blood sugar impact
+            • A standard portion is **75g dry / 200g cooked**
+
+            **For diabetes:** Choose basmati or brown, keep portions to ¼ plate, pair with protein and vegetables.
+            """)
+        }
+
+        if t.contains("chicken") {
+            return FoodInfo(name: "Chicken", emoji: "🍗", details: """
+            **Nutritional profile (per 100g grilled breast, skinless):**
+            • Calories: 165 kcal | Protein: 31g | Fat: 3.6g | Carbs: 0g
+
+            **Health benefits:**
+            • One of the **best lean protein sources** — high protein, low fat
+            • Rich in **B vitamins** (B3, B6) — supports energy metabolism
+            • Good source of **selenium** — supports thyroid and immune function
+            • **Tryptophan** — helps produce serotonin (mood and sleep)
+            • Versatile and affordable
+
+            **Tips:** Remove skin to cut fat by ~50%. Breast is leanest; thigh has more flavour but more fat. Bake, grill, or poach — avoid deep frying.
+            **Portion:** A serving is about 150g (palm-sized piece).
+            """)
+        }
+
+        if t.contains("salmon") {
+            return FoodInfo(name: "Salmon", emoji: "🐟", details: """
+            **Nutritional profile (per 100g baked):**
+            • Calories: 208 kcal | Protein: 20g | Fat: 13g | Omega-3: ~2g
+
+            **Health benefits:**
+            • **Richest source of omega-3** fatty acids (EPA & DHA) — reduces inflammation, protects heart
+            • May lower risk of heart attack by 25–30% (eating 2 portions/week)
+            • Excellent for **brain health** — DHA makes up 40% of brain fatty acids
+            • Rich in **vitamin D** (one of few food sources)
+            • Good source of **selenium, B12, B6**
+            • May improve insulin sensitivity and reduce inflammation markers
+
+            **NHS recommends:** At least 2 portions of fish per week, 1 of which should be oily (salmon, mackerel, sardines).
+            """)
+        }
+
+        if t.contains("oat") {
+            return FoodInfo(name: "Oats / Porridge", emoji: "🥣", details: """
+            **Nutritional profile (per 40g dry oats):**
+            • Calories: 152 kcal | Protein: 5.3g | Carbs: 27g | Fibre: 4g | Fat: 2.6g
+
+            **Health benefits:**
+            • Rich in **beta-glucan** fibre — proven to lower cholesterol by 5–10%
+            • **Low GI (55)** — slow, steady energy release, great for blood sugar
+            • High in **manganese, phosphorus, magnesium, iron**
+            • Keeps you full for hours — excellent for weight management
+            • **Heart-protective** — EFSA-approved health claim for cholesterol reduction
+
+            **Best toppings:** berries, cinnamon, chia seeds, nuts, banana.
+            **Avoid:** instant oats with added sugar. Choose plain rolled or steel-cut oats.
+            """)
+        }
+
+        return nil
     }
 
     // ── WEIGHT / BMI ──────────────────────────────────────────────────────────
@@ -1780,25 +2065,21 @@ class HealthAIEngine {
             }
         }
 
-        // Pure fallback — still give useful direction
+        // Pure fallback — try to give a helpful answer about whatever they asked
         return msg("""
-        I'm here to help, \(name)! I cover a wide range of medical topics including:
+        Great question about "\(raw)", \(name)! 🤔
 
-        🩸 **Metabolic:** glucose, diabetes, HbA1c, weight, cholesterol, thyroid
-        ❤️ **Cardiovascular:** blood pressure, heart health, stroke, kidney disease
-        🍽️ **Nutrition:** meal plans, what to eat, macros, vitamins, supplements
-        🏃 **Fitness:** exercise guides, activity, weight management
-        🧠 **Mental health:** stress, anxiety, depression, sleep
-        💊 **Medications:** how they work, side effects, dosing tips
-        🫁 **Organs:** lungs, gut, liver, kidneys, eyes, ears, skin, joints
-        👩 **Women's health:** hormones, cycle, menopause, pregnancy
-        🧔 **Men's health:** prostate, testosterone
-        👶 **Children's health:** vaccinations, fever, diabetes in children
-        🔬 **Cancer:** screening, warning signs, risk reduction
-        🛡️ **Immunity:** infections, vaccines, allergies
+        I'd love to give you a detailed, personalised answer on this topic. My AI engine is currently connecting — here's what I can do right now:
 
-        Just ask me anything — in your own words is perfectly fine. What would you like to know?
-        """, chips: ["📊 My health summary", "🍽️ Meal plan", "💊 My medications", "🏃 Exercise tips"])
+        **Try asking me about specific health topics like:**
+        • "What should I eat for breakfast?" — I'll suggest meals based on your health profile
+        • "My glucose" — I'll show your latest readings and trends
+        • "Meal plan" — I'll create a personalised 7-day plan
+        • "How to lower blood pressure" — evidence-based lifestyle tips
+        • "Benefits of walking after meals" — exercise guidance
+
+        Or tap one of the quick options below!
+        """, chips: ["🍽️ Meal plan", "📊 My health", "🩸 My glucose", "❤️ My BP"])
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

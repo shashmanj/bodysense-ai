@@ -383,6 +383,10 @@ struct PatientOnboardingView: View {
     @State private var customCity   = ""
     @State private var postcode     = ""
     @State private var selectedGoals: [String] = []
+    @State private var weightText   = "70"
+    @State private var heightText   = "165"
+    @State private var weightUnit   : WeightUnit = .kg
+    @State private var heightUnit   : HeightUnit = .cm
 
     var body: some View {
         VStack(spacing: 0) {
@@ -422,6 +426,30 @@ struct PatientOnboardingView: View {
                         .pickerStyle(.segmented)
                         Stepper("Age: \(age)", value: $age, in: 16...100)
                             .foregroundColor(.white)
+
+                        // ── Weight ──
+                        HStack {
+                            Image(systemName: "scalemass").foregroundColor(.white.opacity(0.7))
+                            TextField("Weight", text: $weightText)
+                                .keyboardType(.decimalPad).foregroundColor(.white).tint(.white)
+                            Picker("", selection: $weightUnit) {
+                                ForEach(WeightUnit.allCases, id: \.self) { Text($0.label).tag($0) }
+                            }.pickerStyle(.menu).tint(.white)
+                        }
+                        .padding().background(Color.white.opacity(0.15)).cornerRadius(12)
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.3)))
+
+                        // ── Height ──
+                        HStack {
+                            Image(systemName: "ruler").foregroundColor(.white.opacity(0.7))
+                            TextField("Height", text: $heightText)
+                                .keyboardType(.decimalPad).foregroundColor(.white).tint(.white)
+                            Picker("", selection: $heightUnit) {
+                                ForEach(HeightUnit.allCases, id: \.self) { Text($0.label).tag($0) }
+                            }.pickerStyle(.menu).tint(.white)
+                        }
+                        .padding().background(Color.white.opacity(0.15)).cornerRadius(12)
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.3)))
                     })
                 } next: { withAnimation { page = 1 } }
                 .tag(0)
@@ -546,6 +574,11 @@ struct PatientOnboardingView: View {
         profile.currencyCode  = CurrencyService.currency(for: country)
         profile.isDoctor      = false
         profile.selectedGoals = selectedGoals
+        profile.weightUnit    = weightUnit
+        profile.heightUnit    = heightUnit
+        // Convert entered value to internal kg/cm
+        if let w = Double(weightText) { profile.weight = weightUnit.toKg(w) }
+        if let h = Double(heightText) { profile.height = heightUnit.toCm(h) }
         store.userProfile = profile
         store.ensureAnonymousAlias()
         store.save()

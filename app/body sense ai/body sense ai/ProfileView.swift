@@ -26,19 +26,39 @@ struct ProfileView: View {
 
 struct PatientProfileView: View {
     @Environment(HealthStore.self) var store
-    @State private var showEdit       = false
-    @State private var showRecords    = false
-    @State private var showSettings   = false
-    @State private var showDevices    = false
-    @State private var showGiftCode   = false
-    @State private var showSubPlans   = false
-    @State private var showSupport    = false
-    @State private var pickerItem     : PhotosPickerItem? = nil
+    @State private var showEdit           = false
+    @State private var showRecords        = false
+    @State private var showSettings       = false
+    @State private var showDevices        = false
+    @State private var showGiftCode       = false
+    @State private var showSubPlans       = false
+    @State private var showSupport        = false
+    @State private var showNotifSettings  = false
+    @State private var showFamilySharing  = false
+    @State private var pickerItem         : PhotosPickerItem? = nil
 
     var bmi: Double {
         let h = store.userProfile.height / 100
         guard h > 0 else { return 0 }
         return store.userProfile.weight / (h * h)
+    }
+
+    func formatWeight(_ kg: Double) -> String {
+        let u = store.userProfile.weightUnit
+        let v = u.fromKg(kg)
+        switch u {
+        case .kg:     return String(format: "%.0f kg", v)
+        case .lbs:    return String(format: "%.0f lbs", v)
+        case .stones:
+            let totalLbs = kg / 0.453592
+            let st = Int(totalLbs) / 14
+            let lbs = Int(totalLbs) % 14
+            return "\(st)st \(lbs)lb"
+        }
+    }
+
+    func formatHeight(_ cm: Double) -> String {
+        store.userProfile.heightUnit.format(cm)
     }
 
     var body: some View {
@@ -53,7 +73,7 @@ struct PatientProfileView: View {
                         HStack(spacing: 0) {
                             statCell("\(store.userProfile.age)", label: "Age")
                             Divider().frame(height: 40)
-                            statCell(String(format: "%.0f", store.userProfile.weight) + "kg", label: "Weight")
+                            statCell(formatWeight(store.userProfile.weight), label: "Weight")
                             Divider().frame(height: 40)
                             statCell(String(format: "%.1f", bmi), label: "BMI")
                             Divider().frame(height: 40)
@@ -112,6 +132,8 @@ struct PatientProfileView: View {
         .sheet(isPresented: $showGiftCode) { GiftCodeView() }
         .sheet(isPresented: $showSubPlans) { SubscriptionPlansSheet() }
         .sheet(isPresented: $showSupport) { CustomerCareView() }
+        .sheet(isPresented: $showNotifSettings) { NotificationsSettingsView() }
+        .sheet(isPresented: $showFamilySharing) { FamilySharingView() }
         .onChange(of: pickerItem) { _, item in
             Task {
                 if let data = try? await item?.loadTransferable(type: Data.self) {
@@ -317,9 +339,76 @@ struct PatientProfileView: View {
             Divider().padding(.leading, 52)
             settingsRow("Gift Codes", icon: "gift.fill", color: .brandGreen) { showGiftCode = true }
             Divider().padding(.leading, 52)
-            settingsRow("Notifications", icon: "bell.fill", color: .brandCoral) { }
+            settingsRow("Notifications", icon: "bell.fill", color: .brandCoral) { showNotifSettings = true }
+            Divider().padding(.leading, 52)
+            settingsRow("Family Sharing", icon: "person.3.fill", color: .brandGreen) { showFamilySharing = true }
             Divider().padding(.leading, 52)
             settingsRow("Help & Support", icon: "headphones.circle.fill", color: .brandTeal) { showSupport = true }
+            Divider().padding(.leading, 52)
+
+            // ── Apple Health Sync ──
+            HStack(spacing: 14) {
+                Image(systemName: "heart.circle.fill").font(.body).foregroundColor(.white)
+                    .frame(width: 32, height: 32).background(Color.red).cornerRadius(8)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Apple Health Sync").font(.subheadline)
+                    Text("Auto-sync steps, calories, SpO₂")
+                        .font(.caption2).foregroundColor(.secondary)
+                }
+                Spacer()
+                Toggle("", isOn: Binding(
+                    get: { store.userProfile.healthKitEnabled },
+                    set: { newVal in
+                        store.userProfile.healthKitEnabled = newVal
+                        store.save()
+                        if newVal {
+                            Task {
+                                await HealthKitManager.shared.requestAuthorization()
+                                await HealthKitManager.shared.syncAll(to: store)
+                            }
+                        }
+                    }
+                ))
+                .tint(.brandGreen)
+                .labelsHidden()
+            }
+            .padding(.horizontal).padding(.vertical, 12)
+
+            Divider().padding(.leading, 52)
+
+            // ── Weight Unit ──
+            HStack(spacing: 14) {
+                Image(systemName: "scalemass.fill").font(.body).foregroundColor(.white)
+                    .frame(width: 32, height: 32).background(Color.brandAmber).cornerRadius(8)
+                Text("Weight Unit").font(.subheadline)
+                Spacer()
+                Picker("", selection: Binding(
+                    get: { store.userProfile.weightUnit },
+                    set: { store.userProfile.weightUnit = $0; store.save() }
+                )) {
+                    ForEach(WeightUnit.allCases, id: \.self) { Text($0.label).tag($0) }
+                }
+                .pickerStyle(.menu).tint(.brandPurple)
+            }
+            .padding(.horizontal).padding(.vertical, 12)
+
+            Divider().padding(.leading, 52)
+
+            // ── Height Unit ──
+            HStack(spacing: 14) {
+                Image(systemName: "ruler.fill").font(.body).foregroundColor(.white)
+                    .frame(width: 32, height: 32).background(Color.brandTeal).cornerRadius(8)
+                Text("Height Unit").font(.subheadline)
+                Spacer()
+                Picker("", selection: Binding(
+                    get: { store.userProfile.heightUnit },
+                    set: { store.userProfile.heightUnit = $0; store.save() }
+                )) {
+                    ForEach(HeightUnit.allCases, id: \.self) { Text($0.label).tag($0) }
+                }
+                .pickerStyle(.menu).tint(.brandPurple)
+            }
+            .padding(.horizontal).padding(.vertical, 12)
         }
         .background(Color(.systemBackground))
         .cornerRadius(16).shadow(color: .black.opacity(0.05), radius: 6)
@@ -889,12 +978,16 @@ struct ManageDevicesView: View {
     }
 
     func addDevice(type: WearableType) {
-        let device = WearableDevice(
+        var device = WearableDevice(
             type: type,
             isConnected: true,
             batteryLevel: Int.random(in: 60...100),
             lastSync: Date()
         )
+        // Auto-assign ring colour from last shop purchase, default silver
+        if type == .bodySenseRing {
+            device.ringColor = store.lastPurchasedRingColor ?? .silver
+        }
         store.wearableDevices.append(device)
         store.save()
     }
@@ -908,12 +1001,29 @@ struct ConnectedDeviceRow: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            Image(systemName: device.type.icon)
-                .font(.title3).foregroundColor(.white)
-                .frame(width: 40, height: 40)
-                .background(device.type.color).cornerRadius(10)
+            // Show actual ring photo if it's a BodySense Ring with a colour
+            if device.type == .bodySenseRing, let rc = device.ringColor {
+                Image(rc.frontPhotoName)
+                    .resizable().scaledToFit()
+                    .frame(width: 44, height: 44)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .shadow(color: rc.glowColor.opacity(0.3), radius: 4, y: 2)
+            } else {
+                Image(systemName: device.type.icon)
+                    .font(.title3).foregroundColor(.white)
+                    .frame(width: 40, height: 40)
+                    .background(device.type.color).cornerRadius(10)
+            }
             VStack(alignment: .leading, spacing: 3) {
-                Text(device.type.rawValue).font(.subheadline).fontWeight(.semibold)
+                HStack(spacing: 6) {
+                    Text(device.type.rawValue).font(.subheadline).fontWeight(.semibold)
+                    if let rc = device.ringColor {
+                        Text(rc.rawValue)
+                            .font(.caption2).foregroundColor(.white)
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(rc.color).cornerRadius(6)
+                    }
+                }
                 Text("Synced \(device.lastSync?.formatted(.relative(presentation: .numeric)) ?? "Never")")
                     .font(.caption).foregroundColor(.secondary)
             }
@@ -1079,8 +1189,44 @@ struct EditProfileSheet: View {
                     }
                 }
                 Section("Body Measurements") {
-                    HStack { Text("Weight (kg)"); Spacer(); TextField("70", text: $weight).keyboardType(.decimalPad).multilineTextAlignment(.trailing) }
-                    HStack { Text("Height (cm)"); Spacer(); TextField("165", text: $height).keyboardType(.decimalPad).multilineTextAlignment(.trailing) }
+                    HStack {
+                        Text("Weight (\(store.userProfile.weightUnit.label))")
+                        Spacer()
+                        TextField("70", text: $weight).keyboardType(.decimalPad).multilineTextAlignment(.trailing)
+                    }
+                    Picker("Weight Unit", selection: Binding(
+                        get: { store.userProfile.weightUnit },
+                        set: { newUnit in
+                            // Convert displayed value to new unit
+                            if let val = Double(weight) {
+                                let kg = store.userProfile.weightUnit.toKg(val)
+                                let converted = newUnit.fromKg(kg)
+                                weight = String(format: "%.1f", converted)
+                            }
+                            store.userProfile.weightUnit = newUnit
+                        }
+                    )) {
+                        ForEach(WeightUnit.allCases, id: \.self) { Text($0.label).tag($0) }
+                    }.pickerStyle(.segmented)
+
+                    HStack {
+                        Text("Height (\(store.userProfile.heightUnit.label))")
+                        Spacer()
+                        TextField("165", text: $height).keyboardType(.decimalPad).multilineTextAlignment(.trailing)
+                    }
+                    Picker("Height Unit", selection: Binding(
+                        get: { store.userProfile.heightUnit },
+                        set: { newUnit in
+                            if let val = Double(height) {
+                                let cm = store.userProfile.heightUnit.toCm(val)
+                                let converted = newUnit.fromCm(cm)
+                                height = String(format: "%.1f", converted)
+                            }
+                            store.userProfile.heightUnit = newUnit
+                        }
+                    )) {
+                        ForEach(HeightUnit.allCases, id: \.self) { Text($0.label).tag($0) }
+                    }.pickerStyle(.segmented)
                 }
                 Section("Location") {
                     TextField("City", text: $city)
@@ -1109,7 +1255,11 @@ struct EditProfileSheet: View {
         let p = store.userProfile
         name     = p.name; age = p.age; gender = p.gender
         city     = p.city; country = p.country; postcode = p.postcode
-        weight   = String(p.weight); height = String(p.height)
+        // Display weight/height in user's preferred unit
+        let displayWeight = p.weightUnit.fromKg(p.weight)
+        let displayHeight = p.heightUnit.fromCm(p.height)
+        weight   = String(format: "%.1f", displayWeight)
+        height   = String(format: "%.1f", displayHeight)
         emergencyName = p.emergencyName; emergencyPhone = p.emergencyPhone
     }
 
@@ -1117,8 +1267,9 @@ struct EditProfileSheet: View {
         var p = store.userProfile
         p.name = name; p.age = age; p.gender = gender
         p.city = city; p.country = country; p.postcode = postcode.uppercased()
-        p.weight = Double(weight) ?? p.weight
-        p.height = Double(height) ?? p.height
+        // Convert from displayed unit back to kg/cm for storage
+        if let w = Double(weight) { p.weight = p.weightUnit.toKg(w) }
+        if let h = Double(height) { p.height = p.heightUnit.toCm(h) }
         p.emergencyName = emergencyName; p.emergencyPhone = emergencyPhone
         store.userProfile = p; store.save(); saved = true
     }

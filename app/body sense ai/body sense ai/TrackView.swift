@@ -329,7 +329,8 @@ struct WellnessSection: View {
 
 struct NutritionSection: View {
     @Environment(HealthStore.self) var store
-    @State private var showAdd = false
+    @State private var showAdd        = false
+    @State private var showFoodSearch = false
 
     var todayLogs: [NutritionLog] {
         let cal = Calendar.current
@@ -338,35 +339,36 @@ struct NutritionSection: View {
 
     var body: some View {
         Group {
-            // Today summary card
-            BSCard {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Label("Today's Nutrition", systemImage: "fork.knife.circle.fill")
-                            .font(.headline).foregroundColor(.brandPurple)
-                        Spacer()
-                        Button { showAdd = true } label: {
-                            Image(systemName: "plus.circle.fill")
-                                .font(.title3).foregroundColor(.brandPurple)
-                        }
-                    }
+            // ── Daily macro dashboard (rings) ──
+            NutritionDashboardView()
 
-                    let totals = todayLogs.reduce((cal: 0, carbs: 0.0, protein: 0.0, fat: 0.0)) { acc, log in
-                        (acc.cal + log.calories, acc.carbs + log.carbs, acc.protein + log.protein, acc.fat + log.fat)
-                    }
+            // ── Action buttons row ──
+            HStack(spacing: 10) {
+                Button {
+                    showFoodSearch = true
+                } label: {
+                    Label("Search Food", systemImage: "magnifyingglass")
+                        .font(.subheadline.bold())
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color.brandPurple.opacity(0.1))
+                        .foregroundColor(.brandPurple)
+                        .cornerRadius(14)
+                }
 
-                    if !todayLogs.isEmpty {
-                        HStack(spacing: 0) {
-                            NutrientPill(label: "Calories", value: "\(totals.cal)", unit: "kcal", color: .brandAmber)
-                            NutrientPill(label: "Carbs",    value: "\(Int(totals.carbs))",   unit: "g",    color: .brandCoral)
-                            NutrientPill(label: "Protein",  value: "\(Int(totals.protein))", unit: "g",    color: .brandTeal)
-                            NutrientPill(label: "Fat",      value: "\(Int(totals.fat))",     unit: "g",    color: .brandGreen)
-                        }
-                    } else {
-                        Text("No meals logged today.").foregroundColor(.secondary).font(.subheadline)
-                    }
+                Button {
+                    showAdd = true
+                } label: {
+                    Label("Log Meal", systemImage: "plus")
+                        .font(.subheadline.bold())
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color.brandTeal.opacity(0.1))
+                        .foregroundColor(.brandTeal)
+                        .cornerRadius(14)
                 }
             }
+            .padding(.horizontal)
 
             // Meal cards
             ForEach(MealType.allCases, id: \.self) { type in
@@ -399,6 +401,7 @@ struct NutritionSection: View {
             }
         }
         .sheet(isPresented: $showAdd) { AddNutritionSheet() }
+        .sheet(isPresented: $showFoodSearch) { FoodSearchView() }
     }
 }
 
@@ -725,17 +728,27 @@ struct AddWaterSheet: View {
         let ml: Double
     }
     let presets: [WaterPreset] = [
-        WaterPreset(label: "Glass\n250ml", ml: 250),
-        WaterPreset(label: "Bottle\n500ml", ml: 500),
-        WaterPreset(label: "Large\n750ml", ml: 750),
-        WaterPreset(label: "1 Litre", ml: 1000),
+        WaterPreset(label: "Glass\n250ml",   ml: 250),
+        WaterPreset(label: "Bottle\n500ml",  ml: 500),
+        WaterPreset(label: "1 Litre",        ml: 1000),
+        WaterPreset(label: "1.5 Litres",     ml: 1500),
+        WaterPreset(label: "2 Litres",       ml: 2000),
     ]
+
+    // Total water logged today (including this new entry)
+    var todayTotal: Double {
+        store.waterEntries
+            .filter { Calendar.current.isDateInToday($0.date) }
+            .reduce(0) { $0 + $1.amount }
+        + amount
+    }
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("Amount") {
-                    HStack(spacing: 10) {
+                Section("Quick Add") {
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()),
+                                        GridItem(.flexible())], spacing: 10) {
                         ForEach(presets) { preset in
                             Button {
                                 amount = preset.ml
@@ -744,15 +757,49 @@ struct AddWaterSheet: View {
                                     .font(.caption).multilineTextAlignment(.center)
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 10)
-                                    .background(amount == preset.ml ? Color.brandTeal : Color(hex: "#4fc3f7").opacity(0.15))
+                                    .background(amount == preset.ml ? Color(hex: "#4fc3f7") : Color(hex: "#4fc3f7").opacity(0.12))
                                     .foregroundColor(amount == preset.ml ? .white : Color(hex: "#4fc3f7"))
                                     .cornerRadius(10)
                             }
                         }
                     }
-                    VStack(alignment: .leading) {
-                        Text("Custom: \(Int(amount)) ml")
-                        Slider(value: $amount, in: 50...2000, step: 50).tint(Color(hex: "#4fc3f7"))
+                }
+
+                Section("Custom Amount") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Amount:")
+                            Spacer()
+                            Text("\(Int(amount)) ml  (\(String(format: "%.2f", amount / 1000)) L)")
+                                .fontWeight(.semibold)
+                                .foregroundColor(Color(hex: "#4fc3f7"))
+                        }
+                        Slider(value: $amount, in: 50...4000, step: 50)
+                            .tint(Color(hex: "#4fc3f7"))
+                        HStack {
+                            Text("50 ml").font(.caption2).foregroundColor(.secondary)
+                            Spacer()
+                            Text("4 L max").font(.caption2).foregroundColor(.secondary)
+                        }
+                    }
+                }
+
+                // Electrolyte warning when > 3L
+                if todayTotal > 3000 {
+                    Section {
+                        HStack(alignment: .top, spacing: 10) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(.brandAmber)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("Electrolyte Warning")
+                                    .font(.caption.bold())
+                                    .foregroundColor(.brandAmber)
+                                Text("Drinking excessive water can flush out important electrolytes like sodium and potassium. Make sure you're getting adequate minerals from food or electrolyte drinks.")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .padding(.vertical, 4)
                     }
                 }
             }
@@ -830,6 +877,9 @@ struct AddNutritionSheet: View {
     @State private var carbs    = ""
     @State private var protein  = ""
     @State private var fat      = ""
+    @State private var fiber    = ""
+    @State private var sugar    = ""
+    @State private var salt     = ""
 
     var body: some View {
         NavigationStack {
@@ -842,11 +892,16 @@ struct AddNutritionSheet: View {
                     }
                     TextField("Food name (optional)", text: $foodName)
                 }
-                Section("Nutrition Info") {
+                Section("Macros") {
                     HStack { TextField("Calories", text: $calories).keyboardType(.numberPad); Text("kcal").foregroundColor(.secondary) }
                     HStack { TextField("Carbohydrates", text: $carbs).keyboardType(.decimalPad); Text("g").foregroundColor(.secondary) }
                     HStack { TextField("Protein", text: $protein).keyboardType(.decimalPad); Text("g").foregroundColor(.secondary) }
                     HStack { TextField("Fat", text: $fat).keyboardType(.decimalPad); Text("g").foregroundColor(.secondary) }
+                }
+                Section("More Nutrients (Optional)") {
+                    HStack { TextField("Fibre", text: $fiber).keyboardType(.decimalPad); Text("g").foregroundColor(.secondary) }
+                    HStack { TextField("Sugar", text: $sugar).keyboardType(.decimalPad); Text("g").foregroundColor(.secondary) }
+                    HStack { TextField("Salt / Sodium", text: $salt).keyboardType(.decimalPad); Text("g").foregroundColor(.secondary) }
                 }
             }
             .navigationTitle("Log Meal")
@@ -857,9 +912,14 @@ struct AddNutritionSheet: View {
                     Button("Save") {
                         store.nutritionLogs.append(NutritionLog(
                             date: Date(), mealType: mealType,
-                            calories: Int(calories) ?? 0, carbs: Double(carbs) ?? 0,
-                            protein: Double(protein) ?? 0, fat: Double(fat) ?? 0,
-                            fiber: 0, foodName: foodName))
+                            calories: Int(calories) ?? 0,
+                            carbs:    Double(carbs) ?? 0,
+                            protein:  Double(protein) ?? 0,
+                            fat:      Double(fat) ?? 0,
+                            fiber:    Double(fiber) ?? 0,
+                            sugar:    Double(sugar) ?? 0,
+                            salt:     Double(salt) ?? 0,
+                            foodName: foodName))
                         store.save(); dismiss()
                     }
                 }
