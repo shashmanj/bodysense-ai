@@ -2,7 +2,7 @@
 //  ShopView.swift
 //  body sense ai
 //
-//  Full shop: BodySense Ring with colour picker, Apple Pay + Stripe checkout,
+//  Full shop: BodySense Ring with colour picker, Apple Pay checkout,
 //  accessories, subscriptions, order tracking.
 //
 
@@ -14,6 +14,7 @@ struct ShopView: View {
     @Environment(HealthStore.self) var store
     @State private var tab         = 0
     @State private var showCart    = false
+    @State private var showProductAdmin = false
 
     var body: some View {
         NavigationView {
@@ -32,6 +33,15 @@ struct ShopView: View {
             .navigationTitle(tab == 0 ? "Shop" : tab == 1 ? "Subscriptions" : "My Orders")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
+                if store.userProfile.isCEO {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button { showProductAdmin = true } label: {
+                            Image(systemName: "pencil.and.list.clipboard")
+                                .font(.system(size: 18))
+                                .foregroundColor(.brandPurple)
+                        }
+                    }
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button { showCart = true } label: {
                         ZStack(alignment: .topTrailing) {
@@ -55,6 +65,12 @@ struct ShopView: View {
         .sheet(isPresented: $showCart) {
             CartCheckoutView()
         }
+        .sheet(isPresented: $showProductAdmin) {
+            NavigationView {
+                ProductAdminView()
+                    .environment(store)
+            }
+        }
     }
 }
 
@@ -64,6 +80,7 @@ struct ShopProductsTab: View {
     @Environment(HealthStore.self) var store
     @State private var selectedCategory: ProductCategory? = nil
     @State private var selectedProduct : Product? = nil
+    @State private var selectedRingColor: RingColor = .silver
 
     var featured: Product? { store.products.first { $0.isRing } }
 
@@ -80,8 +97,7 @@ struct ShopProductsTab: View {
 
                 // ── Hero: BodySense Ring ──
                 if let ring = featured {
-                    RingHeroBanner(product: ring)
-                        .onTapGesture { selectedProduct = ring }
+                    RingHeroBanner(product: ring, selectedColor: $selectedRingColor)
                 }
 
                 // ── Category filter ──
@@ -109,6 +125,7 @@ struct ShopProductsTab: View {
                 }
                 .padding(.horizontal)
                 .padding(.bottom, 24)
+
             }
             .padding(.top, 8)
         }
@@ -139,84 +156,98 @@ struct ShopProductsTab: View {
 struct RingHeroBanner: View {
     @Environment(HealthStore.self) var store
     let product: Product
-    @State private var selectedColor: RingColor = .silver
+    @Binding var selectedColor: RingColor
     @State private var showDetail   = false
     @State private var floatUp      = false
 
+    // Dynamic background colors based on ring selection
+    private var bgGradientColors: [Color] {
+        switch selectedColor {
+        case .silver:
+            return [Color(white: 0.92).opacity(0.15), Color(white: 0.80).opacity(0.12), Color.white.opacity(0.35)]
+        case .black:
+            return [Color(white: 0.15).opacity(0.25), Color(white: 0.08).opacity(0.20), Color(white: 0.25).opacity(0.15)]
+        case .gold:
+            return [Color(red: 0.85, green: 0.65, blue: 0.25).opacity(0.15),
+                    Color(red: 0.75, green: 0.55, blue: 0.15).opacity(0.10),
+                    Color(red: 0.95, green: 0.85, blue: 0.60).opacity(0.20)]
+        }
+    }
+
+    private var borderColor: Color {
+        switch selectedColor {
+        case .silver: return Color.white.opacity(0.55)
+        case .black:  return Color(white: 0.35).opacity(0.6)
+        case .gold:   return Color(red: 0.85, green: 0.70, blue: 0.35).opacity(0.5)
+        }
+    }
+
+    private var textColor: Color {
+        selectedColor == .black ? .white : .primary
+    }
+
+    private var secondaryTextColor: Color {
+        selectedColor == .black ? Color(white: 0.7) : .secondary
+    }
+
     var body: some View {
         ZStack(alignment: .leading) {
-            // ── Glassmorphism background ──
+            // ── Clean background — changes with ring colour ──
             RoundedRectangle(cornerRadius: 24)
-                .fill(.ultraThinMaterial)
+                .fill(Color(.secondarySystemBackground))
                 .overlay(
                     RoundedRectangle(cornerRadius: 24)
                         .fill(
                             LinearGradient(
-                                colors: [
-                                    Color.brandPurple.opacity(0.08),
-                                    Color.brandTeal.opacity(0.06),
-                                    Color.white.opacity(0.35)
-                                ],
+                                colors: bgGradientColors,
                                 startPoint: .topLeading, endPoint: .bottomTrailing
                             )
                         )
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 24)
-                        .stroke(Color.white.opacity(0.55), lineWidth: 1.2)
+                        .stroke(borderColor, lineWidth: 1.2)
                 )
-                .shadow(color: Color.brandPurple.opacity(0.12), radius: 20, x: 0, y: 8)
+                .shadow(color: selectedColor.glowColor.opacity(0.18), radius: 20, x: 0, y: 8)
+                .animation(.easeInOut(duration: 0.4), value: selectedColor)
 
             HStack(alignment: .center, spacing: 0) {
                 VStack(alignment: .leading, spacing: 11) {
 
-                    // Sale badge
-                    HStack(spacing: 5) {
-                        Image(systemName: "flame.fill")
-                            .font(.caption2)
-                            .foregroundColor(.brandCoral)
-                        Text("LIMITED SALE")
-                            .font(.caption2).fontWeight(.bold)
-                            .foregroundColor(.brandCoral)
-                    }
-                    .padding(.horizontal, 10).padding(.vertical, 5)
-                    .background(Color.brandCoral.opacity(0.1))
-                    .cornerRadius(20)
-
                     Text("BodySense Ring")
                         .font(.title2).fontWeight(.bold)
-                        .foregroundColor(.primary)
+                        .foregroundColor(textColor)
 
                     Text("X3B · Medical Grade")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(secondaryTextColor)
 
                     // Price
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text(product.priceString(currencyCode: store.userCurrency))
                             .font(.system(size: 26, weight: .bold))
                             .foregroundStyle(
-                                LinearGradient(colors: [.brandPurple, .brandTeal],
+                                LinearGradient(colors: [selectedColor.glowColor, .brandPurple],
                                                startPoint: .leading, endPoint: .trailing)
                             )
                         if product.originalPrice > product.price {
                             Text(product.originalPriceString(currencyCode: store.userCurrency))
                                 .font(.subheadline)
                                 .strikethrough()
-                                .foregroundColor(.secondary.opacity(0.6))
+                                .foregroundColor(secondaryTextColor.opacity(0.6))
                         }
                     }
 
                     let savings = CurrencyService.format(product.originalPrice - product.price, currencyCode: store.userCurrency)
                     Text("Save \(savings) · IP68 · 7–10 day battery")
                         .font(.caption2)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(secondaryTextColor)
 
                     // Colour picker
                     HStack(spacing: 10) {
                         Text("Colour:")
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(secondaryTextColor)
                         ForEach(product.availableColors, id: \.self) { col in
                             Circle()
                                 .fill(col.color)
@@ -225,7 +256,7 @@ struct RingHeroBanner: View {
                                     Circle()
                                         .stroke(
                                             selectedColor == col
-                                                ? Color.brandPurple
+                                                ? selectedColor.glowColor
                                                 : Color.gray.opacity(0.3),
                                             lineWidth: 2.5
                                         )
@@ -236,10 +267,10 @@ struct RingHeroBanner: View {
                         }
                         Text(selectedColor.rawValue)
                             .font(.caption2)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(secondaryTextColor)
                     }
 
-                    // Shop Now button — brandPurple fill
+                    // Shop Now button — opens product detail
                     Button { showDetail = true } label: {
                         HStack(spacing: 6) {
                             Text("Shop Now")
@@ -250,11 +281,11 @@ struct RingHeroBanner: View {
                         .foregroundColor(.white)
                         .padding(.horizontal, 20).padding(.vertical, 10)
                         .background(
-                            LinearGradient(colors: [.brandPurple, .brandTeal],
+                            LinearGradient(colors: [selectedColor.glowColor, .brandPurple],
                                            startPoint: .leading, endPoint: .trailing)
                         )
                         .cornerRadius(14)
-                        .shadow(color: Color.brandPurple.opacity(0.35), radius: 8, y: 4)
+                        .shadow(color: selectedColor.glowColor.opacity(0.35), radius: 8, y: 4)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -263,11 +294,11 @@ struct RingHeroBanner: View {
 
                 // ── Floating ring photo ──
                 ZStack {
-                    // Ambient glow
+                    // Ambient glow — matches ring colour
                     Circle()
                         .fill(
                             RadialGradient(
-                                colors: [selectedColor.glowColor.opacity(0.45), .clear],
+                                colors: [selectedColor.glowColor.opacity(0.55), .clear],
                                 center: .center, startRadius: 0, endRadius: 70
                             )
                         )
@@ -278,7 +309,7 @@ struct RingHeroBanner: View {
                         .resizable()
                         .scaledToFit()
                         .frame(width: 140, height: 140)
-                        .shadow(color: selectedColor.glowColor.opacity(0.5), radius: 20, x: 0, y: 10)
+                        .shadow(color: selectedColor.glowColor.opacity(0.6), radius: 20, x: 0, y: 10)
                         .offset(y: floatUp ? -6 : 6)
                         .animation(
                             .easeInOut(duration: 2.2).repeatForever(autoreverses: true),
@@ -299,6 +330,364 @@ struct RingHeroBanner: View {
     }
 }
 
+// MARK: - Ring Customization Section
+
+struct RingCustomizationSection: View {
+    @Environment(HealthStore.self) var store
+    let product: Product
+    @Binding var selectedColor: RingColor
+    @Binding var selectedSize : RingSize
+    @Binding var quantity     : Int
+
+    @State private var addedToCart  = false
+    @State private var showSizeGuide = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // ── Header ──
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Customize Your Ring")
+                        .font(.title3).fontWeight(.bold)
+                    Text("Choose colour, size & quantity before ordering")
+                        .font(.caption).foregroundColor(.secondary)
+                }
+                Spacer()
+                Image(systemName: "sparkles")
+                    .font(.title3)
+                    .foregroundStyle(
+                        LinearGradient(colors: [selectedColor.glowColor, .brandPurple],
+                                       startPoint: .topLeading, endPoint: .bottomTrailing)
+                    )
+            }
+            .padding(.bottom, 20)
+
+            // ── Ring Preview ──
+            ZStack {
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [selectedColor.glowColor.opacity(0.35), .clear],
+                            center: .center, startRadius: 0, endRadius: 80
+                        )
+                    )
+                    .frame(width: 170, height: 170)
+                    .blur(radius: 10)
+
+                Image(selectedColor.frontPhotoName)
+                    .resizable().scaledToFit()
+                    .frame(width: 130, height: 130)
+                    .shadow(color: selectedColor.glowColor.opacity(0.5), radius: 15, y: 6)
+            }
+            .padding(.bottom, 16)
+
+            // ── Colour Selection ──
+            VStack(alignment: .leading, spacing: 10) {
+                Text("COLOUR")
+                    .font(.caption2.weight(.bold))
+                    .foregroundColor(.secondary)
+                    .tracking(1.2)
+
+                HStack(spacing: 14) {
+                    ForEach(product.availableColors, id: \.self) { col in
+                        VStack(spacing: 6) {
+                            Circle()
+                                .fill(col.color)
+                                .frame(width: 36, height: 36)
+                                .overlay(
+                                    Circle()
+                                        .stroke(
+                                            selectedColor == col
+                                                ? selectedColor.glowColor
+                                                : Color.gray.opacity(0.2),
+                                            lineWidth: selectedColor == col ? 3 : 1
+                                        )
+                                        .padding(-4)
+                                )
+                                .shadow(color: selectedColor == col ? col.glowColor.opacity(0.5) : .clear, radius: 6)
+
+                            Text(col.rawValue)
+                                .font(.caption2)
+                                .fontWeight(selectedColor == col ? .semibold : .regular)
+                                .foregroundColor(selectedColor == col ? .primary : .secondary)
+                        }
+                        .onTapGesture {
+                            withAnimation(.spring()) { selectedColor = col }
+                        }
+                    }
+                    Spacer()
+                }
+            }
+            .padding(.bottom, 20)
+
+            // ── Size Selection ──
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("RING SIZE")
+                        .font(.caption2.weight(.bold))
+                        .foregroundColor(.secondary)
+                        .tracking(1.2)
+                    Spacer()
+                    Button {
+                        showSizeGuide = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "ruler")
+                                .font(.caption2)
+                            Text("Size Guide")
+                                .font(.caption2.weight(.medium))
+                        }
+                        .foregroundColor(.brandPurple)
+                    }
+                }
+
+                // Size grid — 3 columns
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
+                    ForEach(RingSize.allCases, id: \.self) { size in
+                        Button {
+                            withAnimation(.spring(response: 0.3)) { selectedSize = size }
+                        } label: {
+                            VStack(spacing: 2) {
+                                Text(size.shortLabel)
+                                    .font(.headline)
+                                    .fontWeight(selectedSize == size ? .bold : .medium)
+                                Text(size.rawValue.components(separatedBy: "(").last?.replacingOccurrences(of: ")", with: "") ?? "")
+                                    .font(.system(size: 9))
+                                    .foregroundColor(selectedSize == size ? .white.opacity(0.8) : .secondary)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(
+                                selectedSize == size
+                                    ? AnyShapeStyle(LinearGradient(
+                                        colors: [selectedColor.glowColor, .brandPurple],
+                                        startPoint: .topLeading, endPoint: .bottomTrailing))
+                                    : AnyShapeStyle(Color(.secondarySystemBackground))
+                            )
+                            .foregroundColor(selectedSize == size ? .white : .primary)
+                            .cornerRadius(12)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(selectedSize == size ? selectedColor.glowColor.opacity(0.5) : Color.clear, lineWidth: 1.5)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .padding(.bottom, 20)
+
+            // ── Quantity ──
+            VStack(alignment: .leading, spacing: 10) {
+                Text("QUANTITY")
+                    .font(.caption2.weight(.bold))
+                    .foregroundColor(.secondary)
+                    .tracking(1.2)
+
+                HStack(spacing: 16) {
+                    Button {
+                        if quantity > 1 { withAnimation { quantity -= 1 } }
+                    } label: {
+                        Image(systemName: "minus.circle.fill")
+                            .font(.title2)
+                            .foregroundColor(quantity > 1 ? .brandPurple : .gray.opacity(0.3))
+                    }
+                    .disabled(quantity <= 1)
+
+                    Text("\(quantity)")
+                        .font(.title2.weight(.bold).monospacedDigit())
+                        .frame(width: 44)
+
+                    Button {
+                        if quantity < 5 { withAnimation { quantity += 1 } }
+                    } label: {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.title2)
+                            .foregroundColor(quantity < 5 ? .brandPurple : .gray.opacity(0.3))
+                    }
+                    .disabled(quantity >= 5)
+
+                    Spacer()
+                }
+            }
+            .padding(.bottom, 24)
+
+            // ── Order Summary ──
+            VStack(spacing: 12) {
+                HStack {
+                    Text("BodySense Ring X3B")
+                        .font(.subheadline)
+                    Spacer()
+                    Text("\(selectedColor.rawValue) · Size \(selectedSize.shortLabel)")
+                        .font(.caption).foregroundColor(.secondary)
+                }
+                HStack {
+                    Text("\(quantity)× \(product.priceString(currencyCode: store.userCurrency))")
+                        .font(.subheadline).foregroundColor(.secondary)
+                    Spacer()
+                    let total = product.price * Double(quantity)
+                    Text(CurrencyService.format(total, currencyCode: store.userCurrency))
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(
+                            LinearGradient(colors: [selectedColor.glowColor, .brandPurple],
+                                           startPoint: .leading, endPoint: .trailing)
+                        )
+                }
+
+                if product.originalPrice > product.price {
+                    let savings = (product.originalPrice - product.price) * Double(quantity)
+                    HStack {
+                        Image(systemName: "tag.fill")
+                            .font(.caption2).foregroundColor(.brandGreen)
+                        Text("You save \(CurrencyService.format(savings, currencyCode: store.userCurrency))")
+                            .font(.caption).foregroundColor(.brandGreen)
+                        Spacer()
+                    }
+                }
+            }
+            .padding()
+            .background(Color(.secondarySystemBackground))
+            .cornerRadius(14)
+            .padding(.bottom, 16)
+
+            // ── Add to Cart Button ──
+            Button {
+                store.addToCart(product, color: selectedColor, size: selectedSize, quantity: quantity)
+                withAnimation(.spring()) { addedToCart = true }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                    addedToCart = false
+                }
+            } label: {
+                HStack(spacing: 10) {
+                    if addedToCart {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.title3)
+                        Text("Added to Cart!")
+                            .font(.headline)
+                    } else {
+                        Image(systemName: "bag.fill.badge.plus")
+                            .font(.title3)
+                        Text("Add to Cart")
+                            .font(.headline)
+                        Spacer()
+                        let total = product.price * Double(quantity)
+                        Text(CurrencyService.format(total, currencyCode: store.userCurrency))
+                            .font(.headline)
+                    }
+                }
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+                .background(
+                    addedToCart
+                        ? LinearGradient(colors: [.brandGreen, .green],
+                                         startPoint: .leading, endPoint: .trailing)
+                        : LinearGradient(colors: [selectedColor.glowColor, .brandPurple],
+                                         startPoint: .leading, endPoint: .trailing)
+                )
+                .cornerRadius(16)
+                .shadow(color: (addedToCart ? Color.green : selectedColor.glowColor).opacity(0.35), radius: 10, y: 4)
+            }
+            .padding(.bottom, 12)
+
+            // ── Trust badges ──
+            HStack(spacing: 16) {
+                trustBadge(icon: "lock.shield.fill", text: "Secure\nCheckout")
+                trustBadge(icon: "arrow.uturn.left.circle.fill", text: "30-Day\nReturns")
+                trustBadge(icon: "shippingbox.fill", text: "Free\nDelivery")
+                trustBadge(icon: "heart.text.clipboard.fill", text: "2-Year\nWarranty")
+            }
+            .padding(.top, 4)
+        }
+        .padding(20)
+        .background(.ultraThinMaterial)
+        .overlay(
+            RoundedRectangle(cornerRadius: 22)
+                .stroke(selectedColor.glowColor.opacity(0.2), lineWidth: 1)
+        )
+        .cornerRadius(22)
+        .shadow(color: selectedColor.glowColor.opacity(0.1), radius: 12, y: 4)
+        .padding(.horizontal)
+        .padding(.bottom, 24)
+        .sheet(isPresented: $showSizeGuide) {
+            sizeGuideSheet
+        }
+    }
+
+    func trustBadge(icon: String, text: String) -> some View {
+        VStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 18))
+                .foregroundColor(.brandPurple.opacity(0.7))
+            Text(text)
+                .font(.system(size: 9))
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    var sizeGuideSheet: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Find Your Ring Size")
+                        .font(.title2.weight(.bold))
+                        .padding(.bottom, 4)
+
+                    Text("Wrap a piece of string or paper strip around the base of your finger. Mark where it overlaps, then measure the length in millimeters.")
+                        .font(.subheadline).foregroundColor(.secondary)
+
+                    VStack(spacing: 0) {
+                        HStack {
+                            Text("Size").font(.caption.weight(.bold)).frame(width: 50, alignment: .leading)
+                            Text("Diameter").font(.caption.weight(.bold)).frame(maxWidth: .infinity)
+                            Text("Circumference").font(.caption.weight(.bold)).frame(maxWidth: .infinity)
+                        }
+                        .padding(.vertical, 10).padding(.horizontal, 12)
+                        .background(Color(.secondarySystemBackground))
+
+                        ForEach(RingSize.allCases, id: \.self) { size in
+                            let diam = size.rawValue.components(separatedBy: "(").last?.replacingOccurrences(of: ")", with: "") ?? ""
+                            HStack {
+                                Text(size.shortLabel).font(.subheadline.weight(.medium)).frame(width: 50, alignment: .leading)
+                                Text(diam).font(.subheadline).frame(maxWidth: .infinity)
+                                Text(circumference(for: size)).font(.subheadline).frame(maxWidth: .infinity)
+                            }
+                            .padding(.vertical, 8).padding(.horizontal, 12)
+                            .background(selectedSize == size ? selectedColor.glowColor.opacity(0.1) : .clear)
+                            Divider()
+                        }
+                    }
+                    .cornerRadius(12)
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(.separator), lineWidth: 0.5))
+
+                    HStack(spacing: 8) {
+                        Image(systemName: "lightbulb.fill").foregroundColor(.brandAmber)
+                        Text("Tip: Measure at the end of the day when your fingers are warmest for the most accurate size.")
+                            .font(.caption).foregroundColor(.secondary)
+                    }
+                    .padding()
+                    .background(Color.brandAmber.opacity(0.08))
+                    .cornerRadius(12)
+                }
+                .padding()
+            }
+            .navigationTitle("Size Guide")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+
+    func circumference(for size: RingSize) -> String {
+        let map: [RingSize: String] = [
+            .size5: "49.3mm", .size6: "51.8mm", .size7: "54.4mm",
+            .size8: "56.9mm", .size9: "59.5mm", .size10: "62.1mm",
+            .size11: "64.6mm", .size12: "67.2mm", .size13: "69.7mm"
+        ]
+        return map[size] ?? ""
+    }
+}
+
 // MARK: - Product Card
 
 struct ProductCard2: View {
@@ -306,71 +695,207 @@ struct ProductCard2: View {
     let product: Product
     let onTap  : () -> Void
 
+    // Each product gets a unique rich visual composition
+    @ViewBuilder
+    func productVisual(for product: Product) -> some View {
+        let accent = Color(hex: product.color)
+        if product.isRing, let firstColor = product.availableColors.first {
+            // Ring — use actual photo
+            ZStack {
+                Circle()
+                    .fill(RadialGradient(colors: [firstColor.glowColor.opacity(0.3), .clear],
+                                         center: .center, startRadius: 0, endRadius: 50))
+                    .frame(width: 100, height: 100)
+                Image(firstColor.frontPhotoName)
+                    .resizable().scaledToFit().padding(10)
+            }
+        } else if product.icon == "bolt.circle.fill" {
+            // Charging Dock — premium layered visual
+            ZStack {
+                // Base dock shape
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(LinearGradient(colors: [Color(white: 0.25), Color(white: 0.15)],
+                                         startPoint: .top, endPoint: .bottom))
+                    .frame(width: 70, height: 36)
+                    .offset(y: 16)
+                // Ring cradle
+                Capsule()
+                    .fill(LinearGradient(colors: [Color(white: 0.35), Color(white: 0.2)],
+                                         startPoint: .top, endPoint: .bottom))
+                    .frame(width: 50, height: 8)
+                    .offset(y: 4)
+                // Lightning bolt
+                Image(systemName: "bolt.fill")
+                    .font(.system(size: 28, weight: .bold))
+                    .foregroundStyle(
+                        LinearGradient(colors: [accent, Color.yellow],
+                                       startPoint: .top, endPoint: .bottom)
+                    )
+                    .shadow(color: accent.opacity(0.6), radius: 8, y: 2)
+                    .offset(y: -8)
+                // LED glow dot
+                Circle()
+                    .fill(Color.green)
+                    .frame(width: 6, height: 6)
+                    .shadow(color: .green.opacity(0.8), radius: 4)
+                    .offset(x: 24, y: 20)
+            }
+        } else if product.icon == "case.fill" {
+            // Ring Case — travel case visual
+            ZStack {
+                // Case body
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(LinearGradient(colors: [accent.opacity(0.8), accent.opacity(0.5)],
+                                         startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .frame(width: 72, height: 52)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14)
+                            .stroke(accent.opacity(0.4), lineWidth: 1)
+                    )
+                // Case hinge line
+                Rectangle()
+                    .fill(accent.opacity(0.3))
+                    .frame(width: 72, height: 1.5)
+                // Ring silhouette inside
+                Circle()
+                    .stroke(Color.white.opacity(0.5), lineWidth: 2)
+                    .frame(width: 24, height: 24)
+                    .offset(y: -4)
+                // Shield badge
+                Image(systemName: "shield.checkered")
+                    .font(.system(size: 14))
+                    .foregroundColor(.white.opacity(0.7))
+                    .offset(x: 22, y: 16)
+            }
+        } else if product.icon == "drop.fill" {
+            // Glucose Test Strips — medical visual
+            ZStack {
+                // Strip container
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color.white.opacity(0.9))
+                    .frame(width: 44, height: 56)
+                    .shadow(color: accent.opacity(0.2), radius: 4)
+                // Strip visual
+                ForEach(0..<3, id: \.self) { i in
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(LinearGradient(colors: [accent.opacity(0.8), accent.opacity(0.4)],
+                                             startPoint: .top, endPoint: .bottom))
+                        .frame(width: 8, height: 32)
+                        .offset(x: CGFloat(i - 1) * 12, y: -4)
+                }
+                // Drop icon
+                Image(systemName: "drop.fill")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(
+                        LinearGradient(colors: [accent, accent.opacity(0.6)],
+                                       startPoint: .top, endPoint: .bottom)
+                    )
+                    .shadow(color: accent.opacity(0.5), radius: 6)
+                    .offset(x: 24, y: -18)
+                // "100" count label
+                Text("100")
+                    .font(.system(size: 9, weight: .bold, design: .rounded))
+                    .foregroundColor(accent)
+                    .offset(y: 22)
+            }
+        } else if product.icon == "pill.fill" {
+            // Nutrition Kit — supplement pack visual
+            ZStack {
+                // Supplement capsules
+                ForEach(0..<3, id: \.self) { i in
+                    Capsule()
+                        .fill(LinearGradient(
+                            colors: i == 0 ? [.orange, .yellow] : i == 1 ? [accent, accent.opacity(0.6)] : [.brandPurple, .brandPurple.opacity(0.6)],
+                            startPoint: .leading, endPoint: .trailing))
+                        .frame(width: 36, height: 14)
+                        .rotationEffect(.degrees(Double(i - 1) * 25))
+                        .offset(x: CGFloat(i - 1) * 14, y: CGFloat(i == 1 ? -8 : 4))
+                }
+                // Leaf accent
+                Image(systemName: "leaf.fill")
+                    .font(.system(size: 22))
+                    .foregroundStyle(
+                        LinearGradient(colors: [accent, .brandTeal],
+                                       startPoint: .topLeading, endPoint: .bottomTrailing)
+                    )
+                    .shadow(color: accent.opacity(0.4), radius: 6)
+                    .offset(x: 0, y: -20)
+                // "30 day" label
+                Text("30 DAY")
+                    .font(.system(size: 7, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(accent.opacity(0.8))
+                    .cornerRadius(4)
+                    .offset(y: 24)
+            }
+        } else {
+            // Default fallback — enhanced icon
+            ZStack {
+                Circle()
+                    .fill(accent.opacity(0.15))
+                    .frame(width: 72, height: 72)
+                Image(systemName: product.icon)
+                    .font(.system(size: 32, weight: .medium))
+                    .foregroundStyle(
+                        LinearGradient(colors: [accent, accent.opacity(0.7)],
+                                       startPoint: .top, endPoint: .bottom))
+                    .shadow(color: accent.opacity(0.3), radius: 4, y: 2)
+            }
+        }
+    }
+
     var body: some View {
+        let accent = Color(hex: product.color)
         Button(action: onTap) {
             VStack(alignment: .leading, spacing: 10) {
-                // Icon / image area
+                // Product visual area
                 ZStack(alignment: .topTrailing) {
-                    RoundedRectangle(cornerRadius: 14)
-                        .fill(Color(hex: product.color).opacity(0.08))
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(
+                            LinearGradient(
+                                colors: [accent.opacity(0.06), accent.opacity(0.18)],
+                                startPoint: .topLeading, endPoint: .bottomTrailing
+                            )
+                        )
                         .overlay(
-                            RoundedRectangle(cornerRadius: 14)
+                            // Subtle inner glow
+                            RoundedRectangle(cornerRadius: 16)
                                 .fill(
-                                    LinearGradient(
-                                        colors: [
-                                            Color(hex: product.color).opacity(0.05),
-                                            Color(hex: product.color).opacity(0.18)
-                                        ],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
+                                    RadialGradient(
+                                        colors: [accent.opacity(0.08), .clear],
+                                        center: .center, startRadius: 10, endRadius: 90
                                     )
                                 )
                         )
                         .frame(height: 140)
                         .overlay(
-                            Group {
-                                if product.isRing, let firstColor = product.availableColors.first {
-                                    Image(firstColor.frontPhotoName)
-                                        .resizable()
-                                        .scaledToFit()
-                                        .padding(12)
-                                } else {
-                                    VStack(spacing: 8) {
-                                        ZStack {
-                                            Circle()
-                                                .fill(Color(hex: product.color).opacity(0.15))
-                                                .frame(width: 72, height: 72)
-                                            Image(systemName: product.icon)
-                                                .font(.system(size: 32, weight: .medium))
-                                                .foregroundStyle(
-                                                    LinearGradient(
-                                                        colors: [Color(hex: product.color), Color(hex: product.color).opacity(0.7)],
-                                                        startPoint: .top, endPoint: .bottom
-                                                    )
-                                                )
-                                                .shadow(color: Color(hex: product.color).opacity(0.3), radius: 4, y: 2)
-                                        }
-                                        // Star rating
-                                        HStack(spacing: 2) {
-                                            ForEach(0..<5) { i in
-                                                Image(systemName: Double(i) < product.rating ? "star.fill" : "star")
-                                                    .font(.system(size: 8))
-                                                    .foregroundColor(.brandAmber)
-                                            }
-                                            Text("(\(product.reviews))")
+                            VStack(spacing: 8) {
+                                productVisual(for: product)
+                                // Star rating
+                                if product.reviews > 0 {
+                                    HStack(spacing: 2) {
+                                        ForEach(0..<5, id: \.self) { i in
+                                            Image(systemName: Double(i) < product.rating ? "star.fill" : "star")
                                                 .font(.system(size: 8))
-                                                .foregroundColor(.secondary)
+                                                .foregroundColor(.brandAmber)
                                         }
+                                        Text("(\(product.reviews))")
+                                            .font(.system(size: 8))
+                                            .foregroundColor(.secondary)
                                     }
                                 }
                             }
                         )
+
                     // Badge
                     if product.isBestSeller {
-                        Text("⭐ Best")
+                        Text("Best")
                             .font(.system(size: 9, weight: .bold))
                             .padding(.horizontal, 6).padding(.vertical, 3)
-                            .background(Color.brandAmber)
+                            .background(
+                                LinearGradient(colors: [.brandAmber, .orange],
+                                               startPoint: .leading, endPoint: .trailing))
                             .foregroundColor(.white)
                             .cornerRadius(6)
                             .padding(6)
@@ -378,7 +903,9 @@ struct ProductCard2: View {
                         Text("NEW")
                             .font(.system(size: 9, weight: .bold))
                             .padding(.horizontal, 6).padding(.vertical, 3)
-                            .background(Color.brandTeal)
+                            .background(
+                                LinearGradient(colors: [.brandTeal, .green],
+                                               startPoint: .leading, endPoint: .trailing))
                             .foregroundColor(.white)
                             .cornerRadius(6)
                             .padding(6)
@@ -388,7 +915,7 @@ struct ProductCard2: View {
                         Circle()
                             .fill(Color.brandGreen)
                             .frame(width: 16, height: 16)
-                            .overlay(Image(systemName: "checkmark").font(.system(size: 8)).foregroundColor(.white))
+                            .overlay(Image(systemName: "checkmark").font(.system(size: 8, weight: .bold)).foregroundColor(.white))
                             .offset(x: -6, y: 6)
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                     }
@@ -400,7 +927,7 @@ struct ProductCard2: View {
                     .foregroundColor(.primary)
 
                 // Price row
-                HStack {
+                HStack(spacing: 6) {
                     Text(product.priceString(currencyCode: store.userCurrency))
                         .font(.headline).foregroundColor(.brandPurple)
                     if product.originalPrice > product.price {
@@ -415,6 +942,7 @@ struct ProductCard2: View {
                     HStack(spacing: 5) {
                         ForEach(product.availableColors, id: \.self) { c in
                             Circle().fill(c.color).frame(width: 10, height: 10)
+                                .overlay(Circle().stroke(Color.white.opacity(0.5), lineWidth: 0.5))
                         }
                     }
                 }
@@ -423,14 +951,14 @@ struct ProductCard2: View {
             .background(.ultraThinMaterial)
             .overlay(
                 RoundedRectangle(cornerRadius: 18)
-                    .fill(Color.white.opacity(0.6))
+                    .fill(Color.white.opacity(0.55))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 18)
-                    .stroke(Color.white.opacity(0.7), lineWidth: 1)
+                    .stroke(accent.opacity(0.15), lineWidth: 1)
             )
             .cornerRadius(18)
-            .shadow(color: Color(hex: product.color).opacity(0.12), radius: 10, y: 4)
+            .shadow(color: accent.opacity(0.15), radius: 10, y: 4)
         }
         .buttonStyle(.plain)
     }
@@ -565,7 +1093,7 @@ struct ProductDetailView2: View {
             }
         }
         .sheet(isPresented: $showPayment) {
-            PaymentSheetView(
+            ApplePayCheckoutView(
                 title: product.name,
                 subtitle: product.isRing ? "\(selectedColor.rawValue) · Size \(selectedSize.shortLabel)" : "Qty: \(quantity)",
                 amountGBP: totalPrice
@@ -1058,20 +1586,18 @@ struct CartCheckoutView: View {
 
                     Section {
                         // Apple Pay
-                        if StripeManager.shared.canMakeApplePayPayments {
-                            ApplePayButton {
-                                Task {
-                                    let result = await StripeManager.shared.simulatePayment(
-                                        amountGBP: grandTotal, method: "Apple Pay"
-                                    )
+                        if ApplePayManager.shared.canMakePayments {
+                            ApplePayButtonView {
+                                ApplePayManager.shared.purchaseProduct(
+                                    name: "BodySense Order",
+                                    amount: grandTotal
+                                ) { result in
                                     if case .success(let id, let method) = result {
                                         store.placeOrder(paymentMethod: method, paymentIntentId: id)
                                         dismiss()
                                     }
                                 }
                             }
-                            .frame(height: 50)
-                            .cornerRadius(12)
                         }
 
                         // Card / other
@@ -1099,7 +1625,7 @@ struct CartCheckoutView: View {
             }
         }
         .sheet(isPresented: $showPayment) {
-            PaymentSheetView(
+            ApplePayCheckoutView(
                 title: "BodySense Order",
                 subtitle: "\(store.cartCount) item(s)",
                 amountGBP: grandTotal
@@ -1363,7 +1889,7 @@ struct SubscriptionsTab: View {
             .padding(.horizontal)
         }
         .sheet(isPresented: $showPayment) {
-            PaymentSheetView(
+            ApplePayCheckoutView(
                 title: "\(selectedPlan.rawValue) Subscription",
                 subtitle: isYearly ? "Yearly — save 17%" : "Monthly — cancel anytime",
                 amountGBP: isYearly ? selectedPlan.basePriceGBP * 10 : selectedPlan.basePriceGBP
@@ -1502,7 +2028,7 @@ struct SubscriptionsTab: View {
                 }
             }
             .sheet(isPresented: $showGiftPayment) {
-                PaymentSheetView(
+                ApplePayCheckoutView(
                     title: "Gift \(giftPlan.rawValue) ×\(giftQuantity)",
                     subtitle: "1-year gift subscription\(giftQuantity > 1 ? "s" : "")",
                     amountGBP: giftPlan.basePriceGBP * 12 * Double(giftQuantity)

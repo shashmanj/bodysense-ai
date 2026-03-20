@@ -15,11 +15,21 @@ struct AgentTeamView: View {
     @State private var selectedAgent : AgentType?   = nil
     @State private var showMeeting   = false
 
-    // Available agents (excluding Becky who's doctor-only)
-    private let publicAgents: [AgentType] = [
-        .healthCoach, .nutritionist, .fitnessCoach,
-        .sleepCoach, .mindfulness, .shopAdvisor, .ceoAdvisor
-    ]
+    @State private var showReportShare = false
+    @State private var reportURL: URL? = nil
+
+    // Available agents — Nova first for CEO, excluding Becky (doctor-only)
+    private var publicAgents: [AgentType] {
+        var agents: [AgentType] = [
+            .nova, .healthCoach, .nutritionist, .fitnessCoach,
+            .sleepCoach, .mindfulness, .shopAdvisor, .ceoAdvisor, .customerCare
+        ]
+        // Filter CEO-only agents for non-CEO users
+        if !store.userProfile.isCEO {
+            agents.removeAll { $0.isCEOOnly }
+        }
+        return agents
+    }
 
     var body: some View {
         NavigationStack {
@@ -60,6 +70,42 @@ struct AgentTeamView: View {
                     .buttonStyle(.plain)
                     .padding(.horizontal)
 
+                    // ── Escalated Tickets (CEO only) ────────────────────────
+                    if store.userProfile.isCEO {
+                        let escalated = store.supportTickets.filter { $0.isEscalated && !$0.isResolved }
+                        if !escalated.isEmpty {
+                            escalatedTicketsSection(tickets: escalated)
+                        }
+                    }
+
+                    // ── Generate CEO Report button ──────────────────────────
+                    if store.userProfile.isCEO {
+                        Button {
+                            generateReport()
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "doc.text.fill")
+                                    .font(.title3).foregroundColor(.white)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Generate CEO Report")
+                                        .font(.subheadline).fontWeight(.semibold)
+                                    Text("PDF with agent performance, tickets & insights")
+                                        .font(.caption2).foregroundColor(.white.opacity(0.7))
+                                }
+                                Spacer()
+                                Image(systemName: "arrow.up.doc.fill")
+                                    .foregroundColor(.white.opacity(0.7))
+                            }
+                            .padding(14)
+                            .background(LinearGradient(
+                                colors: [Color(hex: "#E040FB"), Color(hex: "#7C4DFF")],
+                                startPoint: .leading, endPoint: .trailing))
+                            .cornerRadius(14)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.horizontal)
+                    }
+
                     // ── Agent roster ──────────────────────────────────────────
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Your Expert Team")
@@ -92,6 +138,85 @@ struct AgentTeamView: View {
             TeamMeetingView()
                 .environment(store)
         }
+        // Share report
+        .sheet(isPresented: $showReportShare) {
+            if let url = reportURL {
+                ShareSheet(items: [url])
+            }
+        }
+    }
+
+    // MARK: Escalated Tickets
+
+    private func escalatedTicketsSection(tickets: [SupportTicketRecord]) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundColor(.brandCoral)
+                Text("Escalated Tickets (\(tickets.count))")
+                    .font(.headline)
+            }
+            .padding(.horizontal)
+
+            ForEach(tickets) { ticket in
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text(ticket.issue)
+                            .font(.subheadline).fontWeight(.medium)
+                        Spacer()
+                        Text(ticket.createdAt.formatted(.dateTime.day().month().hour().minute()))
+                            .font(.caption2).foregroundColor(.secondary)
+                    }
+                    Text("Category: \(ticket.category)")
+                        .font(.caption).foregroundColor(.secondary)
+                    if !ticket.detail.isEmpty {
+                        Text(ticket.detail)
+                            .font(.caption).foregroundColor(.secondary)
+                    }
+                    if let ai = ticket.aiResponse {
+                        Text("AI response: \(ai)")
+                            .font(.caption2).foregroundColor(.secondary)
+                            .lineLimit(2)
+                    }
+
+                    // CEO reply button
+                    HStack(spacing: 12) {
+                        Button {
+                            resolveTicket(ticket)
+                        } label: {
+                            Label("Mark Resolved", systemImage: "checkmark.circle.fill")
+                                .font(.caption).fontWeight(.medium)
+                                .foregroundColor(.brandGreen)
+                                .padding(.horizontal, 12).padding(.vertical, 6)
+                                .background(Color.brandGreen.opacity(0.1))
+                                .cornerRadius(8)
+                        }
+                    }
+                }
+                .padding(14)
+                .background(Color.brandCoral.opacity(0.06))
+                .cornerRadius(14)
+                .overlay(RoundedRectangle(cornerRadius: 14)
+                    .stroke(Color.brandCoral.opacity(0.2), lineWidth: 1))
+                .padding(.horizontal)
+            }
+        }
+    }
+
+    private func resolveTicket(_ ticket: SupportTicketRecord) {
+        if let idx = store.supportTickets.firstIndex(where: { $0.id == ticket.id }) {
+            store.supportTickets[idx].status = "Resolved"
+            store.supportTickets[idx].resolvedAt = Date()
+            store.save()
+        }
+    }
+
+    private func generateReport() {
+        let report = AgentAnalyticsEngine.generateReport(from: AgentMemoryStore.shared, store: store)
+        if let url = AgentReportExporter.createPDFFile(report: report, store: store) {
+            reportURL = url
+            showReportShare = true
+        }
     }
 
     // MARK: CEO banner
@@ -106,21 +231,21 @@ struct AgentTeamView: View {
 
             HStack {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Welcome, CEO 👋")
+                    Text("Welcome, CEO")
                         .font(.title2.bold()).foregroundColor(.white)
                     Text("Your AI team is ready.\nAsk any agent directly, or call a full team meeting.")
                         .font(.subheadline).foregroundColor(.white.opacity(0.75))
                         .lineSpacing(3)
                     HStack(spacing: 6) {
                         Image(systemName: "circle.fill")
-                            .font(.system(size: 8)).foregroundColor(.green)
+                            .font(.caption2).foregroundColor(.green)
                         Text("\(publicAgents.count) agents online")
                             .font(.caption).foregroundColor(.white.opacity(0.6))
                     }
                 }
                 Spacer()
                 Image(systemName: "chart.line.uptrend.xyaxis")
-                    .font(.system(size: 52))
+                    .font(.largeTitle)
                     .foregroundColor(.white.opacity(0.15))
             }
             .padding(20)
@@ -341,7 +466,7 @@ struct AgentChatView: View {
             let history = messages.dropLast().map { (role: $0.isUser ? "user" : "assistant", content: $0.content) }
 
             do {
-                let reply = try await AnthropicClient.shared.sendWithHistory(
+                let reply = try await AIClient.shared.sendWithHistory(
                     system: agent.systemPrompt,
                     history: history,
                     userMessage: trimmed
@@ -366,31 +491,56 @@ struct AgentChatBubble: View {
     let content: String
     let isUser: Bool
     let agent: AgentType
+    @State private var showCopied = false
 
     var body: some View {
-        HStack(alignment: .bottom, spacing: 8) {
-            if !isUser {
-                ZStack {
-                    Circle().fill(Color(hex: agent.colorHex).opacity(0.2)).frame(width: 28, height: 28)
-                    Image(systemName: agent.icon).font(.caption2)
-                        .foregroundColor(Color(hex: agent.colorHex))
+        VStack(alignment: isUser ? .trailing : .leading, spacing: 4) {
+            HStack(alignment: .bottom, spacing: 8) {
+                if !isUser {
+                    ZStack {
+                        Circle().fill(Color(hex: agent.colorHex).opacity(0.2)).frame(width: 28, height: 28)
+                        Image(systemName: agent.icon).font(.caption2)
+                            .foregroundColor(Color(hex: agent.colorHex))
+                    }
                 }
+
+                Text(content)
+                    .font(.body)
+                    .foregroundColor(isUser ? .white : .primary)
+                    .textSelection(.enabled)
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+                    .background(isUser
+                        ? Color(hex: agent.colorHex)
+                        : Color(.systemBackground))
+                    .cornerRadius(16, corners: isUser
+                        ? [.topLeft, .topRight, .bottomLeft]
+                        : [.topLeft, .topRight, .bottomRight])
+                    .shadow(color: .black.opacity(0.04), radius: 4, y: 2)
+                    .frame(maxWidth: 280, alignment: isUser ? .trailing : .leading)
+
+                if isUser { Spacer(minLength: 0) }
             }
 
-            Text(content)
-                .font(.body)
-                .foregroundColor(isUser ? .white : .primary)
-                .padding(.horizontal, 14).padding(.vertical, 10)
-                .background(isUser
-                    ? Color(hex: agent.colorHex)
-                    : Color(.systemBackground))
-                .cornerRadius(16, corners: isUser
-                    ? [.topLeft, .topRight, .bottomLeft]
-                    : [.topLeft, .topRight, .bottomRight])
-                .shadow(color: .black.opacity(0.04), radius: 4, y: 2)
-                .frame(maxWidth: 280, alignment: isUser ? .trailing : .leading)
-
-            if isUser { Spacer(minLength: 0) }
+            // Copy button for agent messages
+            if !isUser {
+                Button {
+                    UIPasteboard.general.string = content
+                    withAnimation { showCopied = true }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                        withAnimation { showCopied = false }
+                    }
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: showCopied ? "checkmark" : "doc.on.doc")
+                            .font(.system(size: 12))
+                        Text(showCopied ? "Copied" : "Copy")
+                            .font(.system(size: 10))
+                    }
+                    .foregroundColor(showCopied ? .green : .secondary.opacity(0.6))
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, 44)
+            }
         }
         .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
     }
@@ -453,7 +603,7 @@ struct TeamMeetingView: View {
                         .frame(width: 22, height: 22)
                         .overlay(
                             Image(systemName: agent.icon)
-                                .font(.system(size: 9)).foregroundColor(.white)
+                                .font(.caption2).foregroundColor(.white)
                         )
                 }
             }
@@ -472,7 +622,7 @@ struct TeamMeetingView: View {
 
             VStack(spacing: 16) {
                 Image(systemName: "person.3.sequence.fill")
-                    .font(.system(size: 60))
+                    .font(.largeTitle)
                     .foregroundColor(Color(hex: "#FFD700"))
 
                 Text("What's the agenda?")
@@ -607,7 +757,7 @@ struct TeamMeetingView: View {
                 )
 
                 do {
-                    let reply = try await AnthropicClient.shared.send(
+                    let reply = try await AIClient.shared.send(
                         system: meetingPrompt,
                         userMessage: "Please share your expert perspective on: \(topic)"
                     )
@@ -663,6 +813,7 @@ struct MeetingAgentCard: View {
             if expanded {
                 Text(text)
                     .font(.subheadline)
+                    .textSelection(.enabled)
                     .padding(.horizontal)
                     .padding(.bottom, 14)
                     .foregroundColor(.primary)

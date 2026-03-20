@@ -39,7 +39,18 @@ class HealthAIEngine {
     // Conversation history for multi-turn memory
     private var conversationHistory: [(role: String, content: String)] = []
 
-    init(store: HealthStore) { self.store = store }
+    // HealthSense Agent — the learning, adaptive AI brain
+    private(set) var agent: HealthSenseAgent?
+
+    // Agent state exposed for UI
+    var currentDomain: HealthDomain { agent?.currentDomain ?? .general }
+    var agentPersona: String { agent?.agentPersona ?? "HealthSense" }
+    var agentLearningCount: Int { agent?.learningCount ?? 0 }
+
+    init(store: HealthStore) {
+        self.store = store
+        self.agent = HealthSenseAgent(store: store)
+    }
 
     // ── Build personalised health context from user data ──────────────────
     private var userHealthContext: String {
@@ -73,7 +84,7 @@ class HealthAIEngine {
         ctx += "Targets — Glucose: \(Int(p.targetGlucoseMin))-\(Int(p.targetGlucoseMax)) mg/dL, BP: <\(p.targetSystolic)/\(p.targetDiastolic), Steps: \(p.targetSteps)/day, Sleep: \(String(format: "%.1f", p.targetSleep))hrs\n"
         if !p.selectedGoals.isEmpty { ctx += "Health goals: \(p.selectedGoals.joined(separator: ", "))\n" }
 
-        // Medications with adherence
+        // Medications with adherence + database-enriched context
         let activeMeds = store.medications.filter { $0.isActive }
         ctx += "\nMEDICATIONS (\(activeMeds.count) active):\n"
         if activeMeds.isEmpty {
@@ -85,6 +96,37 @@ class HealthAIEngine {
                 let total = recentLogs.count
                 let adherence = total > 0 ? Int(Double(taken) / Double(total) * 100) : 0
                 ctx += "  \(med.name) \(med.dosage)\(med.unit) — \(med.frequency.rawValue) — 7-day adherence: \(adherence)%\n"
+
+                // Enrich with database info if linked
+                if let entry = med.databaseEntry {
+                    ctx += "    Class: \(entry.therapeuticClass)\n"
+                    if !entry.warnings.isEmpty {
+                        ctx += "    Key warnings: \(entry.warnings.prefix(2).joined(separator: "; "))\n"
+                    }
+                    if !entry.foodInteractions.isEmpty {
+                        ctx += "    Food interactions: \(entry.foodInteractions.joined(separator: "; "))\n"
+                    }
+                }
+            }
+
+            // Cross-check drug interactions for users on 2+ meds
+            if activeMeds.count >= 2 {
+                var interactionNotes: [String] = []
+                let medNames = activeMeds.compactMap { $0.genericName ?? $0.name }
+                for i in 0..<medNames.count {
+                    for j in (i+1)..<medNames.count {
+                        let found = MedicineDatabase.shared.interactionsBetween(medNames[i], medNames[j])
+                        if !found.isEmpty {
+                            interactionNotes.append(contentsOf: found)
+                        }
+                    }
+                }
+                if !interactionNotes.isEmpty {
+                    ctx += "\n  DRUG INTERACTION ALERTS:\n"
+                    for note in interactionNotes.prefix(5) {
+                        ctx += "    \u{26A0} \(note)\n"
+                    }
+                }
             }
         }
 
@@ -208,45 +250,62 @@ class HealthAIEngine {
     func respond(to input: String) async -> ChatMessage {
         isTyping = true
 
-        // ── Try Claude API first (when key is configured) ─────────────────
-        if await AnthropicClient.shared.isConfigured {
+        // ── HealthSense Agent — adaptive, learning AI (primary path) ─────
+        // The agent handles EVERYTHING: API calls, intelligent fallback, learning.
+        // It NEVER falls through to the dumb rule-based system.
+        if let agent = agent {
+            // Pass history WITHOUT the current message (agent adds it internally via API)
+            let historyForAgent = Array(conversationHistory.suffix(18))
+
+            let result = await agent.respond(
+                to: input,
+                conversationHistory: historyForAgent
+            )
+
+            // Now update our conversation history
+            conversationHistory.append((role: "user", content: input))
+            conversationHistory.append((role: "assistant", content: result.response))
+
+            isTyping = false
+
+            var message = ChatMessage(content: result.response, isUser: false)
+            message.chips = result.chips
+            return message
+        }
+
+        // ── Legacy path (only if agent init failed) ──────────────────────
+        conversationHistory.append((role: "user", content: input))
+
+        if await AIClient.shared.isConfigured() {
             do {
-                // Build personalised system prompt with user health context
                 let personalPrompt = AISystemPrompts.healthCoach + userHealthContext
-
-                // Add user message to history
-                conversationHistory.append((role: "user", content: input))
-
-                // Keep last 20 messages for context window management
                 let recentHistory = Array(conversationHistory.suffix(20))
 
-                let reply = try await AnthropicClient.shared.sendWithHistory(
+                let reply = try await AIClient.shared.sendWithHistory(
                     system: personalPrompt,
                     history: recentHistory.dropLast().map { ($0.role, $0.content) },
                     userMessage: input
                 )
 
-                // Add assistant reply to history
                 conversationHistory.append((role: "assistant", content: reply))
-
                 isTyping = false
                 return ChatMessage(content: reply, isUser: false)
             } catch {
-                // Log error and fall through to rule-based
                 print("⚠️ Claude API error: \(error.localizedDescription)")
-                // Remove the failed user message from history
-                if conversationHistory.last?.role == "user" {
-                    conversationHistory.removeLast()
-                }
             }
         }
 
-        // ── Rule-based fallback ───────────────────────────────────────────
-        let delay = Double.random(in: 0.6...1.2)
+        // Rule-based as absolute last resort
+        let delay = Double.random(in: 0.4...0.8)
         try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
         isTyping = false
         let text = input.lowercased()
         return buildReply(for: text, raw: input)
+    }
+
+    // ── Feedback passthrough to agent ─────────────────────────────────────
+    func reportFeedback(_ feedback: MessageFeedback, forQuery query: String) {
+        agent?.processFeedback(feedback, forQuery: query, domain: currentDomain)
     }
 
     // ── Intent Router ────────────────────────────────────────────────────────
@@ -1322,6 +1381,42 @@ class HealthAIEngine {
             }
         }
 
+        // Dynamic database lookup — find any medicine mentioned in user text
+        let searchResults = MedicineDatabase.shared.search(text)
+        if let dbMed = searchResults.first {
+            var reply = "💊 **\(dbMed.genericName)** (\(dbMed.therapeuticClass))\n\n"
+            reply += "\(dbMed.description)\n\n"
+            if !dbMed.brandNames.isEmpty {
+                reply += "**Brand names:** \(dbMed.brandNames.joined(separator: ", "))\n\n"
+            }
+            reply += "**Typical dosages:** \(dbMed.typicalDosages.joined(separator: ", "))\n"
+            reply += "**Form:** \(dbMed.forms.map { $0.rawValue }.joined(separator: ", "))\n"
+            reply += "**OTC:** \(dbMed.isOTC ? "Yes" : "Prescription only")\n\n"
+            if !dbMed.warnings.isEmpty {
+                reply += "⚠️ **Warnings:**\n"
+                for w in dbMed.warnings { reply += "• \(w)\n" }
+                reply += "\n"
+            }
+            if !dbMed.sideEffects.isEmpty {
+                reply += "**Common side effects:** \(dbMed.sideEffects.prefix(5).joined(separator: ", "))\n\n"
+            }
+            if !dbMed.foodInteractions.isEmpty {
+                reply += "🍽️ **Food interactions:**\n"
+                for f in dbMed.foodInteractions { reply += "• \(f)\n" }
+                reply += "\n"
+            }
+            if !dbMed.interactions.isEmpty {
+                reply += "⚠️ **Drug interactions:** \(dbMed.interactions.prefix(3).joined(separator: "; "))\n\n"
+            }
+            if !meds.isEmpty {
+                reply += "**Your active medications:**\n"
+                for med in meds.prefix(5) {
+                    reply += "• \(med.name) \(med.dosage)\(med.unit) — \(med.frequency.rawValue)\n"
+                }
+            }
+            return msg(reply, chips: ["⏰ Missed a dose?", "⚠️ Side effects", "🍽️ Take with food?", "💊 All my meds"])
+        }
+
         // General medication reply
         guard !meds.isEmpty else {
             return msg("No medications added yet, \(name). Go to **Track → Meds** to add your prescriptions.", chips: ["📋 Summary"])
@@ -1331,6 +1426,31 @@ class HealthAIEngine {
         for med in meds {
             let times = med.timeOfDay.map { $0.rawValue }.joined(separator: ", ")
             reply += "• **\(med.name)** \(med.dosage) \(med.unit) — \(med.frequency.rawValue) at \(times)\n"
+            // Add database-enriched info per medication
+            if let entry = med.databaseEntry {
+                reply += "  _\(entry.therapeuticClass)_"
+                if !entry.warnings.isEmpty {
+                    reply += " · ⚠️ \(entry.warnings.first!)"
+                }
+                reply += "\n"
+            }
+        }
+
+        // Drug interaction cross-check
+        if meds.count >= 2 {
+            let medNames = meds.compactMap { $0.genericName ?? $0.name }
+            var interactions: [String] = []
+            for i in 0..<medNames.count {
+                for j in (i+1)..<medNames.count {
+                    interactions.append(contentsOf: MedicineDatabase.shared.interactionsBetween(medNames[i], medNames[j]))
+                }
+            }
+            if !interactions.isEmpty {
+                reply += "\n🚨 **Drug Interaction Alerts:**\n"
+                for note in interactions.prefix(5) {
+                    reply += "• ⚠️ \(note)\n"
+                }
+            }
         }
 
         reply += "\n**Universal medication rules:**\n"

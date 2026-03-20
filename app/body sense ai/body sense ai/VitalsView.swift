@@ -17,8 +17,8 @@ struct VitalsView: View {
             VStack(spacing: 0) {
                 // Segment bar
                 Picker("", selection: $segment) {
-                    Text("🩸 Glucose").tag(0)
-                    Text("❤️ Blood Pressure").tag(1)
+                    Text("Glucose").tag(0)
+                    Text("Blood Pressure").tag(1)
                 }
                 .pickerStyle(.segmented)
                 .padding()
@@ -93,7 +93,7 @@ struct GlucoseListView: View {
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
-                Text("\(Int(r.value))").font(.system(size: 22, weight: .bold)).foregroundColor(status.color)
+                Text("\(Int(r.value))").font(.title2.bold()).foregroundColor(status.color)
                 Text("mg/dL").font(.caption2).foregroundColor(.secondary)
             }
         }
@@ -150,7 +150,7 @@ struct BPListView: View {
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
                 Text("\(r.systolic)/\(r.diastolic)")
-                    .font(.system(size: 20, weight: .bold)).foregroundColor(r.category.color)
+                    .font(.title3.bold()).foregroundColor(r.category.color)
                 Text("❤︎ \(r.pulse) bpm").font(.caption2).foregroundColor(.secondary)
             }
         }
@@ -279,7 +279,7 @@ struct AddBPSheet: View {
 func emptyState(_ title: String, _ subtitle: String, _ icon: String) -> some View {
     VStack(spacing: 16) {
         Spacer()
-        Image(systemName: icon).font(.system(size: 60)).foregroundColor(.brandPurple.opacity(0.3))
+        Image(systemName: icon).font(.largeTitle).foregroundColor(.brandPurple.opacity(0.3))
         Text(title).font(.headline)
         Text(subtitle).font(.subheadline).foregroundColor(.secondary).multilineTextAlignment(.center)
         Spacer()

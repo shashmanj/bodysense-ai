@@ -23,7 +23,7 @@ struct FamilySharingView: View {
                                                  startPoint: .topLeading, endPoint: .bottomTrailing))
                             .frame(width: 120, height: 120)
                         Image(systemName: "person.3.fill")
-                            .font(.system(size: 48))
+                            .font(.largeTitle)
                             .foregroundStyle(LinearGradient(colors: [.brandPurple, .brandTeal],
                                                             startPoint: .topLeading, endPoint: .bottomTrailing))
                     }
@@ -98,7 +98,7 @@ struct FamilySharingView: View {
             Spacer()
         }
         .padding(.horizontal, 16).padding(.vertical, 10)
-        .background(Color.white.opacity(0.6))
+        .background(Color(.secondarySystemGroupedBackground).opacity(0.6))
         .cornerRadius(12)
     }
 }

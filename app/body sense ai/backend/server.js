@@ -1,5 +1,5 @@
-// BodySense AI — Node.js Backend
-// Stripe payment endpoints for iOS app
+// BodySense AI — Node.js Backend (Production-Ready)
+// Stripe payments + Firebase + GDPR + CEO Metrics + Push Notifications
 // Deploy to: Railway / Render / Heroku / VPS
 //
 // ── SETUP ──────────────────────────────────────────────────────────────────
@@ -9,20 +9,107 @@
 // ───────────────────────────────────────────────────────────────────────────
 
 require("dotenv").config();
-const express  = require("express");
-const cors     = require("cors");
-const stripe   = require("stripe")(process.env.STRIPE_SECRET_KEY);
+const express    = require("express");
+const cors       = require("cors");
+const helmet     = require("helmet");
+const rateLimit  = require("express-rate-limit");
+const stripe     = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(cors());
-app.use(express.json());
+// ── Security Middleware ──────────────────────────────────────────────────
+app.use(helmet());
+app.use(cors({
+  origin: [
+    "https://bodysenseai.co.uk",
+    "https://www.bodysenseai.co.uk",
+    "https://api.bodysenseai.co.uk"
+  ],
+  methods: ["GET", "POST", "DELETE"]
+}));
 
-// ── Health check ──────────────────────────────────────────────────────────
-app.get("/", (req, res) => {
-  res.json({ status: "BodySense AI backend running ✅", version: "1.0.0" });
+// Rate limiting — 100 req / 15 min per IP
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  message: { error: "Too many requests. Please try again later." }
 });
+app.use("/create-", apiLimiter);
+app.use("/book-", apiLimiter);
+app.use("/gdpr/", apiLimiter);
+
+// JSON body (except webhooks which need raw)
+app.use((req, res, next) => {
+  if (req.originalUrl === "/webhook") {
+    next();
+  } else {
+    express.json()(req, res, next);
+  }
+});
+
+// ── Firebase Admin Init (optional — only if FIREBASE_PROJECT_ID is set) ──
+let db = null;
+try {
+  if (process.env.FIREBASE_PROJECT_ID) {
+    const admin = require("firebase-admin");
+    admin.initializeApp({
+      credential: admin.credential.applicationDefault(),
+      projectId: process.env.FIREBASE_PROJECT_ID
+    });
+    db = admin.firestore();
+    console.log("Firebase connected:", process.env.FIREBASE_PROJECT_ID);
+  }
+} catch (e) {
+  console.log("Firebase not configured — running Stripe-only mode");
+}
+
+// ── CEO Auth Middleware ──────────────────────────────────────────────────
+function requireCEO(req, res, next) {
+  const email = req.headers["x-ceo-email"] || req.body?.ceoEmail;
+  if (email !== "kiran.shashi47.sk@gmail.com") {
+    return res.status(403).json({ error: "Unauthorized — CEO access only" });
+  }
+  next();
+}
+
+// ── Health check (enhanced) ──────────────────────────────────────────────
+app.get("/", (req, res) => {
+  res.json({
+    status: "BodySense AI backend running ✅",
+    version: "2.0.0",
+    uptime: Math.floor(process.uptime()),
+    stripe: process.env.STRIPE_SECRET_KEY ? "configured" : "missing",
+    firebase: db ? "connected" : "not configured",
+    environment: process.env.NODE_ENV || "development",
+    timestamp: new Date().toISOString()
+  });
+});
+
+// ── Deep health check (Stripe + Firebase connectivity) ──────────────────
+app.get("/health", async (req, res) => {
+  const checks = { stripe: false, firebase: false, overall: "unhealthy" };
+  try {
+    await stripe.balance.retrieve();
+    checks.stripe = true;
+  } catch (e) { checks.stripeError = e.message; }
+  if (db) {
+    try {
+      await db.collection("_healthcheck").limit(1).get();
+      checks.firebase = true;
+    } catch (e) { checks.firebaseError = e.message; }
+  } else { checks.firebase = null; }
+  checks.overall = checks.stripe ? "healthy" : "degraded";
+  res.status(checks.stripe ? 200 : 503).json(checks);
+});
+
+// ── Input validation helpers ────────────────────────────────────────────
+function validateEmail(email) {
+  return typeof email === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+function validateAmount(amount) {
+  return typeof amount === "number" && amount >= 50 && amount <= 99999999;
+}
 
 // ── 1. Create Payment Intent (one-off purchases) ──────────────────────────
 // Called by: StripeManager.createPaymentIntent(amountGBP:)
@@ -168,13 +255,298 @@ app.post("/webhook", express.raw({ type: "application/json" }), (req, res) => {
   res.json({ received: true });
 });
 
+// ── 5. User Registration (Firebase) ─────────────────────────────────────
+app.post("/register-user", async (req, res) => {
+  if (!db) return res.json({ success: true, mode: "local" });
+  try {
+    const { email, name, isDoctor, country, city } = req.body;
+    if (!email) return res.status(400).json({ error: "Email required" });
+
+    const admin = require("firebase-admin");
+    await db.collection("users").doc(email).set({
+      name: name || "", email, isDoctor: isDoctor || false,
+      country: country || "United Kingdom", city: city || "",
+      subscription: "free",
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      lastActiveAt: admin.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+
+    res.json({ success: true, userId: email });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── 6. Doctor Registration Request ──────────────────────────────────────
+app.post("/submit-doctor-request", async (req, res) => {
+  if (!db) return res.json({ success: true, mode: "local" });
+  try {
+    const r = req.body;
+    if (!r.email || !r.gmcNumber) return res.status(400).json({ error: "Email and GMC required" });
+
+    const admin = require("firebase-admin");
+    await db.collection("doctorRequests").add({
+      ...r, status: "Pending",
+      submittedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── 7. CEO: Approve/Reject Doctor ───────────────────────────────────────
+app.post("/approve-doctor", requireCEO, async (req, res) => {
+  if (!db) return res.json({ success: true, mode: "local" });
+  try {
+    const { requestId, approved } = req.body;
+    const admin = require("firebase-admin");
+    await db.collection("doctorRequests").doc(requestId).update({
+      status: approved ? "Approved" : "Rejected",
+      reviewedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── 8. CEO: Business Metrics Dashboard ──────────────────────────────────
+app.get("/ceo/metrics", requireCEO, async (req, res) => {
+  if (!db) return res.json({ totalUsers: 0, note: "Firebase not configured" });
+  try {
+    const [users, doctors, orders, appointments] = await Promise.all([
+      db.collection("users").get(),
+      db.collection("doctorRequests").get(),
+      db.collection("orders").get(),
+      db.collection("appointments").get()
+    ]);
+
+    res.json({
+      totalUsers: users.size,
+      totalDoctors: doctors.docs.filter(d => d.data().status === "Approved").length,
+      pendingDoctors: doctors.docs.filter(d => d.data().status === "Pending").length,
+      totalOrders: orders.size,
+      totalAppointments: appointments.size,
+      totalRevenue: orders.docs.reduce((s, d) => s + (d.data().total || 0), 0)
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── 9. Push Notification (APNs via FCM) ─────────────────────────────────
+app.post("/send-notification", async (req, res) => {
+  try {
+    const admin = require("firebase-admin");
+    const { token, title, body, data } = req.body;
+    if (!token) return res.status(400).json({ error: "Device token required" });
+
+    await admin.messaging().send({
+      token, notification: { title, body }, data: data || {},
+      apns: { payload: { aps: { sound: "default", badge: 1 } } }
+    });
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── 10. GDPR: Data Export (Article 20 — Portability) ────────────────────
+app.post("/gdpr/export", async (req, res) => {
+  if (!db) return res.json({ gdprBasis: "Article 20", note: "Data stored locally on device" });
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: "Email required" });
+
+    const userDoc = await db.collection("users").doc(email).get();
+    if (!userDoc.exists) return res.status(404).json({ error: "User not found" });
+
+    res.json({
+      gdprBasis: "Article 20 — Right to Data Portability",
+      exportDate: new Date().toISOString(),
+      data: userDoc.data()
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── 11. GDPR: Delete Account (Article 17 — Erasure) ────────────────────
+app.delete("/gdpr/delete", async (req, res) => {
+  if (!db) return res.json({ success: true, note: "Delete from device only" });
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: "Email required" });
+
+    const batch = db.batch();
+    batch.delete(db.collection("users").doc(email));
+
+    const [appointments, orders] = await Promise.all([
+      db.collection("appointments").where("patientEmail", "==", email).get(),
+      db.collection("orders").where("email", "==", email).get()
+    ]);
+    appointments.forEach(doc => batch.delete(doc.ref));
+    orders.forEach(doc => batch.delete(doc.ref));
+
+    await batch.commit();
+    res.json({
+      success: true,
+      gdprBasis: "Article 17 — Right to Erasure",
+      deletedAt: new Date().toISOString()
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── 12. AI Chat Proxy (routes through backend so API key stays server-side) ─
+
+// ── Subscription-tier AI limits ─────────────────────────────────────────
+// Tracks daily AI message counts per user email (resets at midnight UTC)
+const aiUsage = new Map(); // key: "email:YYYY-MM-DD", value: count
+
+const AI_LIMITS = {
+  free:    5,    // 5 messages/day  — enough to try, encourages upgrade
+  pro:     50,   // 50 messages/day — power user
+  premium: 500,  // 500 messages/day — virtually unlimited
+  ceo:     99999 // CEO: no limit
+};
+
+function getAILimit(subscription, email) {
+  if (email === "kiran.shashi47.sk@gmail.com") return AI_LIMITS.ceo;
+  switch (subscription) {
+    case "premium": return AI_LIMITS.premium;
+    case "pro":     return AI_LIMITS.pro;
+    default:        return AI_LIMITS.free;
+  }
+}
+
+function getDailyKey(email) {
+  const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+  return `${email}:${today}`;
+}
+
+function checkAndIncrementUsage(email, limit) {
+  const key = getDailyKey(email);
+  const current = aiUsage.get(key) || 0;
+  if (current >= limit) return { allowed: false, used: current, limit };
+  aiUsage.set(key, current + 1);
+  return { allowed: true, used: current + 1, limit };
+}
+
+// Clean up old usage entries every hour (prevent memory leak)
+setInterval(() => {
+  const today = new Date().toISOString().split("T")[0];
+  for (const key of aiUsage.keys()) {
+    if (!key.endsWith(today)) aiUsage.delete(key);
+  }
+}, 60 * 60 * 1000);
+
+// Rate limit: 20 req / min per IP for AI
+const aiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  message: { error: "AI rate limit reached. Please wait a moment." }
+});
+
+app.post("/ai/chat", aiLimiter, async (req, res) => {
+  try {
+    const anthropicKey = process.env.ANTHROPIC_API_KEY;
+    if (!anthropicKey) {
+      return res.status(503).json({ error: "AI service not configured on server" });
+    }
+
+    const { system, messages, model, max_tokens, userEmail, subscription } = req.body;
+
+    // Validate required fields
+    if (!messages || !Array.isArray(messages) || messages.length === 0) {
+      return res.status(400).json({ error: "messages array is required" });
+    }
+    if (!system || typeof system !== "string") {
+      return res.status(400).json({ error: "system prompt is required" });
+    }
+
+    // Validate message format
+    for (const msg of messages) {
+      if (!msg.role || !msg.content) {
+        return res.status(400).json({ error: "Each message must have role and content" });
+      }
+      if (!["user", "assistant"].includes(msg.role)) {
+        return res.status(400).json({ error: "Message role must be 'user' or 'assistant'" });
+      }
+    }
+
+    // ── Subscription-tier daily limit check ──
+    const email = (userEmail || "anonymous").toLowerCase();
+    const tier = (subscription || "free").toLowerCase();
+    const limit = getAILimit(tier, email);
+    const usage = checkAndIncrementUsage(email, limit);
+
+    if (!usage.allowed) {
+      const upgradeMsg = tier === "free"
+        ? "Upgrade to Pro (£3.99/mo) for 50 messages/day, or Premium (£8.99/mo) for 500."
+        : tier === "pro"
+        ? "Upgrade to Premium (£8.99/mo) for 500 messages/day."
+        : "Daily limit reached. Please try again tomorrow.";
+
+      return res.status(429).json({
+        error: `Daily AI limit reached (${usage.limit} messages for ${tier} plan). ${upgradeMsg}`,
+        used: usage.used,
+        limit: usage.limit,
+        subscription: tier,
+        upgradeAvailable: tier !== "premium" && tier !== "ceo"
+      });
+    }
+
+    // Cap max_tokens to prevent abuse
+    const safeMaxTokens = Math.min(max_tokens || 2048, 4096);
+
+    // Forward to Anthropic API
+    const anthropicRes = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": anthropicKey,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        model: model || "claude-haiku-4-5-20251001",
+        max_tokens: safeMaxTokens,
+        system,
+        messages
+      })
+    });
+
+    const data = await anthropicRes.json();
+
+    if (!anthropicRes.ok) {
+      console.error("Anthropic API error:", anthropicRes.status, data);
+      return res.status(anthropicRes.status).json({
+        error: data.error?.message || "AI service error"
+      });
+    }
+
+    // Return text + usage info so app can show remaining messages
+    const text = data.content?.[0]?.text || "";
+    res.json({
+      text,
+      model: data.model,
+      usage: { used: usage.used, limit: usage.limit, remaining: usage.limit - usage.used }
+    });
+
+    // Log usage (no PII — only first 3 chars of email)
+    console.log(`AI chat | ${tier} | ${email.substring(0, 3)}*** | msg ${usage.used}/${usage.limit} | tokens: ${data.usage?.output_tokens || "?"}`);
+
+  } catch (err) {
+    console.error("ai/chat error:", err.message);
+    res.status(500).json({ error: "AI service temporarily unavailable" });
+  }
+});
+
 // ── Start ─────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
-  console.log(`\n🚀 BodySense AI backend listening on port ${PORT}`);
-  console.log(`   Stripe mode: ${process.env.STRIPE_SECRET_KEY?.startsWith("sk_live") ? "🟢 LIVE" : "🟡 TEST"}`);
-  console.log(`   Endpoints:`);
-  console.log(`     POST /create-payment-intent`);
-  console.log(`     POST /create-subscription`);
-  console.log(`     POST /book-appointment`);
-  console.log(`     POST /webhook\n`);
+  console.log(`\nBodySense AI backend listening on port ${PORT}`);
+  console.log(`  Stripe: ${process.env.STRIPE_SECRET_KEY?.startsWith("sk_live") ? "LIVE" : "TEST"}`);
+  console.log(`  Firebase: ${db ? "Connected" : "Not configured (Stripe-only mode)"}`);
+  console.log(`  Endpoints:`);
+  console.log(`    POST /create-payment-intent`);
+  console.log(`    POST /create-subscription`);
+  console.log(`    POST /book-appointment`);
+  console.log(`    POST /webhook`);
+  console.log(`    POST /register-user`);
+  console.log(`    POST /submit-doctor-request`);
+  console.log(`    POST /approve-doctor (CEO)`);
+  console.log(`    GET  /ceo/metrics (CEO)`);
+  console.log(`    POST /send-notification`);
+  console.log(`    POST /gdpr/export`);
+  console.log(`    DELETE /gdpr/delete`);
+  console.log(`    POST /ai/chat (AI proxy → Anthropic)`);
+  console.log(`  AI: ${process.env.ANTHROPIC_API_KEY ? "Configured" : "Not configured (set ANTHROPIC_API_KEY)"}\n`);
 });

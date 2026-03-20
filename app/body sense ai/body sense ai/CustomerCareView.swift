@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import UserNotifications
 
 // MARK: - Issue Category
 
@@ -81,18 +82,22 @@ struct SupportTicket: Identifiable {
     let date        : Date = Date()
     var status      : TicketStatus = .open
     var aiResponse  : String? = nil
+    var isEscalated : Bool = false
+    var ceoReply    : String? = nil
 }
 
 enum TicketStatus: String {
     case open       = "Open"
     case inProgress = "In Progress"
     case resolved   = "Resolved"
+    case escalated  = "Escalated"
 
     var color: Color {
         switch self {
         case .open:       return .brandAmber
         case .inProgress: return .brandPurple
         case .resolved:   return .brandGreen
+        case .escalated:  return .brandCoral
         }
     }
 
@@ -101,6 +106,7 @@ enum TicketStatus: String {
         case .open:       return "circle"
         case .inProgress: return "arrow.triangle.2.circlepath"
         case .resolved:   return "checkmark.circle.fill"
+        case .escalated:  return "exclamationmark.triangle.fill"
         }
     }
 }
@@ -113,6 +119,7 @@ struct CustomerCareView: View {
     @State private var tickets: [SupportTicket] = []
     @State private var selectedCategory: SupportCategory? = nil
     @State private var showNewTicket = false
+    @State private var showDeleteAccountAlert = false
 
     var body: some View {
         NavigationView {
@@ -135,6 +142,9 @@ struct CustomerCareView: View {
                     // ── Contact info ──
                     contactSection
 
+                    // ── Delete Account (placed in Help & Support per Apple / App Store guidelines) ──
+                    deleteAccountSection
+
                     Spacer(minLength: 32)
                 }
                 .padding(.top)
@@ -151,6 +161,63 @@ struct CustomerCareView: View {
         .sheet(item: $selectedCategory) { cat in
             SupportCategorySheet(category: cat, tickets: $tickets)
         }
+        .onAppear {
+            // Load persisted tickets
+            tickets = store.supportTickets.map { record in
+                var ticket = SupportTicket(
+                    category: SupportCategory(rawValue: record.category) ?? .general,
+                    issue: record.issue,
+                    detail: record.detail
+                )
+                ticket.status = TicketStatus(rawValue: record.status) ?? .open
+                ticket.aiResponse = record.aiResponse
+                ticket.isEscalated = record.isEscalated
+                ticket.ceoReply = record.ceoReply
+                return ticket
+            }
+        }
+    }
+
+    // ── Delete Account Section ──
+    var deleteAccountSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Account").font(.headline).padding(.horizontal)
+            VStack(spacing: 0) {
+                Button(role: .destructive) {
+                    showDeleteAccountAlert = true
+                } label: {
+                    HStack(spacing: 14) {
+                        Image(systemName: "trash.fill")
+                            .font(.body).foregroundColor(.white)
+                            .frame(width: 32, height: 32)
+                            .background(Color.red).cornerRadius(8)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Delete Account").font(.subheadline).foregroundColor(.red)
+                            Text("Permanently erase all data, cloud backups, and account")
+                                .font(.caption2).foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.caption).foregroundColor(.secondary)
+                    }
+                    .padding(12)
+                }
+            }
+            .background(Color(.systemBackground))
+            .cornerRadius(14)
+            .shadow(color: .black.opacity(0.05), radius: 4)
+            .padding(.horizontal)
+        }
+        .alert("Delete Account", isPresented: $showDeleteAccountAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Delete Everything", role: .destructive) {
+                Task {
+                    await AuthService.shared.deleteAccount(store: store)
+                    UserDefaults.standard.set(false, forKey: "onboardingDone")
+                }
+            }
+        } message: {
+            Text("This will permanently delete all your health data, cloud backups, and account. This action cannot be undone.")
+        }
     }
 
     // ── Header ──
@@ -162,7 +229,7 @@ struct CustomerCareView: View {
                                          startPoint: .topLeading, endPoint: .bottomTrailing))
                     .frame(width: 64, height: 64)
                 Image(systemName: "headphones.circle.fill")
-                    .font(.system(size: 30))
+                    .font(.title)
                     .foregroundColor(.white)
             }
             Text("How can we help?")
@@ -426,11 +493,28 @@ struct SupportCategorySheet: View {
                         .padding(.horizontal)
 
                         if ticketSubmitted {
-                            HStack(spacing: 8) {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(.brandGreen)
-                                Text("Ticket #\(tickets.count) created — we'll follow up via email if needed.")
-                                    .font(.caption).foregroundColor(.secondary)
+                            VStack(spacing: 12) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundColor(.brandGreen)
+                                    Text("Ticket #\(tickets.count) created — we'll follow up via email if needed.")
+                                        .font(.caption).foregroundColor(.secondary)
+                                }
+
+                                // Escalate to our team button
+                                Button {
+                                    escalateTicket()
+                                } label: {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: "exclamationmark.triangle.fill")
+                                        Text("Not resolved? Escalate to our team")
+                                    }
+                                    .font(.caption).fontWeight(.medium)
+                                    .foregroundColor(.brandCoral)
+                                    .padding(.horizontal, 16).padding(.vertical, 10)
+                                    .background(Color.brandCoral.opacity(0.1))
+                                    .cornerRadius(10)
+                                }
                             }
                             .padding(.horizontal)
                         }
@@ -465,9 +549,9 @@ struct SupportCategorySheet: View {
         // Use AI to generate an immediate response
         Task {
             let prompt = buildSupportPrompt(issue: issue, detail: additionalDetail)
-            if await AnthropicClient.shared.isConfigured {
+            if await AIClient.shared.isConfigured() {
                 do {
-                    let reply = try await AnthropicClient.shared.send(
+                    let reply = try await AIClient.shared.send(
                         system: AISystemPrompts.customerCare,
                         userMessage: prompt
                     )
@@ -478,6 +562,8 @@ struct SupportCategorySheet: View {
                         tickets.append(ticket)
                         ticketSubmitted = true
                         isSubmitting = false
+                        // Persist ticket
+                        persistTicket(ticket)
                     }
                     return
                 } catch { /* fall through to offline response */ }
@@ -492,6 +578,7 @@ struct SupportCategorySheet: View {
                 tickets.append(ticket)
                 ticketSubmitted = true
                 isSubmitting = false
+                persistTicket(ticket)
             }
         }
     }
@@ -501,6 +588,58 @@ struct SupportCategorySheet: View {
         if !detail.isEmpty { prompt += "Additional details: \(detail)\n" }
         prompt += "\nPlease help resolve this issue with clear, step-by-step guidance."
         return prompt
+    }
+
+    private func persistTicket(_ ticket: SupportTicket) {
+        let store = HealthStore.shared
+        var record = SupportTicketRecord(
+            category: category.rawValue,
+            issue: ticket.issue,
+            detail: ticket.detail,
+            userEmail: store.userProfile.email
+        )
+        record.status = ticket.status.rawValue
+        record.aiResponse = ticket.aiResponse
+        store.supportTickets.append(record)
+        store.save()
+    }
+
+    private func escalateTicket() {
+        guard var lastTicket = tickets.last else { return }
+        lastTicket.status = .escalated
+        lastTicket.isEscalated = true
+        tickets[tickets.count - 1] = lastTicket
+
+        // Persist to HealthStore
+        let store = HealthStore.shared
+        var record = SupportTicketRecord(
+            category: category.rawValue,
+            issue: lastTicket.issue,
+            detail: lastTicket.detail,
+            userEmail: store.userProfile.email
+        )
+        record.status = "Escalated"
+        record.isEscalated = true
+        record.escalatedAt = Date()
+        record.aiResponse = lastTicket.aiResponse
+        store.supportTickets.append(record)
+        store.save()
+
+        // Send notification to CEO
+        let center = UNUserNotificationCenter.current()
+        let content = UNMutableNotificationContent()
+        content.title = "Customer Ticket Escalated"
+        content.body = "Issue: \(lastTicket.issue) — Customer needs CEO attention."
+        content.sound = .default
+        content.userInfo = ["type": "ticketEscalation", "ticketId": record.id.uuidString]
+
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+        let request = UNNotificationRequest(
+            identifier: "escalation_\(record.id.uuidString)",
+            content: content,
+            trigger: trigger
+        )
+        center.add(request)
     }
 
     private func offlineResponse(for issue: String) -> String {

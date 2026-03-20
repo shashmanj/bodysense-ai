@@ -70,7 +70,7 @@ struct DoctorDirectoryTab: View {
     var userCountry: String { store.userProfile.country }
 
     var filtered: [Doctor] {
-        var docs = store.doctors
+        var docs = store.doctors.filter { $0.isVerified }
 
         // Scope filter
         switch searchScope {
@@ -168,9 +168,9 @@ struct DoctorDirectoryTab: View {
                 TextField("Search by postcode or city…", text: $postcodeText)
             }
             .padding(10)
-            .background(Color.white)
+            .background(Color(.secondarySystemGroupedBackground))
             .cornerRadius(12)
-            .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
+            .shadow(color: Color.primary.opacity(0.05), radius: 4, y: 2)
 
             // Search by name
             HStack {
@@ -178,9 +178,9 @@ struct DoctorDirectoryTab: View {
                 TextField("Search doctors…", text: $searchText)
             }
             .padding(10)
-            .background(Color.white)
+            .background(Color(.secondarySystemGroupedBackground))
             .cornerRadius(12)
-            .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
+            .shadow(color: Color.primary.opacity(0.05), radius: 4, y: 2)
 
             // Search by condition
             HStack {
@@ -188,9 +188,9 @@ struct DoctorDirectoryTab: View {
                 TextField("Search by condition (e.g. diabetes, heart)…", text: $conditionText)
             }
             .padding(10)
-            .background(Color.white)
+            .background(Color(.secondarySystemGroupedBackground))
             .cornerRadius(12)
-            .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
+            .shadow(color: Color.primary.opacity(0.05), radius: 4, y: 2)
 
             // Specialization filter
             ScrollView(.horizontal, showsIndicators: false) {
@@ -339,9 +339,9 @@ struct DoctorDetailView: View {
                     }
                     .padding()
                     .frame(maxWidth: .infinity)
-                    .background(Color.white)
+                    .background(Color(.secondarySystemGroupedBackground))
                     .cornerRadius(20)
-                    .shadow(color: .black.opacity(0.06), radius: 6, y: 2)
+                    .shadow(color: Color.primary.opacity(0.06), radius: 6, y: 2)
                     .padding(.horizontal)
 
                     // Stats
@@ -350,8 +350,8 @@ struct DoctorDetailView: View {
                         DoctorStat(label: "Hospital",      value: doctor.hospital.components(separatedBy: " ").prefix(2).joined(separator: " "))
                         DoctorStat(label: "Fee",           value: doctor.feeString(currencyCode: store.userCurrency))
                     }
-                    .background(Color.white).cornerRadius(16)
-                    .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
+                    .background(Color(.secondarySystemGroupedBackground)).cornerRadius(16)
+                    .shadow(color: Color.primary.opacity(0.05), radius: 4, y: 2)
                     .padding(.horizontal)
 
                     // Credentials & Certifications
@@ -406,9 +406,9 @@ struct DoctorDetailView: View {
                     }
                     .padding()
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.white)
+                    .background(Color(.secondarySystemGroupedBackground))
                     .cornerRadius(16)
-                    .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
+                    .shadow(color: Color.primary.opacity(0.05), radius: 4, y: 2)
                     .padding(.horizontal)
 
                     // Book appointment
@@ -455,7 +455,7 @@ struct DoctorDetailView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) { Button("Close") { dismiss() } }
             }
-            .alert("Booking Confirmed! ✅", isPresented: $bookingConfirmed) {
+            .alert("Booking Confirmed", isPresented: $bookingConfirmed) {
                 Button("Done") { dismiss() }
             } message: {
                 Text("Your appointment with \(doctor.name) on \(selectedDate.formatted(date: .abbreviated, time: .shortened)) has been booked. You'll receive a confirmation email shortly.")

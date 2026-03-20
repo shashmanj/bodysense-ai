@@ -494,7 +494,7 @@ struct DoctorFullProfileView: View {
                     } else {
                         Circle().fill(Color.white.opacity(0.3)).frame(width: 80, height: 80)
                             .overlay(Text(String(store.userProfile.name.prefix(2)).uppercased())
-                                .font(.system(size: 28, weight: .bold)).foregroundColor(.white))
+                                .font(.title.bold()).foregroundColor(.white))
                     }
                 }
                 .overlay(Circle().stroke(Color.white, lineWidth: 3))
@@ -1139,10 +1139,10 @@ struct BeckyAIView: View {
 
         Task {
             // ── Try Claude ────────────────────────────────────────────────
-            if await AnthropicClient.shared.isConfigured {
+            if await AIClient.shared.isConfigured() {
                 let ctx = appointmentContext
                 do {
-                    let reply = try await AnthropicClient.shared.send(
+                    let reply = try await AIClient.shared.send(
                         system: AISystemPrompts.becky(appointmentContext: ctx),
                         userMessage: trimmed
                     )
@@ -1170,10 +1170,10 @@ struct BeckyAIView: View {
         isTyping = true
         Task {
             // ── Try Claude ────────────────────────────────────────────────
-            if await AnthropicClient.shared.isConfigured {
+            if await AIClient.shared.isConfigured() {
                 let ctx = appointmentContext
                 do {
-                    let reply = try await AnthropicClient.shared.send(
+                    let reply = try await AIClient.shared.send(
                         system: AISystemPrompts.becky(appointmentContext: ctx),
                         userMessage: "Please provide a full clinical summary of this patient's appointment and shared documents. Highlight key health metrics, any risk factors, and what I should focus on during the consultation."
                     )

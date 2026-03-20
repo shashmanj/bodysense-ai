@@ -37,11 +37,13 @@ struct TrackView: View {
                                 .font(.subheadline)
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 9)
-                                .background(selectedCategory == i ? Color.brandPurple : Color.white)
+                                .background(selectedCategory == i ? Color.brandPurple : Color(.secondarySystemGroupedBackground))
                                 .foregroundColor(selectedCategory == i ? .white : .secondary)
                                 .cornerRadius(20)
-                                .shadow(color: .black.opacity(0.06), radius: 4, y: 2)
+                                .shadow(color: Color.primary.opacity(0.06), radius: 4, y: 2)
                             }
+                            .accessibilityLabel("\(categories[i]) category")
+                            .accessibilityAddTraits(selectedCategory == i ? .isSelected : [])
                         }
                     }
                     .padding(.horizontal)
@@ -329,8 +331,7 @@ struct WellnessSection: View {
 
 struct NutritionSection: View {
     @Environment(HealthStore.self) var store
-    @State private var showAdd        = false
-    @State private var showFoodSearch = false
+    @State private var showUnifiedAddFood = false
 
     var todayLogs: [NutritionLog] {
         let cal = Calendar.current
@@ -342,32 +343,20 @@ struct NutritionSection: View {
             // ── Daily macro dashboard (rings) ──
             NutritionDashboardView()
 
-            // ── Action buttons row ──
-            HStack(spacing: 10) {
-                Button {
-                    showFoodSearch = true
-                } label: {
-                    Label("Search Food", systemImage: "magnifyingglass")
-                        .font(.subheadline.bold())
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(Color.brandPurple.opacity(0.1))
-                        .foregroundColor(.brandPurple)
-                        .cornerRadius(14)
-                }
-
-                Button {
-                    showAdd = true
-                } label: {
-                    Label("Log Meal", systemImage: "plus")
-                        .font(.subheadline.bold())
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(Color.brandTeal.opacity(0.1))
-                        .foregroundColor(.brandTeal)
-                        .cornerRadius(14)
-                }
+            // ── Add Food button ──
+            Button {
+                showUnifiedAddFood = true
+            } label: {
+                Label("Add Food", systemImage: "plus.circle.fill")
+                    .font(.subheadline.bold())
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Color.brandPurple.opacity(0.1))
+                    .foregroundColor(.brandPurple)
+                    .cornerRadius(14)
             }
+            .accessibilityLabel("Add food")
+            .accessibilityHint("Log a meal or search for food nutrition")
             .padding(.horizontal)
 
             // Meal cards
@@ -380,7 +369,7 @@ struct NutritionSection: View {
                             Text(type.rawValue).font(.headline)
                             Spacer()
                             if meals.isEmpty {
-                                Button { showAdd = true } label: {
+                                Button { showUnifiedAddFood = true } label: {
                                     Text("+ Log").font(.caption).foregroundColor(.brandPurple)
                                 }
                             }
@@ -392,7 +381,20 @@ struct NutritionSection: View {
                                 HStack {
                                     Text(m.foodName.isEmpty ? "Meal" : m.foodName).font(.subheadline)
                                     Spacer()
-                                    Text("\(m.calories) kcal").font(.caption).foregroundColor(.secondary)
+                                    Text("\(m.calories) kcal").font(.caption).foregroundStyle(.secondary)
+                                    Button {
+                                        withAnimation {
+                                            store.nutritionLogs.removeAll { $0.id == m.id }
+                                            store.save()
+                                        }
+                                    } label: {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .foregroundStyle(Color.secondary.opacity(0.5))
+                                            .font(.body)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .accessibilityLabel("Delete \(m.foodName.isEmpty ? "meal" : m.foodName)")
+                                    .accessibilityHint("Remove this food from your nutrition log")
                                 }
                             }
                         }
@@ -400,8 +402,142 @@ struct NutritionSection: View {
                 }
             }
         }
-        .sheet(isPresented: $showAdd) { AddNutritionSheet() }
-        .sheet(isPresented: $showFoodSearch) { FoodSearchView() }
+        .sheet(isPresented: $showUnifiedAddFood) { UnifiedAddFoodSheet() }
+    }
+}
+
+// MARK: - Unified Add Food Sheet
+
+struct UnifiedAddFoodSheet: View {
+    @Environment(HealthStore.self) var store
+    @Environment(\.dismiss) var dismiss
+    @State private var selectedTab = 0  // 0 = Search, 1 = Manual
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                // Segmented picker
+                Picker("Mode", selection: $selectedTab) {
+                    Label("Search", systemImage: "magnifyingglass").tag(0)
+                    Label("Manual", systemImage: "pencil").tag(1)
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal)
+                .padding(.top, 8)
+
+                // Content
+                if selectedTab == 0 {
+                    EmbeddedFoodSearchView(onFoodLogged: { dismiss() })
+                } else {
+                    EmbeddedManualEntryView(onLogged: { dismiss() })
+                }
+            }
+            .background(Color.brandBg)
+            .navigationTitle("Add Food")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Embedded Manual Entry View
+
+struct EmbeddedManualEntryView: View {
+    @Environment(HealthStore.self) var store
+    var onLogged: () -> Void
+
+    @State private var mealType: MealType = .snack
+    @State private var foodName = ""
+    @State private var calories = ""
+    @State private var carbs = ""
+    @State private var protein = ""
+    @State private var fat = ""
+    @State private var fiber = ""
+    @State private var sugar = ""
+    @State private var salt = ""
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 16) {
+                // Meal type
+                Picker("Meal", selection: $mealType) {
+                    ForEach(MealType.allCases, id: \.self) { t in
+                        Text(t.rawValue).tag(t)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal)
+                .padding(.top, 12)
+
+                // Food name
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Food Name").font(.subheadline.bold())
+                    TextField("e.g. Grilled Chicken", text: $foodName)
+                        .textFieldStyle(.roundedBorder)
+                }
+                .padding(.horizontal)
+
+                // Nutrition fields
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Nutrition").font(.subheadline.bold())
+                    nutrientField("Calories (kcal)", text: $calories)
+                    nutrientField("Carbs (g)", text: $carbs)
+                    nutrientField("Protein (g)", text: $protein)
+                    nutrientField("Fat (g)", text: $fat)
+                    nutrientField("Fiber (g)", text: $fiber)
+                    nutrientField("Sugar (g)", text: $sugar)
+                    nutrientField("Salt (g)", text: $salt)
+                }
+                .padding(.horizontal)
+
+                // Save button
+                Button {
+                    saveManualEntry()
+                } label: {
+                    Text("Log \(mealType.rawValue)")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(foodName.isEmpty ? Color.gray : Color.brandPurple)
+                        .cornerRadius(14)
+                }
+                .disabled(foodName.isEmpty)
+                .padding(.horizontal)
+                .padding(.bottom, 30)
+            }
+        }
+    }
+
+    func nutrientField(_ label: String, text: Binding<String>) -> some View {
+        HStack {
+            Text(label).font(.subheadline).frame(width: 130, alignment: .leading)
+            TextField("0", text: text)
+                .keyboardType(.decimalPad)
+                .textFieldStyle(.roundedBorder)
+        }
+    }
+
+    func saveManualEntry() {
+        let log = NutritionLog(
+            date: Date(),
+            mealType: mealType,
+            calories: Int(Double(calories) ?? 0),
+            carbs: Double(carbs) ?? 0,
+            protein: Double(protein) ?? 0,
+            fat: Double(fat) ?? 0,
+            fiber: Double(fiber) ?? 0,
+            sugar: Double(sugar) ?? 0,
+            salt: Double(salt) ?? 0,
+            foodName: foodName
+        )
+        store.nutritionLogs.append(log)
+        store.save()
+        onLogged()
     }
 }
 
@@ -824,33 +960,197 @@ struct AddSymptomSheet: View {
     @State private var selected: Set<String> = []
     @State private var severity: SymptomSeverity = .mild
     @State private var notes = ""
+    @State private var searchText = ""
+    @State private var expandedCategories: Set<String> = []
+
+    /// Common symptoms shown when search is empty
+    private let commonSymptoms = [
+        "Fatigue", "Headache", "Dizziness", "Nausea", "Chest Pain",
+        "Shortness of Breath", "Joint Pain", "Back Pain", "Anxiety",
+        "Insomnia", "Bloating", "Heart Palpitations", "Muscle Weakness",
+        "Blurred Vision", "Tingling/Numbness", "Mood Swings",
+        "Frequent Urination", "Excessive Thirst", "Brain Fog", "Cold Sweats"
+    ]
+
+    /// Filtered symptoms based on search
+    var filteredSymptoms: [String] {
+        if searchText.isEmpty { return [] }
+        return allSymptoms.filter { $0.localizedCaseInsensitiveContains(searchText) }
+    }
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Symptoms") {
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-                        ForEach(allSymptoms, id: \.self) { sym in
-                            Button {
-                                if selected.contains(sym) { selected.remove(sym) } else { selected.insert(sym) }
-                            } label: {
-                                Text(sym).font(.caption).multilineTextAlignment(.center)
-                                    .frame(maxWidth: .infinity).padding(8)
-                                    .background(selected.contains(sym) ? Color.brandCoral : Color.brandCoral.opacity(0.1))
-                                    .foregroundColor(selected.contains(sym) ? .white : .brandCoral)
-                                    .cornerRadius(8)
+            ScrollView {
+                VStack(spacing: 16) {
+                    // ── Selected chips ──
+                    if !selected.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Selected (\(selected.count))").font(.caption).foregroundColor(.secondary)
+                                .padding(.horizontal)
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 6) {
+                                    ForEach(Array(selected).sorted(), id: \.self) { sym in
+                                        HStack(spacing: 4) {
+                                            Text(sym).font(.caption2)
+                                            Image(systemName: "xmark.circle.fill").font(.caption2)
+                                        }
+                                        .padding(.horizontal, 10).padding(.vertical, 6)
+                                        .background(Color.brandCoral)
+                                        .foregroundColor(.white)
+                                        .cornerRadius(16)
+                                        .onTapGesture { selected.remove(sym) }
+                                    }
+                                }
+                                .padding(.horizontal)
                             }
                         }
                     }
+
+                    // ── Search bar ──
+                    HStack {
+                        Image(systemName: "magnifyingglass").foregroundColor(.secondary)
+                        TextField("Search symptoms...", text: $searchText)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                        if !searchText.isEmpty {
+                            Button { searchText = "" } label: {
+                                Image(systemName: "xmark.circle.fill").foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                    .padding(10)
+                    .background(Color(.secondarySystemGroupedBackground))
+                    .cornerRadius(10)
+                    .padding(.horizontal)
+
+                    // ── Search results OR categories ──
+                    if !searchText.isEmpty {
+                        // Search results
+                        if filteredSymptoms.isEmpty {
+                            // Custom symptom option
+                            VStack(spacing: 12) {
+                                Text("No matching symptoms found").font(.subheadline).foregroundColor(.secondary)
+                                Button {
+                                    let custom = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    if !custom.isEmpty { selected.insert(custom); searchText = "" }
+                                } label: {
+                                    HStack {
+                                        Image(systemName: "plus.circle.fill")
+                                        Text("Add \"\(searchText)\" as custom symptom")
+                                    }
+                                    .font(.subheadline).fontWeight(.medium)
+                                    .padding(.horizontal, 16).padding(.vertical, 10)
+                                    .background(Color.brandCoral.opacity(0.15))
+                                    .foregroundColor(.brandCoral)
+                                    .cornerRadius(10)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .padding(.vertical, 20)
+                        } else {
+                            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                                ForEach(filteredSymptoms, id: \.self) { sym in
+                                    symptomButton(sym)
+                                }
+                            }
+                            .padding(.horizontal)
+
+                            // Also show custom option when searching
+                            if !filteredSymptoms.contains(where: { $0.lowercased() == searchText.lowercased() }) {
+                                Button {
+                                    let custom = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    if !custom.isEmpty { selected.insert(custom); searchText = "" }
+                                } label: {
+                                    HStack {
+                                        Image(systemName: "plus.circle.fill")
+                                        Text("Add \"\(searchText)\" as custom symptom")
+                                    }
+                                    .font(.caption).foregroundColor(.brandCoral)
+                                }
+                                .buttonStyle(.plain)
+                                .padding(.top, 4)
+                            }
+                        }
+                    } else {
+                        // ── Common symptoms (default view) ──
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Common Symptoms").font(.subheadline).fontWeight(.semibold)
+                                .padding(.horizontal)
+                            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                                ForEach(commonSymptoms, id: \.self) { sym in
+                                    symptomButton(sym)
+                                }
+                            }
+                            .padding(.horizontal)
+                        }
+
+                        // ── Browse by category ──
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Browse by Category").font(.subheadline).fontWeight(.semibold)
+                                .padding(.horizontal).padding(.top, 8)
+
+                            ForEach(symptomCategories, id: \.category) { cat in
+                                VStack(spacing: 0) {
+                                    Button {
+                                        withAnimation(.easeInOut(duration: 0.25)) {
+                                            if expandedCategories.contains(cat.category) {
+                                                expandedCategories.remove(cat.category)
+                                            } else {
+                                                expandedCategories.insert(cat.category)
+                                            }
+                                        }
+                                    } label: {
+                                        HStack {
+                                            Image(systemName: cat.icon)
+                                                .font(.body).foregroundColor(.brandCoral)
+                                                .frame(width: 28)
+                                            Text(cat.category).font(.subheadline).foregroundColor(.primary)
+                                            Spacer()
+                                            Text("\(cat.symptoms.count)").font(.caption).foregroundColor(.secondary)
+                                            Image(systemName: expandedCategories.contains(cat.category) ? "chevron.up" : "chevron.down")
+                                                .font(.caption).foregroundColor(.secondary)
+                                        }
+                                        .padding(.horizontal).padding(.vertical, 12)
+                                    }
+                                    .buttonStyle(.plain)
+
+                                    if expandedCategories.contains(cat.category) {
+                                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                                            ForEach(cat.symptoms, id: \.self) { sym in
+                                                symptomButton(sym)
+                                            }
+                                        }
+                                        .padding(.horizontal).padding(.bottom, 12)
+                                    }
+
+                                    Divider().padding(.leading, 52)
+                                }
+                            }
+                        }
+                    }
+
+                    // ── Severity ──
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Severity").font(.subheadline).fontWeight(.semibold)
+                        Picker("Severity", selection: $severity) {
+                            ForEach(SymptomSeverity.allCases, id: \.self) { s in Text(s.rawValue).tag(s) }
+                        }.pickerStyle(.segmented)
+                    }
+                    .padding(.horizontal)
+
+                    // ── Notes ──
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Notes").font(.subheadline).fontWeight(.semibold)
+                        TextField("Add notes...", text: $notes, axis: .vertical)
+                            .padding(10)
+                            .background(Color(.secondarySystemGroupedBackground))
+                            .cornerRadius(10)
+                    }
+                    .padding(.horizontal)
+
+                    Spacer(minLength: 32)
                 }
-                Section("Severity") {
-                    Picker("Severity", selection: $severity) {
-                        ForEach(SymptomSeverity.allCases, id: \.self) { s in Text(s.rawValue).tag(s) }
-                    }.pickerStyle(.segmented)
-                }
-                Section {
-                    TextField("Notes", text: $notes, axis: .vertical)
-                }
+                .padding(.top, 8)
             }
             .navigationTitle("Log Symptoms")
             .navigationBarTitleDisplayMode(.inline)
@@ -865,6 +1165,20 @@ struct AddSymptomSheet: View {
                 }
             }
         }
+    }
+
+    /// Reusable symptom toggle button
+    func symptomButton(_ sym: String) -> some View {
+        Button {
+            if selected.contains(sym) { selected.remove(sym) } else { selected.insert(sym) }
+        } label: {
+            Text(sym).font(.caption).multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity).padding(8)
+                .background(selected.contains(sym) ? Color.brandCoral : Color.brandCoral.opacity(0.1))
+                .foregroundColor(selected.contains(sym) ? .white : .brandCoral)
+                .cornerRadius(8)
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -934,32 +1248,152 @@ struct AddCycleSheet: View {
     @State private var startDate = Date()
     @State private var flow: FlowLevel = .medium
     @State private var selectedSymptoms: Set<String> = []
+    @State private var searchText = ""
+    @State private var notes = ""
 
-    let cycleSymptoms = ["Cramps", "Bloating", "Fatigue", "Mood Swings", "Headache", "Back Pain", "Breast Tenderness", "Nausea", "Food Cravings", "Insomnia"]
+    private let accentColor = Color(hex: "#fd79a8")
+
+    /// Commonly selected cycle symptoms shown first
+    private let commonCycleSymptoms = [
+        "Cramps", "Bloating", "Fatigue", "Mood Swings", "Headache",
+        "Back Pain", "Breast Tenderness", "Nausea", "Food Cravings", "Insomnia"
+    ]
+
+    /// Filtered symptoms
+    var filteredSymptoms: [String] {
+        if searchText.isEmpty { return [] }
+        return allCycleSymptoms.filter { $0.localizedCaseInsensitiveContains(searchText) }
+    }
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
-                    DatePicker("Start Date", selection: $startDate, displayedComponents: .date)
-                    Picker("Flow", selection: $flow) {
-                        ForEach(FlowLevel.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                    }.pickerStyle(.segmented)
-                }
-                Section("Symptoms") {
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-                        ForEach(cycleSymptoms, id: \.self) { sym in
-                            Button {
-                                if selectedSymptoms.contains(sym) { selectedSymptoms.remove(sym) } else { selectedSymptoms.insert(sym) }
-                            } label: {
-                                Text(sym).font(.caption).frame(maxWidth: .infinity).padding(8)
-                                    .background(selectedSymptoms.contains(sym) ? Color(hex: "#fd79a8") : Color(hex: "#fd79a8").opacity(0.1))
-                                    .foregroundColor(selectedSymptoms.contains(sym) ? .white : Color(hex: "#fd79a8"))
-                                    .cornerRadius(8)
+            ScrollView {
+                VStack(spacing: 16) {
+                    // ── Date & Flow ──
+                    VStack(spacing: 12) {
+                        DatePicker("Start Date", selection: $startDate, displayedComponents: .date)
+                            .padding(.horizontal)
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Flow Level").font(.subheadline).fontWeight(.semibold)
+                            Picker("Flow", selection: $flow) {
+                                ForEach(FlowLevel.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                            }.pickerStyle(.segmented)
+                        }
+                        .padding(.horizontal)
+                    }
+                    .padding(.vertical, 8)
+                    .background(Color(.secondarySystemGroupedBackground))
+                    .cornerRadius(12)
+                    .padding(.horizontal)
+
+                    // ── Selected chips ──
+                    if !selectedSymptoms.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Selected (\(selectedSymptoms.count))").font(.caption).foregroundColor(.secondary)
+                                .padding(.horizontal)
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 6) {
+                                    ForEach(Array(selectedSymptoms).sorted(), id: \.self) { sym in
+                                        HStack(spacing: 4) {
+                                            Text(sym).font(.caption2)
+                                            Image(systemName: "xmark.circle.fill").font(.caption2)
+                                        }
+                                        .padding(.horizontal, 10).padding(.vertical, 6)
+                                        .background(accentColor)
+                                        .foregroundColor(.white)
+                                        .cornerRadius(16)
+                                        .onTapGesture { selectedSymptoms.remove(sym) }
+                                    }
+                                }
+                                .padding(.horizontal)
                             }
                         }
                     }
+
+                    // ── Search bar ──
+                    HStack {
+                        Image(systemName: "magnifyingglass").foregroundColor(.secondary)
+                        TextField("Search cycle symptoms...", text: $searchText)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                        if !searchText.isEmpty {
+                            Button { searchText = "" } label: {
+                                Image(systemName: "xmark.circle.fill").foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                    .padding(10)
+                    .background(Color(.secondarySystemGroupedBackground))
+                    .cornerRadius(10)
+                    .padding(.horizontal)
+
+                    // ── Symptoms grid ──
+                    if !searchText.isEmpty {
+                        if filteredSymptoms.isEmpty {
+                            VStack(spacing: 12) {
+                                Text("No matching symptoms").font(.subheadline).foregroundColor(.secondary)
+                                Button {
+                                    let custom = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    if !custom.isEmpty { selectedSymptoms.insert(custom); searchText = "" }
+                                } label: {
+                                    HStack {
+                                        Image(systemName: "plus.circle.fill")
+                                        Text("Add \"\(searchText)\" as custom symptom")
+                                    }
+                                    .font(.subheadline).fontWeight(.medium)
+                                    .padding(.horizontal, 16).padding(.vertical, 10)
+                                    .background(accentColor.opacity(0.15))
+                                    .foregroundColor(accentColor)
+                                    .cornerRadius(10)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .padding(.vertical, 20)
+                        } else {
+                            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                                ForEach(filteredSymptoms, id: \.self) { sym in
+                                    cycleSymptomButton(sym)
+                                }
+                            }
+                            .padding(.horizontal)
+                        }
+                    } else {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Common Symptoms").font(.subheadline).fontWeight(.semibold)
+                                .padding(.horizontal)
+                            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                                ForEach(commonCycleSymptoms, id: \.self) { sym in
+                                    cycleSymptomButton(sym)
+                                }
+                            }
+                            .padding(.horizontal)
+                        }
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("All Cycle Symptoms").font(.subheadline).fontWeight(.semibold)
+                                .padding(.horizontal).padding(.top, 8)
+                            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                                ForEach(allCycleSymptoms.filter { !commonCycleSymptoms.contains($0) }, id: \.self) { sym in
+                                    cycleSymptomButton(sym)
+                                }
+                            }
+                            .padding(.horizontal)
+                        }
+                    }
+
+                    // ── Notes ──
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Notes").font(.subheadline).fontWeight(.semibold)
+                        TextField("Add notes...", text: $notes, axis: .vertical)
+                            .padding(10)
+                            .background(Color(.secondarySystemGroupedBackground))
+                            .cornerRadius(10)
+                    }
+                    .padding(.horizontal)
+
+                    Spacer(minLength: 32)
                 }
+                .padding(.top, 8)
             }
             .navigationTitle("Log Cycle")
             .navigationBarTitleDisplayMode(.inline)
@@ -967,12 +1401,25 @@ struct AddCycleSheet: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        store.cycles.append(CycleEntry(startDate: startDate, flow: flow, symptoms: Array(selectedSymptoms)))
+                        store.cycles.append(CycleEntry(startDate: startDate, flow: flow, symptoms: Array(selectedSymptoms), notes: notes))
                         store.save(); dismiss()
                     }
                 }
             }
         }
+    }
+
+    /// Reusable cycle symptom toggle button
+    func cycleSymptomButton(_ sym: String) -> some View {
+        Button {
+            if selectedSymptoms.contains(sym) { selectedSymptoms.remove(sym) } else { selectedSymptoms.insert(sym) }
+        } label: {
+            Text(sym).font(.caption).frame(maxWidth: .infinity).padding(8)
+                .background(selectedSymptoms.contains(sym) ? accentColor : accentColor.opacity(0.1))
+                .foregroundColor(selectedSymptoms.contains(sym) ? .white : accentColor)
+                .cornerRadius(8)
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -998,10 +1445,13 @@ struct TrackCard<Content: View>: View {
                     Button(action: onAdd) {
                         Image(systemName: "plus.circle.fill").font(.title3).foregroundColor(color)
                     }
+                    .accessibilityLabel("Add \(title)")
+                    .accessibilityHint("Log a new \(title.lowercased()) entry")
                 }
                 content
             }
         }
+        .accessibilityElement(children: .contain)
     }
 }
 
@@ -1071,14 +1521,19 @@ struct CyclePhaseRow: View {
 }
 
 struct BSCard<Content: View>: View {
+    @Environment(\.colorScheme) private var colorScheme
     let content: Content
     init(@ViewBuilder content: () -> Content) { self.content = content() }
     var body: some View {
         content
             .padding()
-            .background(Color.white)
+            .background(Color(.secondarySystemGroupedBackground))
             .cornerRadius(16)
-            .shadow(color: .black.opacity(0.06), radius: 6, y: 2)
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(Color.cardBorder.opacity(colorScheme == .dark ? 0.3 : 0), lineWidth: 1)
+            )
+            .shadow(color: colorScheme == .dark ? .clear : Color.primary.opacity(0.06), radius: 6, y: 2)
     }
 }
 

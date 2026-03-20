@@ -16,8 +16,6 @@ struct DashboardView: View {
     @State private var showAlerts      = false
     @State private var showHealthScore = false
     @State private var showNutrition   = false
-    @State private var tipIndex        = 0
-    @State private var tipTimer        : Timer? = nil
 
     var body: some View {
         NavigationStack {
@@ -25,6 +23,7 @@ struct DashboardView: View {
                 VStack(spacing: 16) {
                     guidanceCard
                     healthScoreCard
+                    TipsCardView()     // AI Health Insights — prominent position, user-swipeable + auto-rotates
                     if !store.unreadAlerts.isEmpty { alertsCard }
                     quickStatsRow
                     calorieNutritionCard
@@ -34,7 +33,6 @@ struct DashboardView: View {
                     streaksRow
                     todayMedsCard
                     challengesCard
-                    tipsCard
                 }
                 .padding(.horizontal)
                 .padding(.top, 8)
@@ -53,6 +51,8 @@ struct DashboardView: View {
                             }
                         }
                     }
+                    .accessibilityLabel(store.unreadAlerts.isEmpty ? "Notifications" : "Notifications, \(store.unreadAlerts.count) unread")
+                    .accessibilityHint("View your health alerts")
                 }
             }
         }
@@ -63,17 +63,6 @@ struct DashboardView: View {
         .sheet(isPresented: $showChat)        { ChatView() }
         .sheet(isPresented: $showHealthScore) { HealthScoreDetailView() }
         .sheet(isPresented: $showNutrition)   { NutritionLogSheet() }
-        .onAppear {
-            // Seed tip index from current time so each launch shows a different tip
-            tipIndex = Calendar.current.component(.hour, from: Date()) % tips.count
-            // Rotate tips every 8 seconds for a lively feel
-            tipTimer = Timer.scheduledTimer(withTimeInterval: 8, repeats: true) { _ in
-                withAnimation(.easeInOut(duration: 0.4)) {
-                    tipIndex = (tipIndex + 1) % tips.count
-                }
-            }
-        }
-        .onDisappear { tipTimer?.invalidate(); tipTimer = nil }
     }
 
     private var timeOfDayGreeting: String {
@@ -179,6 +168,9 @@ struct DashboardView: View {
             }
         }
         .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Health Score \(store.healthScore) out of 100")
+        .accessibilityHint("View detailed health score breakdown")
     }
 
     // MARK: - Alerts Card
@@ -201,6 +193,9 @@ struct DashboardView: View {
             }
         }
         .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(store.unreadAlerts.count) health alert\(store.unreadAlerts.count == 1 ? "" : "s") need attention")
+        .accessibilityHint("View all health alerts")
     }
 
     // MARK: - Quick Stats
@@ -211,26 +206,34 @@ struct DashboardView: View {
     }
 
     var quickStatsRow: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                QuickStatCard(icon: "figure.walk",      color: .brandTeal,   value: "\(store.todaySteps)",   label: "Steps")
-                QuickStatCard(icon: "bed.double.fill",  color: .brandPurple, value: store.lastSleep.map { String(format: "%.1fh", $0.duration) } ?? "--", label: "Sleep")
-                QuickStatCard(icon: "flame.fill",       color: .brandAmber,  value: "\(todayCalories) kcal",  label: "Calories")
-                QuickStatCard(icon: "drop.circle.fill", color: Color(hex: "#4fc3f7"), value: String(format: "%.1fL", store.todayWaterML / 1000), label: "Water")
-                if let hr = store.latestHR {
-                    QuickStatCard(icon: "heart.fill",   color: .brandCoral,  value: "\(hr.value) bpm",       label: "Heart Rate")
-                }
-                if let hrv = store.latestHRV {
-                    QuickStatCard(icon: "waveform.path.ecg", color: .brandGreen, value: "\(Int(hrv.value)) ms", label: "HRV")
-                }
-                if let stress = store.latestStress {
-                    QuickStatCard(icon: "brain.head.profile", color: .brandPurple, value: "\(stress.level)/10", label: "Stress")
-                }
-                if let temp = store.latestTemp {
-                    QuickStatCard(icon: "thermometer.medium", color: .brandCoral, value: String(format: "%.1f°C", temp.value), label: "Temp")
-                }
+        let columns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
+
+        // Build stat items dynamically
+        var statItems: [(icon: String, color: Color, value: String, unit: String, label: String)] = [
+            ("figure.walk",      .brandTeal,              "\(store.todaySteps)", "",    "Steps"),
+            ("bed.double.fill",  .brandPurple,            store.lastSleep.map { String(format: "%.1f", $0.duration) } ?? "--", "hr", "Sleep"),
+            ("flame.fill",       .brandAmber,             "\(todayCalories)",    "kcal","Calories"),
+            ("drop.circle.fill", Color(hex: "#4fc3f7"),   String(format: "%.1f", store.todayWaterML / 1000), "L", "Water"),
+        ]
+
+        // Conditionally add available vitals
+        if let hrv = store.latestHRV {
+            statItems.append(("waveform.path.ecg", .brandGreen, "\(Int(hrv.value))", "ms", "HRV"))
+        }
+        if let hr = store.latestHR {
+            statItems.append(("heart.fill", .brandCoral, "\(hr.value)", "bpm", "Heart Rate"))
+        }
+        if let stress = store.latestStress {
+            statItems.append(("brain.head.profile", Color(hex: "#a29bfe"), "\(stress.level)", "/10", "Stress"))
+        }
+        if let temp = store.latestTemp {
+            statItems.append(("thermometer.medium", .brandCoral, String(format: "%.1f", temp.value), "\u{00B0}C", "Temp"))
+        }
+
+        return LazyVGrid(columns: columns, spacing: 12) {
+            ForEach(Array(statItems.enumerated()), id: \.offset) { _, item in
+                QuickStatCard(icon: item.icon, color: item.color, value: item.value, unit: item.unit, label: item.label)
             }
-            .padding(.horizontal, 2)
         }
     }
 
@@ -261,7 +264,7 @@ struct DashboardView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("\(totalCals) / \(calorieGoal) kcal")
                                 .font(.title2).fontWeight(.bold).foregroundColor(.brandAmber)
-                            Text("\(calorieGoal - totalCals > 0 ? "\(calorieGoal - totalCals) kcal remaining" : "Goal reached! 🎉")")
+                            Text("\(calorieGoal - totalCals > 0 ? "\(calorieGoal - totalCals) kcal remaining" : "Goal reached!")")
                                 .font(.caption).foregroundColor(.secondary)
                         }
                         Spacer()
@@ -288,6 +291,9 @@ struct DashboardView: View {
         }
         }
         .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Nutrition today, \(todayCalories) calories consumed")
+        .accessibilityHint("View detailed nutrition log")
     }
 
     func macroPill(_ label: String, value: String, color: Color) -> some View {
@@ -388,6 +394,7 @@ struct DashboardView: View {
                 }
             }
         }
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: - BP Card
@@ -412,6 +419,7 @@ struct DashboardView: View {
                 }
             }
         }
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: - Streaks Row
@@ -492,38 +500,334 @@ struct DashboardView: View {
         })
     }
 
-    // MARK: - Tips
-    let tips = [
-        "💡 Walk 10 minutes after meals to lower post-meal glucose by 15–30 mg/dL.",
-        "💡 Consistent sleep times improve insulin sensitivity significantly.",
-        "💡 Cutting 500mg sodium daily can lower systolic BP by 2–5 mmHg.",
-        "💡 HRV above 50ms generally indicates good recovery and low stress.",
-        "💡 Drinking water before meals reduces appetite and helps glucose control.",
-        "💡 Logging consistently is the #1 predictor of good metabolic control.",
-        "💡 Stress hormones directly raise blood glucose — practice box breathing.",
-        "💡 Dark leafy greens have minimal glycaemic impact and are rich in magnesium.",
-    ]
-    var tipsCard: some View {
+}
+
+// MARK: - AI Health Insights Card (Isolated Sub-View)
+// Generates personalised tips from the user's actual health data — glucose, BP, sleep, nutrition,
+// exercise, medications, symptoms, conditions, water intake, HRV, stress, body temp, and goals.
+// Timer lives here — updates only re-render this card, not the entire dashboard.
+
+struct TipsCardView: View {
+    @Environment(HealthStore.self) var store
+    @State private var tipIndex = 0
+    @State private var tipTimer: Timer?
+    @State private var insights: [String] = []
+    @State private var dragOffset: CGFloat = 0
+    @State private var swipeDirection: Edge = .trailing
+
+    var body: some View {
+        let count = max(insights.count, 1)
+        let safeIdx = insights.isEmpty ? 0 : tipIndex % count
+
         BSCard {
-            VStack(alignment: .leading, spacing: 6) {
-                Label("Daily Health Tips", systemImage: "lightbulb.fill").font(.headline).foregroundColor(.brandAmber)
-                Text(tips[tipIndex])
-                    .font(.subheadline).foregroundColor(.secondary)
-                    .transition(.asymmetric(insertion: .move(edge: .trailing), removal: .move(edge: .leading)))
-                    .animation(.easeInOut, value: tipIndex)
-                // Dot indicator
-                HStack(spacing: 4) {
-                    ForEach(0..<tips.count, id: \.self) { i in
-                        Circle()
-                            .fill(i == tipIndex ? Color.brandAmber : Color.brandAmber.opacity(0.25))
-                            .frame(width: i == tipIndex ? 8 : 5, height: i == tipIndex ? 8 : 5)
+            VStack(alignment: .leading, spacing: 8) {
+                // Header row with icon + title + page counter
+                HStack {
+                    Label("AI Health Insights", systemImage: "brain.head.profile")
+                        .font(.headline).foregroundColor(.brandPurple)
+                    Spacer()
+                    if !insights.isEmpty {
+                        Text("\(safeIdx + 1)/\(count)")
+                            .font(.caption2).fontWeight(.medium)
+                            .foregroundColor(.brandPurple.opacity(0.6))
                     }
                 }
-                .padding(.top, 2)
+
+                if insights.isEmpty {
+                    Text("Log your health data to get personalised insights powered by BodySense AI.")
+                        .font(.subheadline).foregroundColor(.secondary)
+                } else {
+                    // Insight text with swipe animation
+                    Text(insights[safeIdx])
+                        .font(.subheadline).foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .id(tipIndex)
+                        .transition(.asymmetric(
+                            insertion: .move(edge: swipeDirection).combined(with: .opacity),
+                            removal: .move(edge: swipeDirection == .trailing ? .leading : .trailing).combined(with: .opacity)
+                        ))
+                        .offset(x: dragOffset)
+
+                    // Dot indicator row + swipe hint
+                    HStack(spacing: 4) {
+                        ForEach(0..<count, id: \.self) { i in
+                            Circle()
+                                .fill(i == safeIdx ? Color.brandPurple : Color.brandPurple.opacity(0.25))
+                                .frame(width: i == safeIdx ? 8 : 5, height: i == safeIdx ? 8 : 5)
+                                .animation(.easeInOut(duration: 0.2), value: safeIdx)
+                        }
+                        Spacer()
+                        if count > 1 {
+                            Text("Swipe for more")
+                                .font(.caption2).foregroundColor(.secondary.opacity(0.6))
+                        }
+                    }
+                    .padding(.top, 2)
+                }
+            }
+        }
+        .contentShape(Rectangle()) // Makes entire card area respond to gestures
+        .gesture(
+            DragGesture(minimumDistance: 30, coordinateSpace: .local)
+                .onChanged { value in
+                    dragOffset = value.translation.width * 0.3 // subtle drag feedback
+                }
+                .onEnded { value in
+                    dragOffset = 0
+                    guard !insights.isEmpty else { return }
+                    let threshold: CGFloat = 40
+                    if value.translation.width < -threshold {
+                        // Swiped left → next insight
+                        swipeDirection = .trailing
+                        withAnimation(.easeInOut(duration: 0.35)) {
+                            tipIndex = (tipIndex + 1) % count
+                        }
+                        resetAutoRotateTimer()
+                    } else if value.translation.width > threshold {
+                        // Swiped right → previous insight
+                        swipeDirection = .leading
+                        withAnimation(.easeInOut(duration: 0.35)) {
+                            tipIndex = (tipIndex - 1 + count) % count
+                        }
+                        resetAutoRotateTimer()
+                    }
+                }
+        )
+        .onAppear {
+            insights = PersonalisedInsightEngine.generate(from: store)
+            guard !insights.isEmpty else { return }
+            tipIndex = Calendar.current.component(.hour, from: Date()) % insights.count
+            startAutoRotateTimer()
+        }
+        .onDisappear { tipTimer?.invalidate(); tipTimer = nil }
+    }
+
+    // MARK: - Timer Helpers
+
+    private func startAutoRotateTimer() {
+        tipTimer?.invalidate()
+        tipTimer = Timer.scheduledTimer(withTimeInterval: 8, repeats: true) { _ in
+            swipeDirection = .trailing
+            withAnimation(.easeInOut(duration: 0.4)) {
+                tipIndex = (tipIndex + 1) % max(insights.count, 1)
             }
         }
     }
 
+    private func resetAutoRotateTimer() {
+        // User swiped manually — restart the 8-sec countdown from now
+        startAutoRotateTimer()
+    }
+}
+
+// MARK: - Personalised Insight Engine
+// Analyses the user's HealthStore data and generates contextual, actionable health tips.
+// 100% local computation — no API call needed, instant on every dashboard load.
+
+enum PersonalisedInsightEngine {
+
+    static func generate(from store: HealthStore) -> [String] {
+        let cal = Calendar.current
+        var tips: [String] = []
+        let p = store.userProfile
+
+        // ── Glucose Insights ──
+        if let g = store.glucoseReadings.max(by: { $0.date < $1.date }) {
+            let val = Int(g.value)
+            if val > Int(store.userProfile.targetGlucoseMax) {
+                tips.append("Your latest glucose is \(val) mg/dL — above your \(Int(p.targetGlucoseMax)) target. A 15-min walk after meals can lower post-meal spikes by 20–30 mg/dL.")
+            } else if val < Int(store.userProfile.targetGlucoseMin) {
+                tips.append("Glucose at \(val) mg/dL is below your \(Int(p.targetGlucoseMin)) target. Consider a small snack with protein and complex carbs to stabilise.")
+            } else {
+                tips.append("Glucose at \(val) mg/dL — nicely within your \(Int(p.targetGlucoseMin))–\(Int(p.targetGlucoseMax)) target range. Keep up the great work!")
+            }
+            // Trend analysis
+            let recent7 = store.glucoseReadings.filter { $0.date > cal.date(byAdding: .day, value: -7, to: Date())! }
+            if recent7.count >= 3 {
+                let avg = recent7.map { $0.value }.reduce(0, +) / Double(recent7.count)
+                tips.append("Your 7-day glucose average is \(Int(avg)) mg/dL across \(recent7.count) readings. \(avg > p.targetGlucoseMax ? "Consider reducing refined carbs and increasing fibre." : "Excellent metabolic control!")")
+            }
+        }
+
+        // ── Blood Pressure Insights ──
+        if let bp = store.bpReadings.max(by: { $0.date < $1.date }) {
+            if bp.systolic >= 140 || bp.diastolic >= 90 {
+                tips.append("🔴 BP \(bp.systolic)/\(bp.diastolic) mmHg is in the hypertension range. Reducing sodium to <2g/day and regular exercise can lower systolic by 5–10 mmHg.")
+            } else if bp.systolic >= 130 || bp.diastolic >= 80 {
+                tips.append("🟡 BP \(bp.systolic)/\(bp.diastolic) mmHg is elevated. Try the DASH diet — rich in fruits, vegetables, and whole grains — to help bring it down.")
+            } else {
+                tips.append("💚 BP \(bp.systolic)/\(bp.diastolic) mmHg — excellent reading! Keep it up with balanced nutrition and regular activity.")
+            }
+        }
+
+        // ── Sleep Insights ──
+        if let sleep = store.sleepEntries.max(by: { $0.date < $1.date }) {
+            let hrs = sleep.duration
+            if hrs < 6 {
+                tips.append("😴 Only \(String(format: "%.1f", hrs)) hours of sleep last night. Adults need 7–9 hours for optimal glucose regulation and heart health. Try setting a consistent bedtime.")
+            } else if hrs >= 6 && hrs < 7 {
+                tips.append("🌙 \(String(format: "%.1f", hrs)) hours of sleep — close to the recommended 7–9 hours. Even 30 extra minutes can improve insulin sensitivity.")
+            } else {
+                tips.append("🌟 Great sleep — \(String(format: "%.1f", hrs)) hours! Consistent good sleep improves glucose control by up to 20%.")
+            }
+        }
+
+        // ── Nutrition Insights (use actual user goals) ──
+        let calGoal = p.dailyCalorieGoal
+        let protGoal = p.dailyProteinGoal
+        let goalType = NutritionGoalType(rawValue: p.nutritionGoalType) ?? .maintain
+
+        let todayLogs = store.nutritionLogs.filter { cal.isDateInToday($0.date) }
+        if !todayLogs.isEmpty {
+            let totalCals = todayLogs.map { $0.calories }.reduce(0, +)
+            let totalCarbs = todayLogs.map { $0.carbs }.reduce(0, +)
+            let totalProt = todayLogs.map { $0.protein }.reduce(0, +)
+
+            if totalCals > calGoal + 200 {
+                tips.append("🍽️ \(totalCals) kcal consumed — above your \(calGoal) kcal \(goalType.label.lowercased()) target. Consider lighter portions for remaining meals.")
+            } else if totalCals > 0 && totalCals < calGoal / 2 {
+                tips.append("🍽️ Only \(totalCals) kcal so far — you need \(calGoal - totalCals) more to hit your \(calGoal) kcal \(goalType.label.lowercased()) target.")
+            }
+
+            if totalCarbs > Double(p.dailyCarbGoal) * 1.1 {
+                tips.append("🍞 Carbs at \(Int(totalCarbs))g vs \(Int(p.dailyCarbGoal))g target. Choose complex carbs like oats and quinoa over refined options.")
+            }
+
+            // Protein insight — critical for muscle building
+            if totalProt < protGoal * 0.5 && totalCals > 500 {
+                let remaining = Int(protGoal - totalProt)
+                if goalType == .muscle {
+                    tips.append("Only \(Int(totalProt))g of \(Int(protGoal))g protein target! You need \(remaining)g more for muscle growth. Add chicken breast (31g/100g), eggs (13g/2), or whey shake (25g).")
+                } else {
+                    tips.append("Only \(Int(totalProt))g of \(Int(protGoal))g protein target. Add lean protein to your next meal — it stabilises blood sugar and preserves muscle.")
+                }
+            } else if totalProt >= protGoal {
+                tips.append("Protein target hit — \(Int(totalProt))g of \(Int(protGoal))g! Great for \(goalType == .muscle ? "muscle protein synthesis" : "maintaining lean mass").")
+            }
+        } else {
+            tips.append("No meals logged today. Tracking nutrition helps \(goalType == .muscle ? "ensure you hit your protein target for muscle growth" : "identify patterns between food and glucose") — log your next meal!")
+        }
+
+        // ── Exercise & Steps Insights ──
+        let todaySteps = store.todaySteps
+        if todaySteps > 10000 {
+            tips.append("Amazing — \(todaySteps.formatted()) steps today! Regular walking at this level reduces cardiovascular risk by up to 30%.")
+        } else if todaySteps > 5000 {
+            tips.append("\(todaySteps.formatted()) steps so far — solid progress! Another \(max(0, 10000 - todaySteps).formatted()) steps to hit the 10K goal.")
+        } else if todaySteps > 0 {
+            tips.append("\(todaySteps.formatted()) steps today. Even a short 10-min walk now would help lower glucose and boost your mood.")
+        }
+
+        // ── Water Intake ──
+        let waterML = store.todayWaterML
+        let targetML = p.targetWater > 0 ? p.targetWater * 1000 : 2500.0
+        if waterML > 0 {
+            let pct = Int(waterML / targetML * 100)
+            if pct >= 100 {
+                tips.append("Hydration goal reached — \(String(format: "%.1f", waterML / 1000))L! Good hydration supports kidney function and blood pressure.")
+            } else {
+                tips.append("\(String(format: "%.1f", waterML / 1000))L of \(String(format: "%.1f", targetML / 1000))L target (\(pct)%). Drink \(String(format: "%.1f", (targetML - waterML) / 1000))L more for optimal hydration.")
+            }
+        }
+
+        // ── HRV & Stress Insights ──
+        if let hrv = store.hrvReadings.max(by: { $0.date < $1.date }) {
+            if hrv.value < 20 {
+                tips.append("HRV at \(Int(hrv.value))ms is low — your body may be under stress. Try 5 minutes of deep breathing or a guided meditation.")
+            } else if hrv.value >= 50 {
+                tips.append("HRV at \(Int(hrv.value))ms shows excellent recovery and resilience. Your nervous system is well-balanced!")
+            }
+        }
+
+        if let stress = store.stressReadings.max(by: { $0.date < $1.date }) {
+            if stress.level >= 7 {
+                tips.append("Stress level \(stress.level)/10 — elevated. Try box breathing (4s in, 4s hold, 4s out, 4s hold) to activate your parasympathetic nervous system.")
+            }
+        }
+
+        // ── Medication Adherence ──
+        let activeMeds = store.medications.filter { $0.isActive }
+        if !activeMeds.isEmpty {
+            tips.append("You have \(activeMeds.count) active medication\(activeMeds.count == 1 ? "" : "s"). Consistent timing maximises effectiveness — set reminders for each dose.")
+        }
+
+        // ── Body Temperature ──
+        if let temp = store.bodyTempReadings.max(by: { $0.date < $1.date }) {
+            if temp.value > 37.5 {
+                tips.append("Body temp \(String(format: "%.1f", temp.value))°C — slightly elevated. Stay hydrated and monitor for any developing symptoms.")
+            }
+        }
+
+        // ── Conditions-Specific Tips (from user profile) ──
+        let diabetesType = p.diabetesType.lowercased()
+        if diabetesType.contains("type 1") {
+            tips.append("Type 1 Diabetes: Consistent carb counting and insulin timing are key. Pair carbs with protein/fat to slow absorption.")
+        } else if diabetesType.contains("type 2") {
+            tips.append("Type 2 Diabetes: Aim for <7% HbA1c. Pairing carbs with protein/fat slows absorption and reduces glucose spikes.")
+        } else if diabetesType.contains("gestational") {
+            tips.append("Gestational Diabetes: Monitor glucose closely. Frequent small meals with complex carbs help maintain stable levels.")
+        }
+
+        if p.hasHypertension {
+            tips.append("With hypertension, the DASH diet (fruits, vegetables, low-fat dairy, whole grains) can lower systolic BP by 8–14 mmHg.")
+        }
+
+        // Check medications for statin-related tips
+        let medNames = store.medications.map { $0.name.lowercased() }
+        if medNames.contains(where: { $0.contains("statin") || $0.contains("atorvastatin") || $0.contains("rosuvastatin") || $0.contains("simvastatin") }) {
+            tips.append("On statins: take them at the same time daily. Grapefruit can interact — check with your doctor.")
+        }
+
+        // ── Health Goals ──
+        let active = store.healthGoals.filter { !$0.isCompleted }
+        if let goal = active.first {
+            tips.append("Active goal: \"\(goal.title)\" — \(Int(goal.progress * 100))% complete. Small daily actions compound into big health improvements!")
+        }
+
+        // ── Recent Symptoms ──
+        let recentSymptoms = store.symptomLogs.filter { $0.date > cal.date(byAdding: .day, value: -3, to: Date())! }
+        if !recentSymptoms.isEmpty {
+            let allSymptoms = recentSymptoms.flatMap { $0.symptoms }
+            let uniqueSymptoms = Array(Set(allSymptoms)).prefix(3).joined(separator: ", ")
+            tips.append("📋 Recent symptoms: \(uniqueSymptoms). Track patterns between symptoms, meals, and sleep to share with your doctor.")
+        }
+
+        // ── Fitness & Muscle-Building Insights ──
+        if goalType == .muscle {
+            let protPerKg = p.weight > 0 ? protGoal / p.weight : 2.2
+            tips.append("🏋️ Build Muscle mode: targeting \(Int(protGoal))g protein/day (\(String(format: "%.1f", protPerKg))g/kg). Spread protein across 4–5 meals for optimal muscle protein synthesis.")
+
+            if let sleep = store.sleepEntries.max(by: { $0.date < $1.date }), sleep.duration < 7 {
+                tips.append("💤 Muscle recovery happens during deep sleep. At \(String(format: "%.1f", sleep.duration))h, aim for 7–9h — growth hormone peaks during slow-wave sleep.")
+            }
+
+            let todayExerciseCal = store.stepEntries.filter { cal.isDateInToday($0.date) }.map { $0.calories }.reduce(0, +)
+            if todayExerciseCal > 300 {
+                tips.append("🔥 \(todayExerciseCal) kcal burned today! Post-workout: consume 20–40g protein within 2 hours to maximise muscle repair.")
+            }
+        } else if goalType == .lose {
+            tips.append("⚡ Weight loss tip: prioritise protein (\(Int(protGoal))g/day) to preserve lean muscle mass during your calorie deficit.")
+        }
+
+        // ── Activity Level Awareness ──
+        let level = ActivityLevel(rawValue: p.activityLevel) ?? .moderate
+        if level == .sedentary || level == .light {
+            tips.append("🚶 Your activity level is set to \"\(level.label)\". Even adding a daily 20-min walk can improve insulin sensitivity and cardiovascular health.")
+        } else if level == .veryActive {
+            tips.append("🏅 Very active lifestyle! Make sure you're eating enough — your TDEE is \(Int(p.tdee)) kcal. Under-fuelling can impair recovery and immune function.")
+        }
+
+        // ── Fallback if no data yet ──
+        if tips.isEmpty {
+            tips = [
+                "💡 Start logging your glucose, meals, and sleep to unlock personalised AI health insights.",
+                "💡 BodySense AI analyses your health patterns to give you actionable, personalised tips.",
+                "💡 The more data you log, the smarter your insights become. Let's build your health picture!",
+            ]
+        }
+
+        return tips
+    }
 }
 
 // MARK: - Health Score Detail Sheet
@@ -589,7 +893,7 @@ struct HealthScoreDetailView: View {
                     }
                     .background(Color(.systemBackground))
                     .cornerRadius(16)
-                    .shadow(color: .black.opacity(0.05), radius: 6)
+                    .shadow(color: Color.primary.opacity(0.05), radius: 6)
                     .padding(.horizontal)
 
                     // How score is calculated
@@ -740,7 +1044,7 @@ struct AlertsView: View {
                             store.save()
                         }
                     }
-                    .listRowBackground(alert.isRead ? Color.white : Color.brandPurple.opacity(0.04))
+                    .listRowBackground(alert.isRead ? Color(.secondarySystemGroupedBackground) : Color.brandPurple.opacity(0.04))
                 }
             }
             .listStyle(.insetGrouped)
@@ -762,16 +1066,43 @@ struct AlertsView: View {
 // MARK: - Subviews
 
 struct QuickStatCard: View {
-    let icon: String; let color: Color; let value: String; let label: String
+    let icon: String; let color: Color; let value: String; var unit: String = ""; let label: String
     var body: some View {
-        VStack(spacing: 4) {
-            Image(systemName: icon).font(.body).foregroundColor(color)
-            Text(value).font(.subheadline.bold())
-            Text(label).font(.caption2).foregroundColor(.secondary)
+        HStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 6) {
+                // Label row with icon — Apple Health style
+                HStack(spacing: 5) {
+                    Image(systemName: icon)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(color)
+                    Text(label.uppercased())
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .foregroundColor(color)
+                }
+
+                // Value row — large number + small unit
+                HStack(alignment: .firstTextBaseline, spacing: 2) {
+                    Text(value)
+                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                        .foregroundColor(.primary)
+                    if !unit.isEmpty {
+                        Text(unit)
+                            .font(.system(size: 13, weight: .medium, design: .rounded))
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            Spacer()
         }
-        .frame(maxWidth: .infinity).padding(.vertical, 10)
-        .background(Color.white).cornerRadius(14)
-        .shadow(color: .black.opacity(0.05), radius: 3, y: 1)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(color.opacity(0.08))
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(label): \(value) \(unit)")
     }
 }
 
@@ -782,6 +1113,8 @@ struct BPPill: View {
             Text(value).font(.title3.bold()).foregroundColor(color)
             Text(label).font(.caption2).foregroundColor(.secondary)
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(label): \(value)")
     }
 }
 

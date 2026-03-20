@@ -9,28 +9,115 @@
 
 import SwiftUI
 import UserNotifications
-#if canImport(StripeCore)
-import StripeCore
-#endif
 import HealthKit
 
 @main
 struct body_sense_aiApp: App {
 
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    @AppStorage("appearanceMode") private var appearanceMode: String = AppearanceMode.system.rawValue
+    @AppStorage("biometricLockEnabled") private var biometricLockEnabled = false
+    @State private var isUnlocked = false
+    @State private var showJailbreakWarning = false
+
+    private var resolvedScheme: ColorScheme? {
+        AppearanceMode(rawValue: appearanceMode)?.colorScheme
+    }
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .preferredColorScheme(.light)
-                .task {
-                    // Auto-sync HealthKit data on launch if enabled
-                    let store = HealthStore.shared
-                    if store.userProfile.healthKitEnabled {
-                        await HealthKitManager.shared.requestAuthorization()
-                        await HealthKitManager.shared.syncAll(to: store)
-                    }
+            Group {
+                if biometricLockEnabled && !isUnlocked {
+                    BiometricLockScreen(isUnlocked: $isUnlocked)
+                } else {
+                    ContentView()
+                        .task {
+                            await AuthService.shared.checkCredentialState()
+                        }
+                        .task {
+                            try? await Task.sleep(for: .seconds(2.0))
+                            let store = HealthStore.shared
+                            guard store.userProfile.healthKitEnabled else { return }
+                            await HealthKitManager.shared.requestAuthorization()
+                            await HealthKitManager.shared.syncAll(to: store)
+                        }
                 }
+            }
+            .preferredColorScheme(resolvedScheme)
+            .onAppear {
+                // Seed Keychain defaults on first launch
+                KeychainManager.shared.seedDefaultsIfNeeded()
+
+                // Exclude health data from iCloud backup
+                BackupExclusion.excludeHealthDataFromBackup()
+
+                // Enforce data retention policy (GDPR)
+                DataRetentionPolicy.enforceRetention(store: HealthStore.shared)
+
+                // Jailbreak detection
+                if JailbreakDetector.isJailbroken {
+                    showJailbreakWarning = true
+                }
+
+                // Schedule CEO daily summary (if CEO)
+                if HealthStore.shared.userProfile.isCEO {
+                    CEODailySummary.scheduleDailyNotification()
+                }
+
+                // Auto-unlock if biometric not enabled
+                if !biometricLockEnabled {
+                    isUnlocked = true
+                }
+            }
+            .alert("Security Warning", isPresented: $showJailbreakWarning) {
+                Button("I Understand") { showJailbreakWarning = false }
+            } message: {
+                Text(JailbreakDetector.warningMessage)
+            }
+        }
+    }
+}
+
+// MARK: - Biometric Lock Screen
+
+struct BiometricLockScreen: View {
+    @Binding var isUnlocked: Bool
+
+    var body: some View {
+        VStack(spacing: 24) {
+            Spacer()
+
+            Image(systemName: BiometricAuth.shared.iconName)
+                .font(.system(size: 64))
+                .foregroundColor(.brandPurple)
+
+            Text("BodySense AI")
+                .font(.title).fontWeight(.bold)
+
+            Text("Your health data is protected")
+                .font(.subheadline).foregroundColor(.secondary)
+
+            Button {
+                Task {
+                    let success = await BiometricAuth.shared.authenticate()
+                    if success { isUnlocked = true }
+                }
+            } label: {
+                Label("Unlock with \(BiometricAuth.shared.typeName)", systemImage: BiometricAuth.shared.iconName)
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.brandPurple)
+                    .foregroundColor(.white)
+                    .cornerRadius(16)
+            }
+            .padding(.horizontal, 40)
+
+            Spacer()
+        }
+        .task {
+            let success = await BiometricAuth.shared.authenticate()
+            if success { isUnlocked = true }
         }
     }
 }
@@ -43,21 +130,9 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
 
-        // ── Stripe SDK init (requires StripeCore via SPM) ──
-        #if canImport(StripeCore)
-        StripeAPI.defaultPublishableKey = StripeManager.shared.publishableKey
-        #endif
-
-        // ── Request notification permissions ──
+        // ── Set notification delegate (permission is requested during onboarding) ──
         let center = UNUserNotificationCenter.current()
         center.delegate = self
-        center.requestAuthorization(options: [.alert, .badge, .sound]) { granted, _ in
-            if granted {
-                DispatchQueue.main.async {
-                    application.registerForRemoteNotifications()
-                }
-            }
-        }
 
         // ── Daily morning health check-in — 8 AM ──
         scheduleDailyReminder(
@@ -74,6 +149,11 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
             body: "Evening check-in — how are you feeling today? Log any symptoms or notes.",
             hour: 21, minute: 0
         )
+
+        // ── Schedule medication reminders for all active meds ──
+        Task { @MainActor in
+            NotificationService.shared.scheduleMedicationReminders(for: HealthStore.shared.medications)
+        }
 
         return true
     }
@@ -135,7 +215,8 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
 
 // MARK: - Notification Service (appointment reminders)
 /// Call `NotificationService.shared.scheduleAppointmentReminder(...)` whenever a booking is confirmed.
-final class NotificationService: @unchecked Sendable {
+@MainActor
+final class NotificationService {
 
     static let shared = NotificationService()
     private init() {}
@@ -198,5 +279,45 @@ final class NotificationService: @unchecked Sendable {
             appointmentId.uuidString,
             appointmentId.uuidString + "_start"
         ])
+    }
+
+    // MARK: - Medication Reminders
+
+    /// Schedule daily repeating reminders for each active medication at each scheduled time.
+    func scheduleMedicationReminders(for medications: [Medication]) {
+        // First cancel all existing medication reminders
+        let notificationCenter = self.center
+        notificationCenter.getPendingNotificationRequests { requests in
+            let medIds = requests.filter { $0.identifier.hasPrefix("med_") }.map { $0.identifier }
+            notificationCenter.removePendingNotificationRequests(withIdentifiers: medIds)
+
+            // Schedule new ones for active meds
+            for med in medications where med.isActive {
+                for time in med.timeOfDay {
+                    let id = "med_\(med.id.uuidString)_\(time.rawValue)"
+
+                    let content       = UNMutableNotificationContent()
+                    content.title     = "Time for \(med.name)"
+                    content.body      = "\(med.dosage) \(med.unit) — \(time.rawValue) dose"
+                    content.sound     = .default
+                    content.badge     = 1
+                    content.userInfo  = ["medicationId": med.id.uuidString, "type": "medicationReminder"]
+
+                    var comps         = DateComponents()
+                    comps.hour        = time.hour
+                    comps.minute      = 0
+
+                    let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: true)
+                    let request = UNNotificationRequest(identifier: id, content: content, trigger: trigger)
+                    notificationCenter.add(request)
+                }
+            }
+        }
+    }
+
+    /// Cancel all reminders for a specific medication.
+    func cancelMedicationReminders(for medication: Medication) {
+        let ids = medication.timeOfDay.map { "med_\(medication.id.uuidString)_\($0.rawValue)" }
+        center.removePendingNotificationRequests(withIdentifiers: ids)
     }
 }

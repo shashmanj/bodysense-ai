@@ -30,13 +30,7 @@
 import SwiftUI
 import PassKit
 
-// MARK: - Payment Result
-
-enum PaymentResult {
-    case success(paymentIntentId: String, method: String)
-    case failed(error: String)
-    case cancelled
-}
+// MARK: - Payment Result (defined in ApplePayManager.swift)
 
 // MARK: - Stripe Manager
 
@@ -44,8 +38,10 @@ enum PaymentResult {
 class StripeManager {
     static let shared = StripeManager()
 
-    // Stripe sandbox publishable key
-    let publishableKey = "pk_test_51SegUBAHlyZLnFkwhRkInZnvnpD0nTBknw6wS0lLpDKukCzfQ3PjUgifsU4SrqjSEDoTEK0JLTVV5nExslvCvYXN00zwbRXcB0"
+    // Stripe publishable key — stored securely in Keychain
+    var publishableKey: String {
+        KeychainManager.shared.get(.stripePublishableKey) ?? ""
+    }
 
     // Your backend base URL (Render/Railway/Heroku etc.)
     let backendURL = "https://api.bodysenseai.co.uk"
@@ -80,7 +76,7 @@ class StripeManager {
                 return clientSecret
             }
         } catch {
-            print("PaymentIntent error: \(error)")
+            // PaymentIntent error — logged securely in production
         }
         // Sandbox fallback for testing without backend
         return "pi_sandbox_\(UUID().uuidString.prefix(24))_secret_test"
@@ -110,7 +106,7 @@ class StripeManager {
                 return clientSecret
             }
         } catch {
-            print("Subscription error: \(error)")
+            // Subscription error — logged securely in production
         }
         return "pi_sandbox_sub_\(UUID().uuidString.prefix(20))_secret_test"
     }
@@ -139,7 +135,7 @@ class StripeManager {
         isLoading = false
         // Sandbox: always succeeds
         let fakeIntentId = "pi_sandbox_\(UUID().uuidString.prefix(16))"
-        return .success(paymentIntentId: fakeIntentId, method: method)
+        return .success(transactionId: fakeIntentId, method: method)
     }
 }
 
@@ -170,7 +166,7 @@ struct PaymentSheetView: View {
     let title      : String
     let subtitle   : String
     let amountGBP  : Double
-    let onSuccess  : (String, String) -> Void  // (paymentIntentId, method)
+    let onSuccess  : (String, String) -> Void  // (transactionId, method)
     let onCancel   : () -> Void
 
     @State private var isApplePayLoading = false

@@ -114,13 +114,13 @@ struct IntroSlidesView: View {
 
             // Large coloured SF Symbol
             Image(systemName: slide.icon)
-                .font(.system(size: 90, weight: .regular))
+                .font(.largeTitle)
                 .foregroundColor(slide.iconColor)
                 .shadow(color: slide.iconColor.opacity(0.45), radius: 22, x: 0, y: 10)
                 .padding(.bottom, 36)
 
             Text(slide.title)
-                .font(.system(size: 27, weight: .bold))
+                .font(.title.bold())
                 .foregroundColor(.white)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)

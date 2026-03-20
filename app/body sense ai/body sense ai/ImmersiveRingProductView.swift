@@ -79,7 +79,7 @@ struct ImmersiveRingProductView: View {
                 Spacer()
                 Button { dismiss() } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 30))
+                        .font(.title)
                         .foregroundStyle(.white.opacity(0.5), .white.opacity(0.1))
                 }
                 .padding(.trailing, 20)
@@ -141,11 +141,11 @@ struct ImmersiveRingProductView: View {
                 // ── Title ──
                 VStack(spacing: 10) {
                     Text("BodySense Ring")
-                        .font(.system(size: 38, weight: .bold, design: .rounded))
+                        .font(.largeTitle.bold())
                         .foregroundStyle(.white)
 
                     Text("X3B · Medical Grade")
-                        .font(.system(size: 15, weight: .medium))
+                        .font(.subheadline.weight(.medium))
                         .foregroundStyle(.white.opacity(0.5))
                         .tracking(3)
 
@@ -154,7 +154,7 @@ struct ImmersiveRingProductView: View {
                     // Price
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
                         Text(product.priceString(currencyCode: store.userCurrency))
-                            .font(.system(size: 32, weight: .bold))
+                            .font(.title.bold())
                             .foregroundStyle(.white)
                         if product.originalPrice > product.price {
                             Text(product.originalPriceString(currencyCode: store.userCurrency))
@@ -254,7 +254,7 @@ struct ImmersiveRingProductView: View {
 
             VStack(spacing: 16) {
                 Text("Worn differently.")
-                    .font(.system(size: 34, weight: .bold, design: .rounded))
+                    .font(.largeTitle.bold())
                     .foregroundStyle(.white)
 
                 Text("The X3B monitors 8 vital signs around the clock. No screen. No charging every night. Just intelligence, worn on your finger.")
@@ -271,7 +271,7 @@ struct ImmersiveRingProductView: View {
                 ForEach(Array(pillars.enumerated()), id: \.offset) { idx, pillar in
                     VStack(spacing: 10) {
                         Image(systemName: pillar.icon)
-                            .font(.system(size: 26))
+                            .font(.title2)
                             .foregroundStyle(Color.brandPurple)
                         Text(pillar.title)
                             .font(.caption).fontWeight(.bold)
@@ -307,7 +307,7 @@ struct ImmersiveRingProductView: View {
             // Section header
             VStack(spacing: 12) {
                 Text("Every reading.\nEvery moment.")
-                    .font(.system(size: 30, weight: .bold, design: .rounded))
+                    .font(.title.bold())
                     .foregroundStyle(.white)
                     .multilineTextAlignment(.center)
                     .padding(.top, 56)
@@ -359,7 +359,7 @@ struct ImmersiveRingProductView: View {
 
             VStack(spacing: 12) {
                 Text("Three finishes.\nOne statement.")
-                    .font(.system(size: 30, weight: .bold, design: .rounded))
+                    .font(.title.bold())
                     .foregroundStyle(.white)
                     .multilineTextAlignment(.center)
                 Text("Aerospace-grade titanium. Hypoallergenic. Built to last.")
@@ -441,7 +441,7 @@ struct ImmersiveRingProductView: View {
 
             VStack(alignment: .leading, spacing: 28) {
                 Text("Technical Specs")
-                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .font(.title2.bold())
                     .foregroundStyle(.white)
                     .padding(.top, 48)
 
@@ -522,7 +522,7 @@ struct ImmersiveRingProductView: View {
             VStack(alignment: .leading, spacing: 24) {
 
                 Text("Configure your ring")
-                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .font(.title2.bold())
                     .foregroundStyle(.white)
                     .padding(.top, 48)
 
@@ -766,7 +766,7 @@ struct ImmersiveRingProductView: View {
                             Image(systemName: String(parts[0]))
                                 .font(.caption).foregroundStyle(.white.opacity(0.4))
                             Text(String(parts[1]))
-                                .font(.system(size: 9)).foregroundStyle(.white.opacity(0.35))
+                                .font(.caption2).foregroundStyle(.white.opacity(0.35))
                                 .multilineTextAlignment(.center)
                         }
                         .frame(maxWidth: .infinity)
@@ -795,27 +795,26 @@ struct ImmersiveRingProductView: View {
     var paymentSheet: some View {
         let sub = addSubscription.map { $0.basePriceGBP * 12 } ?? 0
         let total = product.price * Double(quantity) + sub
-        return PaymentSheetView(
+        return ApplePayCheckoutView(
             title: product.name,
             subtitle: "\(selectedColor.rawValue) · Size \(selectedSize.shortLabel) · Qty \(quantity)",
-            amountGBP: total
-        ) { intentId, method in
-            let item = CartItem(
-                productID: product.id, name: product.name,
-                price: product.price, icon: product.icon, color: product.color,
-                quantity: quantity,
-                selectedColor: selectedColor, selectedSize: selectedSize,
-                sku: "RING-X3B-\(selectedColor.rawValue.uppercased())-S\(selectedSize.shortLabel)",
-                isGift: isGift, giftMessage: giftMessage,
-                addSubscription: addSubscription
-            )
-            store.cartItems = [item]
-            store.placeOrder(paymentMethod: method, paymentIntentId: intentId)
-            showPayment = false
-            dismiss()
-        } onCancel: {
-            showPayment = false
-        }
+            amountGBP: total,
+            onSuccess: { transactionId, method in
+                let item = CartItem(
+                    productID: product.id, name: product.name,
+                    price: product.price, icon: product.icon, color: product.color,
+                    quantity: quantity,
+                    selectedColor: selectedColor, selectedSize: selectedSize,
+                    sku: "RING-X3B-\(selectedColor.rawValue.uppercased())-S\(selectedSize.shortLabel)",
+                    isGift: isGift, giftMessage: giftMessage,
+                    addSubscription: addSubscription
+                )
+                store.cartItems = [item]
+                store.placeOrder(paymentMethod: method, paymentIntentId: transactionId)
+                showPayment = false
+                dismiss()
+            }
+        )
     }
 
     // MARK: - Size Guide Sheet
@@ -964,7 +963,7 @@ struct FeatureCard: View {
                     .fill(color.opacity(0.15))
                     .frame(width: 52, height: 52)
                 Image(systemName: icon)
-                    .font(.system(size: 22))
+                    .font(.title2)
                     .foregroundStyle(color)
             }
 
@@ -985,11 +984,11 @@ struct FeatureCard: View {
             if !metric.isEmpty {
                 VStack(spacing: 2) {
                     Text(metric)
-                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                        .font(.headline)
                         .foregroundStyle(color)
                     if !unit.isEmpty {
                         Text(unit)
-                            .font(.system(size: 9))
+                            .font(.caption2)
                             .foregroundStyle(color.opacity(0.6))
                     }
                 }

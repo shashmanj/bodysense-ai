@@ -93,7 +93,7 @@ struct AuthRootView: View {
     @State private var flow: AuthFlow = .intro
 
     enum AuthFlow {
-        case intro, welcome, signIn, registerPatient, registerDoctor
+        case intro, welcome, signIn, registerPatient, registerDoctor, permissions
     }
 
     var body: some View {
@@ -113,14 +113,187 @@ struct AuthRootView: View {
                     onRegisterDoctor:    { flow = .registerDoctor }
                 )
             case .signIn:
-                SignInView(onBack: { flow = .welcome }, onDone: { onboardingDone = true })
+                SignInView(onBack: { flow = .welcome }, onDone: { withAnimation { flow = .permissions } })
             case .registerPatient:
-                PatientOnboardingView(onBack: { flow = .welcome }, onDone: { onboardingDone = true })
+                PatientOnboardingView(onBack: { flow = .welcome }, onDone: { withAnimation { flow = .permissions } })
             case .registerDoctor:
-                DoctorRegistrationView(onBack: { flow = .welcome }, onDone: { onboardingDone = true })
+                DoctorRegistrationView(onBack: { flow = .welcome }, onDone: { withAnimation { flow = .permissions } })
+            case .permissions:
+                HealthPermissionsView(onDone: { onboardingDone = true })
             }
         }
         .animation(.easeInOut, value: flow)
+    }
+}
+
+// MARK: - Health Permissions Screen
+
+import AVFoundation
+import UserNotifications
+
+struct HealthPermissionsView: View {
+    let onDone: () -> Void
+
+    @State private var healthKitGranted   = false
+    @State private var notificationsGranted = false
+    @State private var cameraGranted      = false
+    @State private var micGranted         = false
+    @State private var isRequestingHK     = false
+    @State private var isRequestingNotif  = false
+    @State private var isRequestingCamera = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(spacing: 24) {
+                    // Header
+                    VStack(spacing: 12) {
+                        Image(systemName: "shield.checkered")
+                            .font(.system(size: 56))
+                            .foregroundStyle(
+                                LinearGradient(colors: [.brandTeal, .brandPurple], startPoint: .topLeading, endPoint: .bottomTrailing)
+                            )
+                        Text("Enable Health Features")
+                            .font(.title2).fontWeight(.bold).foregroundColor(.white)
+                        Text("Grant permissions to unlock the full power of BodySense AI. You can change these later in Settings.")
+                            .font(.subheadline).foregroundColor(.white.opacity(0.8))
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding(.top, 40).padding(.horizontal, 24)
+
+                    // Permission cards
+                    VStack(spacing: 14) {
+                        // ── Apple Health ──
+                        permissionCard(
+                            icon: "heart.text.square.fill",
+                            iconColor: .red,
+                            title: "Apple Health",
+                            description: "Sync glucose, blood pressure, heart rate, sleep, steps, weight, SpO2, HRV & 40+ health metrics",
+                            isGranted: healthKitGranted,
+                            isLoading: isRequestingHK
+                        ) {
+                            isRequestingHK = true
+                            await HealthKitManager.shared.requestAuthorization()
+                            healthKitGranted = HealthKitManager.shared.isAuthorized
+                            isRequestingHK = false
+                            // Enable HealthKit sync in profile
+                            HealthStore.shared.userProfile.healthKitEnabled = true
+                            HealthStore.shared.save()
+                        }
+
+                        // ── Notifications ──
+                        permissionCard(
+                            icon: "bell.badge.fill",
+                            iconColor: .brandAmber,
+                            title: "Notifications",
+                            description: "Medication reminders, health alerts, appointment updates & AI insights",
+                            isGranted: notificationsGranted,
+                            isLoading: isRequestingNotif
+                        ) {
+                            isRequestingNotif = true
+                            let center = UNUserNotificationCenter.current()
+                            let granted = (try? await center.requestAuthorization(options: [.alert, .badge, .sound])) ?? false
+                            notificationsGranted = granted
+                            isRequestingNotif = false
+                        }
+
+                        // ── Camera & Microphone ──
+                        permissionCard(
+                            icon: "video.fill",
+                            iconColor: .brandPurple,
+                            title: "Camera & Microphone",
+                            description: "Video consultations with doctors, food label scanning & voice logging",
+                            isGranted: cameraGranted && micGranted,
+                            isLoading: isRequestingCamera
+                        ) {
+                            isRequestingCamera = true
+                            let camGranted = await AVCaptureDevice.requestAccess(for: .video)
+                            let audioGranted = await AVCaptureDevice.requestAccess(for: .audio)
+                            cameraGranted = camGranted
+                            micGranted = audioGranted
+                            isRequestingCamera = false
+                        }
+                    }
+                    .padding(.horizontal, 20)
+
+                    // Privacy note
+                    HStack(spacing: 8) {
+                        Image(systemName: "lock.shield.fill")
+                            .font(.caption).foregroundColor(.brandGreen)
+                        Text("Your data is encrypted with AES-256 and never shared without your consent.")
+                            .font(.caption2).foregroundColor(.white.opacity(0.7))
+                    }
+                    .padding(.horizontal, 24)
+                }
+            }
+
+            // Continue button
+            Button {
+                onDone()
+            } label: {
+                Text("Continue")
+                    .font(.headline).foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.brandTeal)
+                    .cornerRadius(14)
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 16)
+
+            // Skip option
+            Button {
+                onDone()
+            } label: {
+                Text("Skip for now")
+                    .font(.subheadline).foregroundColor(.white.opacity(0.6))
+            }
+            .padding(.bottom, 24)
+        }
+    }
+
+    func permissionCard(
+        icon: String, iconColor: Color,
+        title: String, description: String,
+        isGranted: Bool, isLoading: Bool,
+        action: @escaping () async -> Void
+    ) -> some View {
+        HStack(spacing: 14) {
+            Image(systemName: icon)
+                .font(.title2).foregroundColor(iconColor)
+                .frame(width: 44, height: 44)
+                .background(iconColor.opacity(0.15))
+                .cornerRadius(12)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.subheadline).fontWeight(.semibold).foregroundColor(.white)
+                Text(description).font(.caption2).foregroundColor(.white.opacity(0.7))
+                    .lineLimit(2)
+            }
+
+            Spacer()
+
+            if isGranted {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.title3).foregroundColor(.brandGreen)
+            } else if isLoading {
+                ProgressView().tint(.white)
+            } else {
+                Button {
+                    Task { await action() }
+                } label: {
+                    Text("Enable")
+                        .font(.caption).fontWeight(.semibold)
+                        .padding(.horizontal, 14).padding(.vertical, 7)
+                        .background(Color.white.opacity(0.2))
+                        .foregroundColor(.white)
+                        .cornerRadius(8)
+                }
+            }
+        }
+        .padding(14)
+        .background(Color.white.opacity(0.08))
+        .cornerRadius(16)
     }
 }
 
@@ -144,7 +317,7 @@ struct WelcomeScreen: View {
                         .padding(.top, 60)
 
                     Text("BodySense AI")
-                        .font(.system(size: 34, weight: .bold))
+                        .font(.largeTitle.bold())
                         .foregroundColor(.white)
 
                     Text("Your intelligent health companion")
@@ -161,6 +334,8 @@ struct WelcomeScreen: View {
                         .background(Color.white.opacity(0.12))
                         .cornerRadius(20)
                     }
+                    .accessibilityLabel("Visit BodySense AI website")
+                    .accessibilityHint("Opens bodysenseai.co.uk in your browser")
                 }
                 .padding(.bottom, 44)
 
@@ -172,17 +347,16 @@ struct WelcomeScreen: View {
                     .padding(.horizontal, 28)
                     .padding(.bottom, 10)
 
-                // ── Apple Sign In (native) ────────────────────────────────────
-                SignInWithAppleButton(.signIn) { request in
-                    request.requestedScopes = [.fullName, .email]
-                } onCompletion: { _ in
-                    onSignIn()
-                }
-                .signInWithAppleButtonStyle(.white)
-                .frame(height: 54)
-                .cornerRadius(14)
+                // ── Apple Sign In (native via AuthService) ──────────────────────
+                SignInWithAppleButton(
+                    onSuccess: {
+                        onSignIn()
+                    }
+                )
                 .padding(.horizontal, 28)
                 .padding(.bottom, 10)
+                .accessibilityLabel("Sign in with Apple")
+                .accessibilityHint("Create or sign into your BodySense AI account")
 
                 // ── Google Sign In ────────────────────────────────────────────
                 socialBtn(icon: "g.circle.fill",
@@ -218,6 +392,8 @@ struct WelcomeScreen: View {
                 }
                 .padding(.horizontal, 28)
                 .padding(.top, 6)
+                .accessibilityLabel("Create new account")
+                .accessibilityHint("Register a new patient account with BodySense AI")
 
                 // ── Doctor divider ────────────────────────────────────────────
                 HStack {
@@ -246,6 +422,8 @@ struct WelcomeScreen: View {
                         .stroke(Color.brandTeal.opacity(0.45), lineWidth: 1.5))
                 }
                 .padding(.horizontal, 28)
+                .accessibilityLabel("Sign in as a doctor")
+                .accessibilityHint("Sign into your doctor account")
 
                 // ── Register as Doctor ────────────────────────────────────────
                 Button(action: onRegisterDoctor) {
@@ -258,6 +436,8 @@ struct WelcomeScreen: View {
                 }
                 .padding(.top, 14)
                 .padding(.bottom, 50)
+                .accessibilityLabel("Register as a verified doctor")
+                .accessibilityHint("Create a new verified doctor account")
             }
         }
     }
@@ -286,6 +466,8 @@ struct WelcomeScreen: View {
         }
         .padding(.horizontal, 28)
         .padding(.bottom, 10)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(label)
     }
 }
 
@@ -297,6 +479,7 @@ struct SignInView: View {
     @Environment(HealthStore.self) var store
 
     @State private var name = ""
+    @State private var email = ""
     @State private var showError = false
 
     var body: some View {
@@ -309,6 +492,7 @@ struct SignInView: View {
                         .background(Color.white.opacity(0.2))
                         .clipShape(Circle())
                 }
+                .accessibilityLabel("Go back")
                 Spacer()
             }
             .padding(.horizontal, 24)
@@ -319,11 +503,26 @@ struct SignInView: View {
             Image(systemName: "person.circle.fill")
                 .font(.system(size: 70))
                 .foregroundColor(.white)
+                .accessibilityHidden(true)
 
-            Text("Welcome Back").font(.system(size: 30, weight: .bold)).foregroundColor(.white)
-            Text("Enter your name to continue").font(.subheadline).foregroundColor(.white.opacity(0.8))
+            Text(AuthService.shared.isAuthenticated ? "Welcome Back" : "Sign In").font(.title.bold()).foregroundColor(.white)
+            Text("Enter your details to continue").font(.subheadline).foregroundColor(.white.opacity(0.8))
 
             VStack(spacing: 16) {
+                HStack {
+                    Image(systemName: "envelope").foregroundColor(.white.opacity(0.7))
+                    TextField("Email address", text: $email)
+                        .foregroundColor(.white)
+                        .tint(.white)
+                        .textContentType(.emailAddress)
+                        .keyboardType(.emailAddress)
+                        .autocapitalization(.none)
+                }
+                .padding()
+                .background(Color.white.opacity(0.15))
+                .cornerRadius(12)
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.3)))
+
                 HStack {
                     Image(systemName: "person").foregroundColor(.white.opacity(0.7))
                     TextField("Your name", text: $name)
@@ -338,16 +537,17 @@ struct SignInView: View {
             .padding(.horizontal, 28)
 
             if showError {
-                Text("Please enter your name to continue")
+                Text("Please enter your email and name to continue")
                     .font(.caption).foregroundColor(.yellow)
             }
 
             Spacer()
 
             Button {
-                guard !name.isEmpty else { showError = true; return }
+                guard !name.isEmpty, !email.isEmpty else { showError = true; return }
                 var p = store.userProfile
                 p.name = name
+                p.email = email.lowercased().trimmingCharacters(in: .whitespaces)
                 store.userProfile = p
                 store.save()
                 onDone()
@@ -375,6 +575,7 @@ struct PatientOnboardingView: View {
 
     @State private var page         = 0
     @State private var name         = ""
+    @State private var email        = ""
     @State private var age          = 25
     @State private var gender       = "Female"
     @State private var condition    = "General Wellness"
@@ -399,6 +600,7 @@ struct PatientOnboardingView: View {
                         .background(Color.white.opacity(0.2))
                         .clipShape(Circle())
                 }
+                .accessibilityLabel(page == 0 ? "Go back" : "Previous step")
                 Spacer()
                 HStack(spacing: 8) {
                     ForEach(0..<5, id: \.self) { i in
@@ -418,6 +620,16 @@ struct PatientOnboardingView: View {
                 onboardStep(icon: "person.crop.circle.fill", title: "About You") {
                     AnyView(VStack(spacing: 16) {
                         onboardField("Your full name", text: $name, icon: "person")
+                        HStack {
+                            Image(systemName: "envelope").foregroundColor(.white.opacity(0.7))
+                            TextField("Email address", text: $email)
+                                .foregroundColor(.white).tint(.white)
+                                .textContentType(.emailAddress)
+                                .keyboardType(.emailAddress)
+                                .autocapitalization(.none)
+                        }
+                        .padding().background(Color.white.opacity(0.15)).cornerRadius(12)
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.3)))
                         Picker("Gender", selection: $gender) {
                             Text("Female").tag("Female")
                             Text("Male").tag("Male")
@@ -519,7 +731,7 @@ struct PatientOnboardingView: View {
                     Spacer()
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 80)).foregroundColor(.brandGreen).shadow(radius: 10)
-                    Text("All Set!").font(.system(size: 34, weight: .bold)).foregroundColor(.white)
+                    Text("All Set!").font(.largeTitle.bold()).foregroundColor(.white)
                     Text("Your BodySense AI journey starts now.\nTrack your health, consult doctors, and thrive.")
                         .font(.body).multilineTextAlignment(.center).foregroundColor(.white.opacity(0.85))
                         .padding(.horizontal, 32)
@@ -537,7 +749,7 @@ struct PatientOnboardingView: View {
         VStack(spacing: 24) {
             Spacer()
             Image(systemName: icon).font(.system(size: 60)).foregroundColor(.white).shadow(radius: 10)
-            Text(title).font(.system(size: 30, weight: .bold)).foregroundColor(.white)
+            Text(title).font(.title.bold()).foregroundColor(.white)
             content().padding(.horizontal, 28)
             Spacer()
             nextBtn("Continue", action: next)
@@ -565,6 +777,7 @@ struct PatientOnboardingView: View {
     func completePatientOnboarding() {
         var profile = store.userProfile
         profile.name          = name.isEmpty ? "Friend" : name
+        profile.email         = email.lowercased().trimmingCharacters(in: .whitespaces)
         profile.age           = age
         profile.gender        = gender
         profile.diabetesType  = condition
@@ -596,6 +809,7 @@ struct DoctorRegistrationView: View {
     @State private var page         = 0
     // Personal
     @State private var fullName     = ""
+    @State private var email        = ""
     @State private var age          = 30
     @State private var gender       = "Male"
     @State private var country      = "United Kingdom"
@@ -645,7 +859,7 @@ struct DoctorRegistrationView: View {
                     Text("Doctor Registration")
                         .font(.headline).foregroundColor(.white)
                     HStack(spacing: 6) {
-                        ForEach(0..<5, id: \.self) { i in
+                        ForEach(0..<6, id: \.self) { i in
                             Capsule()
                                 .fill(i <= page ? Color.white : Color.white.opacity(0.35))
                                 .frame(width: i == page ? 20 : 6, height: 6)
@@ -663,6 +877,7 @@ struct DoctorRegistrationView: View {
                     VStack(spacing: 20) {
                         regSectionTitle("Personal Information")
                         regField("Full Name (Dr. ...)", text: $fullName, icon: "person")
+                        regField("Email address", text: $email, icon: "envelope")
                         Stepper("Age: \(age)", value: $age, in: 25...80).foregroundColor(.white)
                         Picker("Gender", selection: $gender) {
                             Text("Male").tag("Male"); Text("Female").tag("Female")
@@ -796,9 +1011,40 @@ struct DoctorRegistrationView: View {
                             .cornerRadius(12)
                         }
 
-                        nextBtn("Complete Registration") { completeDocReg() }
+                        nextBtn("Submit for Verification") { completeDocReg() }
                     }.padding(.horizontal, 28).padding(.vertical, 24)
                 }.tag(4)
+
+                // ── Page 5: Registration Submitted ──
+                VStack(spacing: 28) {
+                    Spacer()
+                    Image(systemName: "checkmark.shield.fill")
+                        .font(.system(size: 80))
+                        .foregroundColor(.brandTeal)
+                        .shadow(radius: 10)
+                    Text("Registration Submitted")
+                        .font(.largeTitle.bold()).foregroundColor(.white)
+                    VStack(spacing: 12) {
+                        Text("Your credentials are now under review by the BodySense AI team.")
+                            .font(.body).multilineTextAlignment(.center)
+                            .foregroundColor(.white.opacity(0.85))
+                        Text("Once your GMC/credentials are verified, your profile will be live and patients can book consultations with you.")
+                            .font(.subheadline).multilineTextAlignment(.center)
+                            .foregroundColor(.white.opacity(0.7))
+                        HStack(spacing: 8) {
+                            Image(systemName: "clock.fill")
+                                .foregroundColor(.brandAmber)
+                            Text("Typical review time: 24–48 hours")
+                                .font(.caption).foregroundColor(.white.opacity(0.7))
+                        }
+                        .padding(.top, 8)
+                    }
+                    .padding(.horizontal, 32)
+                    Spacer()
+                    nextBtn("Continue to App") { onDone() }
+                }
+                .padding()
+                .tag(5)
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
         }
@@ -806,7 +1052,7 @@ struct DoctorRegistrationView: View {
 
     func regSectionTitle(_ t: String) -> some View {
         HStack {
-            Text(t).font(.system(size: 24, weight: .bold)).foregroundColor(.white)
+            Text(t).font(.title2.bold()).foregroundColor(.white)
             Spacer()
         }
     }
@@ -853,6 +1099,7 @@ struct DoctorRegistrationView: View {
     func completeDocReg() {
         var profile = store.userProfile
         profile.name        = fullName.isEmpty ? "Doctor" : fullName
+        profile.email       = email.lowercased().trimmingCharacters(in: .whitespaces)
         profile.age         = age
         profile.gender      = gender
         profile.country     = country
@@ -889,8 +1136,35 @@ struct DoctorRegistrationView: View {
         profile.doctorProfile = dp
         store.userProfile = profile
         store.ensureAnonymousAlias()
-        store.save()
-        onDone()
+
+        // Submit registration request for CEO approval
+        let request = DoctorRegistrationRequest(
+            name: fullName,
+            email: email.lowercased().trimmingCharacters(in: .whitespaces),
+            specialty: specialty,
+            hospital: hospital,
+            city: city,
+            country: country,
+            postcode: postcode.uppercased(),
+            gmcNumber: gmcNumber,
+            gmcStatus: gmcStatus,
+            regulatoryBody: regulatoryBody,
+            pmqDegree: pmqDegree,
+            pmqCountry: pmqCountry,
+            pmqYear: pmqYear,
+            plabPassed: plabPassed,
+            ecfmgCertified: ecfmgCerted,
+            wdomListed: wdomListed,
+            goodStanding: hasCGOS,
+            videoFee: Double(videoFee) ?? 50,
+            phoneFee: Double(phoneFee) ?? 35,
+            inPersonFee: Double(inPersonFee) ?? 75,
+            introduction: intro
+        )
+        store.submitDoctorRequest(request)
+
+        // Navigate to confirmation page instead of completing
+        withAnimation { page = 5 }
     }
 }
 

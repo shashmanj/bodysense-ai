@@ -35,6 +35,14 @@ struct PatientProfileView: View {
     @State private var showSupport        = false
     @State private var showNotifSettings  = false
     @State private var showFamilySharing  = false
+    @State private var showAISettings     = false
+    @State private var showPrivacyData    = false
+    @State private var showCEODashboard   = false
+    @State private var showDoctorApproval = false
+    @State private var showAPIKeys        = false
+    @State private var showLaunchChecklist = false
+    @AppStorage("biometricLockEnabled") private var biometricLockEnabled = false
+    @AppStorage("darkModeEnabled") private var darkModeEnabled = false
     @State private var pickerItem         : PhotosPickerItem? = nil
 
     var bmi: Double {
@@ -134,6 +142,7 @@ struct PatientProfileView: View {
         .sheet(isPresented: $showSupport) { CustomerCareView() }
         .sheet(isPresented: $showNotifSettings) { NotificationsSettingsView() }
         .sheet(isPresented: $showFamilySharing) { FamilySharingView() }
+        .sheet(isPresented: $showAISettings) { AIAgentSettingsView() }
         .onChange(of: pickerItem) { _, item in
             Task {
                 if let data = try? await item?.loadTransferable(type: Data.self) {
@@ -174,6 +183,9 @@ struct PatientProfileView: View {
 
             VStack(spacing: 4) {
                 Text(store.userProfile.name).font(.title2).fontWeight(.bold)
+                if !store.userProfile.email.isEmpty {
+                    Text(store.userProfile.email).font(.caption).foregroundColor(.brandPurple)
+                }
                 Text(store.userProfile.anonymousAlias).font(.subheadline).foregroundColor(.secondary)
                 if !store.userProfile.city.isEmpty {
                     Label("\(store.userProfile.city), \(store.userProfile.country)", systemImage: "mappin.circle.fill")
@@ -345,6 +357,8 @@ struct PatientProfileView: View {
             Divider().padding(.leading, 52)
             settingsRow("Help & Support", icon: "headphones.circle.fill", color: .brandTeal) { showSupport = true }
             Divider().padding(.leading, 52)
+            settingsRow("AI Agent Settings", icon: "brain", color: Color(hex: "#6C63FF")) { showAISettings = true }
+            Divider().padding(.leading, 52)
 
             // ── Apple Health Sync ──
             HStack(spacing: 14) {
@@ -409,10 +423,104 @@ struct PatientProfileView: View {
                 .pickerStyle(.menu).tint(.brandPurple)
             }
             .padding(.horizontal).padding(.vertical, 12)
+
+            Divider().padding(.leading, 52)
+
+            // ── Privacy & Data ──
+            settingsRow("Privacy & Data", icon: "hand.raised.fill", color: .blue) { showPrivacyData = true }
+            Divider().padding(.leading, 52)
+
+            // ── Biometric Lock ──
+            HStack(spacing: 14) {
+                Image(systemName: "faceid").font(.body).foregroundColor(.white)
+                    .frame(width: 32, height: 32).background(Color.brandPurple).cornerRadius(8)
+                Text("Biometric Lock").font(.subheadline)
+                Spacer()
+                Toggle("", isOn: $biometricLockEnabled)
+                    .tint(.brandGreen).labelsHidden()
+            }
+            .padding(.horizontal).padding(.vertical, 12)
+
+            Divider().padding(.leading, 52)
+
+            // ── Dark Mode ──
+            HStack(spacing: 14) {
+                Image(systemName: "moon.fill").font(.body).foregroundColor(.white)
+                    .frame(width: 32, height: 32).background(Color.indigo).cornerRadius(8)
+                Text("Dark Mode").font(.subheadline)
+                Spacer()
+                Toggle("", isOn: $darkModeEnabled)
+                    .tint(.brandGreen).labelsHidden()
+            }
+            .padding(.horizontal).padding(.vertical, 12)
+
+            // ── CEO Section (only visible to CEO) ──
+            if store.userProfile.isCEO {
+                Divider().padding(.leading, 52)
+
+                VStack(spacing: 0) {
+                    HStack {
+                        Image(systemName: "crown.fill").foregroundColor(.brandAmber)
+                        Text("CEO Controls").font(.caption.weight(.bold)).foregroundColor(.brandAmber)
+                        Spacer()
+                    }
+                    .padding(.horizontal).padding(.top, 12).padding(.bottom, 4)
+
+                    settingsRow("CEO Dashboard", icon: "chart.bar.fill", color: .brandAmber) { showCEODashboard = true }
+                    Divider().padding(.leading, 52)
+                    Button {
+                        showDoctorApproval = true
+                    } label: {
+                        HStack(spacing: 14) {
+                            Image(systemName: "checkmark.shield.fill").font(.body).foregroundColor(.white)
+                                .frame(width: 32, height: 32).background(Color.brandTeal).cornerRadius(8)
+                            Text("Doctor Approvals").font(.subheadline).foregroundColor(.primary)
+                            Spacer()
+                            if !store.pendingDoctorRequests.isEmpty {
+                                Text("\(store.pendingDoctorRequests.count) pending")
+                                    .font(.caption2.weight(.bold))
+                                    .padding(.horizontal, 8).padding(.vertical, 3)
+                                    .background(Color.brandCoral)
+                                    .foregroundColor(.white)
+                                    .clipShape(Capsule())
+                            }
+                            Image(systemName: "chevron.right").font(.caption).foregroundColor(.secondary)
+                        }
+                        .padding(.horizontal).padding(.vertical, 12)
+                    }
+                    Divider().padding(.leading, 52)
+                    settingsRow("API Keys & Security", icon: "key.fill", color: .orange) { showAPIKeys = true }
+                    Divider().padding(.leading, 52)
+                    settingsRow("Launch Checklist", icon: "checklist", color: .brandGreen) { showLaunchChecklist = true }
+                }
+            }
+
+            Divider().padding(.leading, 52)
+
+            // ── Sign Out ──
+            Button {
+                // Reset onboarding to force re-login
+                UserDefaults.standard.set(false, forKey: "onboardingDone")
+                store.userProfile = UserProfile()
+                store.save()
+            } label: {
+                HStack(spacing: 14) {
+                    Image(systemName: "rectangle.portrait.and.arrow.right").font(.body).foregroundColor(.white)
+                        .frame(width: 32, height: 32).background(Color.red).cornerRadius(8)
+                    Text("Sign Out").font(.body).foregroundColor(.red)
+                    Spacer()
+                }
+                .padding(.horizontal).padding(.vertical, 12)
+            }
         }
         .background(Color(.systemBackground))
         .cornerRadius(16).shadow(color: .black.opacity(0.05), radius: 6)
         .padding(.horizontal)
+        .sheet(isPresented: $showPrivacyData) { PrivacySettingsView() }
+        .sheet(isPresented: $showCEODashboard) { NavigationStack { CEODashboardView() } }
+        .sheet(isPresented: $showDoctorApproval) { NavigationStack { DoctorApprovalView() } }
+        .sheet(isPresented: $showAPIKeys) { NavigationStack { APIKeysView() } }
+        .sheet(isPresented: $showLaunchChecklist) { NavigationStack { LaunchChecklistView() } }
     }
 
     func settingsRow(_ label: String, icon: String, color: Color, action: @escaping () -> Void) -> some View {
@@ -1165,6 +1273,7 @@ struct EditProfileSheet: View {
     @Environment(\.dismiss) var dismiss
 
     @State private var name     = ""
+    @State private var email    = ""
     @State private var age      = 30
     @State private var gender   = "Female"
     @State private var city     = ""
@@ -1181,6 +1290,13 @@ struct EditProfileSheet: View {
             Form {
                 Section("Personal") {
                     TextField("Name", text: $name)
+                    HStack {
+                        Image(systemName: "envelope").foregroundColor(.secondary)
+                        TextField("Email address", text: $email)
+                            .textContentType(.emailAddress)
+                            .keyboardType(.emailAddress)
+                            .autocapitalization(.none)
+                    }
                     Stepper("Age: \(age)", value: $age, in: 16...100)
                     Picker("Gender", selection: $gender) {
                         Text("Female").tag("Female")
@@ -1253,7 +1369,7 @@ struct EditProfileSheet: View {
 
     func load() {
         let p = store.userProfile
-        name     = p.name; age = p.age; gender = p.gender
+        name     = p.name; email = p.email; age = p.age; gender = p.gender
         city     = p.city; country = p.country; postcode = p.postcode
         // Display weight/height in user's preferred unit
         let displayWeight = p.weightUnit.fromKg(p.weight)
@@ -1265,7 +1381,8 @@ struct EditProfileSheet: View {
 
     func saveProfile() {
         var p = store.userProfile
-        p.name = name; p.age = age; p.gender = gender
+        p.name = name; p.email = email.lowercased().trimmingCharacters(in: .whitespaces)
+        p.age = age; p.gender = gender
         p.city = city; p.country = country; p.postcode = postcode.uppercased()
         // Convert from displayed unit back to kg/cm for storage
         if let w = Double(weight) { p.weight = p.weightUnit.toKg(w) }
@@ -1340,5 +1457,106 @@ struct SubscriptionPlansSheet: View {
         .overlay(
             isCurrent ? RoundedRectangle(cornerRadius: 20).stroke(plan.color, lineWidth: 2) : nil
         )
+    }
+}
+
+// MARK: - API Keys Management (CEO Only)
+
+struct APIKeysView: View {
+    @Environment(\.dismiss) var dismiss
+    @State private var anthropicKey  = ""
+    @State private var stripeKey     = ""
+    @State private var showAnthKey   = false
+    @State private var showStripeKey = false
+    @State private var saved         = false
+
+    var body: some View {
+        List {
+            Section {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Security", systemImage: "lock.shield.fill")
+                        .font(.headline).foregroundColor(.brandPurple)
+                    Text("API keys are stored in the iOS Keychain, encrypted by the Secure Enclave. They never leave this device.")
+                        .font(.caption).foregroundColor(.secondary)
+                }
+                .listRowBackground(Color.brandPurple.opacity(0.05))
+            }
+
+            Section("Anthropic API") {
+                HStack {
+                    if showAnthKey {
+                        TextField("sk-ant-...", text: $anthropicKey)
+                            .font(.system(.caption, design: .monospaced))
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                    } else {
+                        Text(anthropicKey.isEmpty ? "Not set" : maskedKey(anthropicKey))
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundColor(anthropicKey.isEmpty ? .secondary : .primary)
+                    }
+                    Spacer()
+                    Button { showAnthKey.toggle() } label: {
+                        Image(systemName: showAnthKey ? "eye.slash" : "eye")
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+
+            Section("Stripe Publishable Key") {
+                HStack {
+                    if showStripeKey {
+                        TextField("pk_test_... or pk_live_...", text: $stripeKey)
+                            .font(.system(.caption, design: .monospaced))
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                    } else {
+                        Text(stripeKey.isEmpty ? "Not set" : maskedKey(stripeKey))
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundColor(stripeKey.isEmpty ? .secondary : .primary)
+                    }
+                    Spacer()
+                    Button { showStripeKey.toggle() } label: {
+                        Image(systemName: showStripeKey ? "eye.slash" : "eye")
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+
+            Section {
+                Button {
+                    if !anthropicKey.isEmpty {
+                        _ = KeychainManager.shared.save(anthropicKey, for: .anthropicAPIKey)
+                    }
+                    if !stripeKey.isEmpty {
+                        _ = KeychainManager.shared.save(stripeKey, for: .stripePublishableKey)
+                    }
+                    saved = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { saved = false }
+                } label: {
+                    HStack {
+                        Spacer()
+                        Label(saved ? "Saved!" : "Save to Keychain", systemImage: saved ? "checkmark.circle.fill" : "key.fill")
+                            .foregroundColor(saved ? .brandGreen : .brandPurple)
+                        Spacer()
+                    }
+                }
+            }
+        }
+        .navigationTitle("API Keys & Security")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Done") { dismiss() }
+            }
+        }
+        .onAppear {
+            anthropicKey = KeychainManager.shared.get(.anthropicAPIKey) ?? ""
+            stripeKey = KeychainManager.shared.get(.stripePublishableKey) ?? ""
+        }
+    }
+
+    private func maskedKey(_ key: String) -> String {
+        guard key.count > 8 else { return String(repeating: "•", count: key.count) }
+        return key.prefix(4) + String(repeating: "•", count: key.count - 8) + key.suffix(4)
     }
 }

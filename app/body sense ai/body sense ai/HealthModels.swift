@@ -11,6 +11,30 @@
 import SwiftUI
 import Foundation
 
+// MARK: - Appearance Mode
+
+enum AppearanceMode: String, CaseIterable {
+    case system  = "System"
+    case light   = "Light"
+    case dark    = "Dark"
+
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: return nil
+        case .light:  return .light
+        case .dark:   return .dark
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .system: return "circle.lefthalf.filled"
+        case .light:  return "sun.max.fill"
+        case .dark:   return "moon.fill"
+        }
+    }
+}
+
 // MARK: - Brand Colors
 
 extension Color {
@@ -19,8 +43,13 @@ extension Color {
     static let brandCoral   = Color(hex: "#FF6B6B")
     static let brandAmber   = Color(hex: "#FF9F43")
     static let brandGreen   = Color(hex: "#26de81")
-    static let brandBg      = Color(hex: "#F5F6FA")
-    static let cardBg       = Color.white
+    static let brandBg      = Color(.systemGroupedBackground)
+    static let cardBg       = Color(.secondarySystemGroupedBackground)
+
+    /// Adaptive text color that works on both light and dark backgrounds
+    static let adaptiveText = Color(.label)
+    /// Subtle card border for dark mode visibility
+    static let cardBorder   = Color(.separator)
 
     init(hex: String) {
         let h = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
@@ -165,7 +194,7 @@ enum SleepQuality: String, Codable, CaseIterable {
     }
     var icon: String {
         switch self {
-        case .poor: return "😴"; case .fair: return "😐"; case .good: return "😊"; case .excellent: return "🌟"
+        case .poor: return "moon.zzz"; case .fair: return "minus.circle"; case .good: return "checkmark.circle"; case .excellent: return "star.fill"
         }
     }
 }
@@ -286,27 +315,195 @@ enum SymptomSeverity: String, Codable, CaseIterable {
     }
 }
 
-let allSymptoms = [
-    "Fatigue", "Headache", "Dizziness", "Nausea", "Blurred Vision",
-    "Frequent Urination", "Excessive Thirst", "Tingling/Numbness",
-    "Chest Pain", "Shortness of Breath", "Heart Palpitations",
-    "Bloating", "Loss of Appetite", "Muscle Weakness", "Flushing",
-    "Cold Sweats", "Dry Mouth", "Joint Pain", "Mood Swings", "Brain Fog"
+/// Comprehensive symptom database organised by body system.
+/// Covers general health, chronic conditions (diabetes, hypertension, CKD), women's health, and medication side effects.
+let symptomCategories: [(category: String, icon: String, symptoms: [String])] = [
+    ("General", "heart.text.square", [
+        "Fatigue", "Fever", "Chills", "Night Sweats", "Weight Loss", "Weight Gain",
+        "Malaise", "Loss of Appetite", "Excessive Thirst", "Dehydration",
+        "Feeling Unwell", "Lethargy", "Weakness", "Fainting", "Cold Sweats",
+        "Hot Flushes", "Swollen Glands", "Bruising Easily", "Excessive Hunger"
+    ]),
+    ("Head & Brain", "brain.head.profile", [
+        "Headache", "Migraine", "Dizziness", "Vertigo", "Lightheadedness",
+        "Brain Fog", "Confusion", "Memory Problems", "Difficulty Concentrating",
+        "Pressure in Head", "Throbbing Head Pain", "Tension Headache",
+        "Cluster Headache", "Head Heaviness"
+    ]),
+    ("Eyes", "eye", [
+        "Blurred Vision", "Double Vision", "Eye Pain", "Dry Eyes", "Floaters",
+        "Light Sensitivity", "Watery Eyes", "Red Eyes", "Itchy Eyes",
+        "Eye Twitching", "Vision Loss", "Dark Spots in Vision",
+        "Night Vision Problems", "Eye Swelling"
+    ]),
+    ("Ears, Nose & Throat", "ear", [
+        "Sore Throat", "Ear Pain", "Tinnitus", "Hearing Loss", "Nasal Congestion",
+        "Runny Nose", "Sneezing", "Nosebleeds", "Hoarse Voice", "Post-nasal Drip",
+        "Difficulty Swallowing", "Dry Throat", "Blocked Ears", "Ear Discharge",
+        "Loss of Smell", "Loss of Taste", "Mouth Ulcers", "Swollen Tonsils",
+        "Jaw Pain", "Bad Breath"
+    ]),
+    ("Respiratory", "lungs", [
+        "Cough", "Dry Cough", "Productive Cough", "Shortness of Breath",
+        "Wheezing", "Chest Tightness", "Rapid Breathing", "Difficulty Breathing",
+        "Coughing Blood", "Phlegm", "Night-time Cough", "Breathlessness on Exertion",
+        "Shallow Breathing", "Stridor"
+    ]),
+    ("Heart & Circulation", "heart.fill", [
+        "Chest Pain", "Heart Palpitations", "Rapid Heartbeat", "Slow Heartbeat",
+        "Irregular Heartbeat", "Swollen Ankles", "Cold Hands/Feet",
+        "Leg Pain when Walking", "Varicose Veins", "Chest Pressure",
+        "Racing Heart at Rest", "Skipped Heartbeat", "Swollen Legs",
+        "Blood Clot Symptoms", "Poor Circulation"
+    ]),
+    ("Digestive", "stomach", [
+        "Nausea", "Vomiting", "Diarrhoea", "Constipation", "Bloating",
+        "Abdominal Pain", "Heartburn", "Acid Reflux", "Gas", "Blood in Stool",
+        "Indigestion", "Stomach Cramps", "Black/Tarry Stool", "Difficulty Swallowing",
+        "Appetite Changes", "Feeling Full Quickly", "Rectal Bleeding",
+        "Irritable Bowel", "Food Intolerance", "Nausea After Eating",
+        "Abdominal Swelling", "Excessive Burping", "Vomiting Blood"
+    ]),
+    ("Urinary", "drop.fill", [
+        "Frequent Urination", "Painful Urination", "Blood in Urine", "Urgency",
+        "Incontinence", "Dark Urine", "Foamy Urine", "Reduced Urine Output",
+        "Bedwetting", "Difficulty Urinating", "Cloudy Urine",
+        "Strong-Smelling Urine", "Urinary Retention", "Kidney Pain",
+        "Burning Sensation"
+    ]),
+    ("Muscles & Joints", "figure.walk", [
+        "Joint Pain", "Muscle Pain", "Back Pain", "Neck Pain", "Muscle Weakness",
+        "Stiffness", "Swelling", "Cramps", "Tingling/Numbness", "Shoulder Pain",
+        "Knee Pain", "Hip Pain", "Elbow Pain", "Wrist Pain", "Ankle Pain",
+        "Muscle Spasms", "Frozen Shoulder", "Sciatica", "Lower Back Pain",
+        "Upper Back Pain", "Jaw Stiffness", "Morning Stiffness",
+        "Joint Swelling", "Muscle Twitching", "Leg Cramps at Night",
+        "Restless Legs", "Carpal Tunnel Symptoms", "Gout Pain"
+    ]),
+    ("Skin", "hand.raised", [
+        "Rash", "Itching", "Hives", "Dry Skin", "Bruising",
+        "Skin Discolouration", "Wound Not Healing", "Hair Loss",
+        "Excessive Sweating", "Acne", "Eczema Flare", "Psoriasis Flare",
+        "Skin Peeling", "Blisters", "Swelling/Oedema", "Skin Redness",
+        "Lumps or Bumps", "Mole Changes", "Nail Changes", "Cold Sores",
+        "Fungal Infection", "Skin Ulcer", "Stretch Marks", "Cellulitis Signs"
+    ]),
+    ("Neurological", "brain", [
+        "Numbness", "Tremor", "Seizure", "Balance Problems",
+        "Weakness on One Side", "Slurred Speech", "Pins and Needles",
+        "Muscle Twitching", "Loss of Coordination", "Nerve Pain",
+        "Facial Drooping", "Difficulty Walking", "Involuntary Movements",
+        "Speech Problems", "Peripheral Neuropathy", "Burning Sensation in Feet"
+    ]),
+    ("Mental Health", "brain.head.profile.fill", [
+        "Anxiety", "Depression", "Insomnia", "Mood Swings", "Irritability",
+        "Panic Attacks", "Racing Thoughts", "Low Motivation", "Crying Spells",
+        "Social Withdrawal", "Difficulty Sleeping", "Oversleeping",
+        "Loss of Interest", "Feeling Hopeless", "Emotional Numbness",
+        "Obsessive Thoughts", "Suicidal Thoughts", "Self-Harm Urges",
+        "Paranoia", "Hallucinations", "Dissociation", "Burnout",
+        "Emotional Eating", "Brain Fatigue", "Stress", "Anger Outbursts"
+    ]),
+    ("Diabetes-Specific", "drop.triangle", [
+        "Hypoglycaemia Symptoms", "Hyperglycaemia Symptoms",
+        "Excessive Thirst (Polydipsia)", "Frequent Urination (Polyuria)",
+        "Slow Wound Healing", "Tingling in Feet", "Diabetic Foot Pain",
+        "Dawn Phenomenon", "Blurred Vision (High Sugar)", "Fruity Breath",
+        "Diabetic Neuropathy", "Sweating (Low Sugar)", "Shakiness",
+        "Confusion (Low Sugar)", "Extreme Hunger (Low Sugar)",
+        "Yeast Infections", "Skin Tags", "Dark Skin Patches (Acanthosis)"
+    ]),
+    ("Blood Pressure", "gauge.with.dots.needle.33percent", [
+        "Flushing", "Headache with High BP", "Nosebleeds (BP Related)",
+        "Visual Changes (BP)", "Dizziness on Standing", "Fainting (Low BP)",
+        "Pounding in Ears", "Chest Tightness (BP)", "Shortness of Breath (BP)",
+        "Anxiety with High BP", "Morning Headaches", "Facial Redness"
+    ]),
+    ("CKD-Specific", "kidneys", [
+        "Swelling (Oedema)", "Foamy Urine", "Chronic Fatigue (CKD)",
+        "Itching (Uraemia)", "Metallic Taste", "Reduced Urine Output",
+        "Nausea (CKD)", "Loss of Appetite (CKD)", "Muscle Cramps (CKD)",
+        "Difficulty Concentrating (CKD)", "Puffy Eyes", "Dry Skin (CKD)",
+        "Bone Pain", "Restless Legs (CKD)", "Bad Breath (Uraemia)"
+    ]),
+    ("Medication Side Effects", "pills", [
+        "Nausea from Medication", "Muscle Pain from Statins",
+        "Dry Cough from ACE Inhibitors", "Dizziness from BP Meds",
+        "Stomach Upset from Metformin", "Diarrhoea from Medication",
+        "Drowsiness from Medication", "Weight Gain from Medication",
+        "Swollen Ankles from Medication", "Headache from Medication",
+        "Skin Reaction from Medication", "Liver Pain from Medication",
+        "Constipation from Medication", "Mood Changes from Medication",
+        "Sexual Dysfunction from Medication", "Bleeding/Bruising from Blood Thinners",
+        "Photosensitivity from Medication"
+    ]),
+    ("Women's Health", "figure.dress.line.vertical.figure", [
+        "Menstrual Cramps", "Irregular Periods", "Heavy Periods",
+        "Missed Period", "Spotting Between Periods", "Breast Tenderness",
+        "Pelvic Pain", "Mood Changes (Hormonal)", "Bloating (Hormonal)",
+        "Premenstrual Syndrome (PMS)", "PMDD Symptoms", "Endometriosis Pain",
+        "PCOS Symptoms", "Vaginal Discharge Changes", "Painful Intercourse",
+        "Menopausal Symptoms", "Night Sweats (Hormonal)", "Vaginal Dryness",
+        "Urinary Issues (Hormonal)", "Ovulation Pain", "Breast Lumps",
+        "Pregnancy Symptoms", "Morning Sickness", "Gestational Diabetes Signs"
+    ]),
+    ("Emergency / Red Flags", "exclamationmark.triangle", [
+        "Sudden Severe Headache", "Chest Pain at Rest", "Difficulty Speaking",
+        "Sudden Vision Loss", "Severe Allergic Reaction", "Uncontrolled Bleeding",
+        "Loss of Consciousness", "Severe Abdominal Pain", "Breathing Emergency",
+        "Signs of Stroke (FAST)", "Severe Hypoglycaemia", "Anaphylaxis Signs"
+    ])
+]
+
+/// Flat list of all symptoms for search.
+let allSymptoms: [String] = symptomCategories.flatMap { $0.symptoms }
+
+/// Expanded cycle-specific symptoms for women's health tracking.
+let allCycleSymptoms = [
+    "Cramps", "Bloating", "Fatigue", "Mood Swings", "Headache",
+    "Back Pain", "Breast Tenderness", "Nausea", "Food Cravings", "Insomnia",
+    "Irritability", "Acne", "Diarrhoea", "Constipation", "Joint Pain",
+    "Anxiety", "Depression", "Crying Spells", "Water Retention", "Hot Flushes",
+    "Dizziness", "Heavy Flow", "Light Flow", "Spotting", "Pelvic Pain",
+    "Leg Pain", "Muscle Aches", "Brain Fog", "Low Energy", "Appetite Changes",
+    "Abdominal Pain", "Skin Changes", "Hair Changes", "Ovulation Pain",
+    "Vaginal Dryness", "Discharge Changes"
 ]
 
 // MARK: - Medication
 
 struct Medication: Codable, Identifiable, Equatable {
-    var id        = UUID()
-    var name      : String
-    var dosage    : String
-    var unit      : String    = "mg"
-    var frequency : MedFrequency
-    var timeOfDay : [MedTime]
-    var isActive  : Bool      = true
-    var color     : String    = "#6C63FF"
-    var logs      : [MedLog]  = []
+    var id           = UUID()
+    var name         : String
+    var dosage       : String
+    var unit         : String    = "mg"
+    var frequency    : MedFrequency
+    var timeOfDay    : [MedTime]
+    var isActive     : Bool      = true
+    var color        : String    = "#6C63FF"
+    var logs         : [MedLog]  = []
+
+    // New fields — linked to MedicineDatabase (optional for backward-compat Codable)
+    var genericName  : String?   = nil      // INN name — links to MedicineDatabase
+    var form         : String?   = nil      // e.g. "Tablet"
+    var notes        : String    = ""
+    var prescriber   : String    = ""
+    var instructions : String    = ""
+    var startDate    : Date      = Date()
+
     static func == (lhs: Medication, rhs: Medication) -> Bool { lhs.id == rhs.id }
+
+    /// Look up this medication's full database entry (warnings, interactions, etc.)
+    var databaseEntry: MedicineItem? {
+        guard let gn = genericName else { return nil }
+        return MedicineDatabase.shared.item(byGenericName: gn)
+    }
+
+    /// Today's adherence: what % of scheduled doses were taken today
+    var todayTakenCount: Int {
+        logs.filter { Calendar.current.isDateInToday($0.date) && $0.taken }.count
+    }
+    var todayScheduledCount: Int { timeOfDay.count }
 }
 
 enum MedFrequency: String, Codable, CaseIterable {
@@ -798,7 +995,7 @@ struct DoctorProfile: Codable {
     // ── Status ─────────────────────────────────────────────────────────────
     var isVerified           : Bool    = false
     var verificationStatus   : String  = "Pending" // "Pending", "Under Review", "Verified", "Rejected"
-    var stripeAccountId      : String  = ""    // Stripe Connect account for payouts
+    var payoutAccountId      : String  = ""    // Payment account for payouts
 
     /// Fee for a given appointment type
     func fee(for type: AppointmentType) -> Double {
@@ -951,7 +1148,7 @@ struct Appointment: Codable, Identifiable, Equatable {
     var notes           : String  = ""
     var feeGBP          : Double  = 0       // Fee paid in GBP
     var isPaid          : Bool    = false
-    var paymentIntentId : String? = nil     // Stripe PaymentIntent ID
+    var paymentIntentId : String? = nil     // Apple Pay transaction ID
     var videoRoomId     : String? = nil     // Video call room ID
     var durationMin     : Int     = 30
     var paymentMethod   : String  = ""      // "Apple Pay" | "Card"
@@ -1042,6 +1239,7 @@ struct Product: Codable, Identifiable, Equatable {
     var isBestSeller    : Bool        = false
     var availableColors : [RingColor] = []   // Non-empty only for rings
     var sizeName        : String      = ""   // e.g. "X3B (Med)" for the ring
+    var imageFileName   : String?     = nil  // CEO-uploaded product photo filename
 
     /// Localized price
     func priceString(currencyCode: String) -> String {
@@ -1052,6 +1250,29 @@ struct Product: Codable, Identifiable, Equatable {
         CurrencyService.format(originalPrice, currencyCode: currencyCode)
     }
     var isRing: Bool { category == .ring && !availableColors.isEmpty }
+
+    /// URL of the saved product image
+    var imageURL: URL? {
+        guard let fileName = imageFileName else { return nil }
+        return FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)
+            .first?.appendingPathComponent("product_images").appendingPathComponent(fileName)
+    }
+
+    /// Save image data to disk
+    mutating func setImage(_ data: Data) {
+        let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("product_images")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let fileName = "\(id.uuidString).jpg"
+        try? data.write(to: dir.appendingPathComponent(fileName))
+        imageFileName = fileName
+    }
+
+    /// Delete saved image
+    mutating func removeImage() {
+        if let url = imageURL { try? FileManager.default.removeItem(at: url) }
+        imageFileName = nil
+    }
 }
 
 // MARK: - Ring Colour
@@ -1164,7 +1385,7 @@ struct Order: Codable, Identifiable, Equatable {
     var total               : Double   // GBP
     var status              : OrderStatus
     var paymentMethod       : String   // "Apple Pay" | "Card"
-    var stripePaymentIntentId: String?
+    var transactionId: String?
     var createdAt           : Date
     var estimatedDelivery   : Date?
     var deliveryAddress     : DeliveryAddress? = nil
@@ -1488,6 +1709,7 @@ struct NotificationPreferences: Codable, Equatable {
 
 struct UserProfile: Codable {
     var name             : String  = ""
+    var email            : String  = ""
     var age              : Int     = 30
     var gender           : String  = "Female"
     var diabetesType     : String  = "Type 2 Diabetes"
@@ -1544,7 +1766,189 @@ struct UserProfile: Codable {
     var dailyFiberGoal   : Double = 25
     var dailySugarGoal   : Double = 30    // NHS max
     var dailySaltGoal    : Double = 6     // NHS max
-    var nutritionGoalType: String = "maintain" // "lose", "gain", "maintain"
+    var nutritionGoalType: String = "maintain" // "lose", "gain", "muscle", "maintain"
+
+    // ── Fitness / Activity level ──
+    var activityLevel    : String = "moderate" // "sedentary", "light", "moderate", "active", "veryActive"
+
+    // ── GDPR consent (UK GDPR compliance) ──
+    var privacyPolicyAccepted      : Bool   = false
+    var privacyPolicyAcceptedAt    : Date?  = nil
+    var termsAccepted              : Bool   = false
+    var termsAcceptedAt            : Date?  = nil
+    var consentHealthDataProcessing: Bool   = false   // Required — Article 9 special category
+    var consentAnalytics           : Bool   = false   // Optional
+    var consentMarketing           : Bool   = false   // Optional — promotional emails
+    var consentDataSharing         : Bool   = false   // Optional — anonymised research
+    var consentAIProcessing        : Bool   = false   // Optional — on-device AI
+    var dataExportRequestedAt      : Date?  = nil
+    var accountDeletionRequestedAt : Date?  = nil
+
+    // ── CEO check ──
+    var isCEO: Bool {
+        email.lowercased() == "kiran.shashi47.sk@gmail.com"
+    }
+}
+
+// MARK: - Nutrition Goal Type
+// Defines the user's body composition objective — drives calorie, protein, carb, and fat targets.
+
+enum NutritionGoalType: String, CaseIterable, Identifiable {
+    case lose     = "lose"
+    case maintain = "maintain"
+    case gain     = "gain"
+    case muscle   = "muscle"
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .lose:     return "Lose Weight"
+        case .maintain: return "Maintain"
+        case .gain:     return "Gain Weight"
+        case .muscle:   return "Build Muscle"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .lose:     return "arrow.down.circle.fill"
+        case .maintain: return "equal.circle.fill"
+        case .gain:     return "arrow.up.circle.fill"
+        case .muscle:   return "dumbbell.fill"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .lose:     return .brandCoral
+        case .maintain: return .brandTeal
+        case .gain:     return .brandAmber
+        case .muscle:   return .brandPurple
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .lose:     return "500 kcal deficit · high protein to preserve muscle"
+        case .maintain: return "Balanced macros at maintenance calories"
+        case .gain:     return "300 kcal surplus · moderate protein"
+        case .muscle:   return "400 kcal surplus · 2.2g protein/kg · high carb for training"
+        }
+    }
+}
+
+// MARK: - Activity Level
+// Determines the TDEE multiplier for calorie calculations.
+
+enum ActivityLevel: String, CaseIterable, Identifiable {
+    case sedentary  = "sedentary"
+    case light      = "light"
+    case moderate   = "moderate"
+    case active     = "active"
+    case veryActive = "veryActive"
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .sedentary:  return "Sedentary"
+        case .light:      return "Lightly Active"
+        case .moderate:   return "Moderately Active"
+        case .active:     return "Active"
+        case .veryActive: return "Very Active"
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .sedentary:  return "Desk job, little exercise"
+        case .light:      return "Light exercise 1–3 days/week"
+        case .moderate:   return "Moderate exercise 3–5 days/week"
+        case .active:     return "Hard exercise 6–7 days/week"
+        case .veryActive: return "Athlete or physical job + gym"
+        }
+    }
+
+    var multiplier: Double {
+        switch self {
+        case .sedentary:  return 1.2
+        case .light:      return 1.375
+        case .moderate:   return 1.55
+        case .active:     return 1.725
+        case .veryActive: return 1.9
+        }
+    }
+}
+
+/// MARK: - Doctor Registration Request
+
+struct DoctorRegistrationRequest: Codable, Identifiable, Equatable {
+    var id              = UUID()
+    var name            : String
+    var email           : String
+    var specialty       : String
+    var hospital        : String
+    var city            : String
+    var country         : String
+    var postcode        : String
+    var gmcNumber       : String
+    var gmcStatus       : String
+    var regulatoryBody  : String
+    var pmqDegree       : String
+    var pmqCountry      : String
+    var pmqYear         : Int
+    var plabPassed      : Bool
+    var ecfmgCertified  : Bool
+    var wdomListed      : Bool
+    var goodStanding    : Bool
+    var videoFee        : Double
+    var phoneFee        : Double
+    var inPersonFee     : Double
+    var introduction    : String
+    var submittedAt     : Date   = Date()
+    var status          : String = "Pending"  // "Pending", "Approved", "Rejected"
+    var reviewedAt      : Date?  = nil
+    var reviewNotes     : String = ""
+}
+
+// MARK: - Support Ticket Record (persistent)
+
+struct SupportTicketRecord: Codable, Identifiable, Equatable {
+    var id              = UUID()
+    var category        : String              // SupportCategory.rawValue
+    var issue           : String
+    var detail          : String = ""
+    var userEmail       : String = ""
+    var createdAt       : Date = Date()
+    var updatedAt       : Date = Date()
+    var status          : String = "Open"     // "Open", "In Progress", "Resolved", "Escalated"
+    var aiResponse      : String? = nil
+    var ceoReply        : String? = nil       // CEO's reply to escalated ticket
+    var isEscalated     : Bool = false
+    var escalatedAt     : Date? = nil
+    var resolvedAt      : Date? = nil
+
+    var isResolved: Bool { status == "Resolved" }
+}
+
+// MARK: - Chat History Record (persistent)
+
+struct ChatHistoryRecord: Codable, Identifiable {
+    var id              = UUID()
+    var messages        : [ChatMessageRecord] = []
+    var agentType       : String? = nil       // nil = main chat, else AgentType.rawValue
+    var createdAt       : Date = Date()
+    var lastMessageAt   : Date = Date()
+    var title           : String = "Chat"     // Auto-generated from first query
+}
+
+struct ChatMessageRecord: Codable, Identifiable {
+    var id              = UUID()
+    var content         : String
+    var isUser          : Bool
+    var timestamp       : Date = Date()
+    var chips           : [String] = []
 }
 
 // MARK: - HealthStore (shared observable state)
@@ -1596,6 +2000,15 @@ class HealthStore {
     var medicalRecords   : [MedicalRecord]   = []   // User uploaded medical records
     var doctorReviews    : [DoctorReview]    = []   // Patient reviews for doctors
 
+    // ── Doctor registration requests (CEO approval queue) ────────────────────
+    var doctorRequests   : [DoctorRegistrationRequest] = []
+
+    // ── Support tickets (customer care) ─────────────────────────────────────
+    var supportTickets   : [SupportTicketRecord] = []
+
+    // ── Chat history (persistent conversations) ─────────────────────────────
+    var chatHistories    : [ChatHistoryRecord] = []
+
     // ── Profile ───────────────────────────────────────────────────────────────
     var userProfile      : UserProfile       = UserProfile()
 
@@ -1605,13 +2018,14 @@ class HealthStore {
 
     // MARK: Computed convenience
 
-    var latestGlucose : GlucoseReading?   { glucoseReadings.sorted  { $0.date > $1.date }.first }
-    var latestBP      : BPReading?        { bpReadings.sorted       { $0.date > $1.date }.first }
-    var latestHR      : HeartRateReading? { heartRateReadings.sorted{ $0.date > $1.date }.first }
-    var latestHRV     : HRVReading?       { hrvReadings.sorted      { $0.date > $1.date }.first }
-    var lastSleep     : SleepEntry?       { sleepEntries.sorted     { $0.date > $1.date }.first }
-    var latestStress  : StressReading?    { stressReadings.sorted   { $0.date > $1.date }.first }
-    var latestTemp    : BodyTempReading?  { bodyTempReadings.sorted { $0.date > $1.date }.first }
+    // Use .max(by:) — O(n) instead of .sorted().first — O(n log n)
+    var latestGlucose : GlucoseReading?   { glucoseReadings.max(by:  { $0.date < $1.date }) }
+    var latestBP      : BPReading?        { bpReadings.max(by:       { $0.date < $1.date }) }
+    var latestHR      : HeartRateReading? { heartRateReadings.max(by: { $0.date < $1.date }) }
+    var latestHRV     : HRVReading?       { hrvReadings.max(by:      { $0.date < $1.date }) }
+    var lastSleep     : SleepEntry?       { sleepEntries.max(by:     { $0.date < $1.date }) }
+    var latestStress  : StressReading?    { stressReadings.max(by:   { $0.date < $1.date }) }
+    var latestTemp    : BodyTempReading?  { bodyTempReadings.max(by: { $0.date < $1.date }) }
 
     var todaySteps: Int {
         let cal = Calendar.current
@@ -1625,6 +2039,68 @@ class HealthStore {
     var unreadAlerts: [HealthAlert]     { healthAlerts.filter { !$0.isRead } }
     var joinedGroups: [CommunityGroup]  { communityGroups.filter { $0.isJoined } }
     var earnedAchievements: [Achievement] { achievements.filter { $0.isEarned } }
+
+    // ── Doctor Registration Request methods ─────────────────────────────────
+
+    /// Pending doctor requests awaiting CEO review
+    var pendingDoctorRequests: [DoctorRegistrationRequest] {
+        doctorRequests.filter { $0.status == "Pending" }
+    }
+
+    /// Submit a new doctor registration request for CEO approval
+    func submitDoctorRequest(_ request: DoctorRegistrationRequest) {
+        doctorRequests.append(request)
+        save()
+    }
+
+    /// CEO approves a doctor → adds to verified doctors list
+    func approveDoctor(_ request: DoctorRegistrationRequest) {
+        guard let idx = doctorRequests.firstIndex(where: { $0.id == request.id }) else { return }
+        doctorRequests[idx].status = "Approved"
+        doctorRequests[idx].reviewedAt = Date()
+
+        // Create a Doctor entry visible to patients
+        let yearsExp = max(1, Calendar.current.component(.year, from: Date()) - request.pmqYear)
+        let newDoctor = Doctor(
+            name: request.name,
+            specialization: request.specialty,
+            qualifications: request.pmqDegree,
+            experience: yearsExp,
+            rating: 0,
+            reviews: 0,
+            hospital: request.hospital,
+            city: request.city,
+            fee: Int(request.videoFee),
+            languages: ["English"],
+            bio: request.introduction,
+            postcode: request.postcode,
+            country: request.country,
+            licenseNumber: request.gmcNumber,
+            regulatoryBody: request.regulatoryBody,
+            certifications: buildCertifications(request),
+            isVerified: true
+        )
+        doctors.append(newDoctor)
+        save()
+    }
+
+    /// CEO rejects a doctor registration
+    func rejectDoctor(_ request: DoctorRegistrationRequest) {
+        guard let idx = doctorRequests.firstIndex(where: { $0.id == request.id }) else { return }
+        doctorRequests[idx].status = "Rejected"
+        doctorRequests[idx].reviewedAt = Date()
+        save()
+    }
+
+    /// Build certifications array from registration request booleans
+    private func buildCertifications(_ request: DoctorRegistrationRequest) -> [String] {
+        var certs: [String] = []
+        if request.goodStanding { certs.append("Certificate of Good Standing") }
+        if request.plabPassed   { certs.append("PLAB/UKMLA Passed") }
+        if request.ecfmgCertified { certs.append("ECFMG Certified") }
+        if request.wdomListed   { certs.append("WDOM Listed") }
+        return certs
+    }
 
     // Ring colour from last purchase or cart
     var lastPurchasedRingColor: RingColor? {
@@ -1651,6 +2127,22 @@ class HealthStore {
         } else {
             cartItems.append(CartItem(productID: product.id, name: product.name,
                                       price: product.price, icon: product.icon, color: product.color))
+        }
+        save()
+    }
+
+    func addToCart(_ product: Product, color: RingColor, size: RingSize, quantity: Int) {
+        let sku = "RING-X3B-\(color.rawValue.uppercased())-S\(size.shortLabel)"
+        if let idx = cartItems.firstIndex(where: { $0.sku == sku }) {
+            cartItems[idx].quantity += quantity
+        } else {
+            var item = CartItem(productID: product.id, name: product.name,
+                                price: product.price, icon: product.icon, color: product.color)
+            item.selectedColor = color
+            item.selectedSize  = size
+            item.quantity      = quantity
+            item.sku           = sku
+            cartItems.append(item)
         }
         save()
     }
@@ -1700,7 +2192,7 @@ class HealthStore {
             total: subtotal + shipping,
             status: .confirmed,
             paymentMethod: paymentMethod,
-            stripePaymentIntentId: paymentIntentId,
+            transactionId: paymentIntentId,
             createdAt: Date(),
             estimatedDelivery: deliveryDate,
             deliveryAddress: deliveryAddress.isComplete ? deliveryAddress : nil,
@@ -1895,8 +2387,88 @@ class HealthStore {
         let water = waterEntries.filter { $0.date >= cutoff }
         if !water.isEmpty {
             let totalL = water.map { $0.amount }.reduce(0, +) / 1000
-            lines.append("── WATER ──")
+            let waterDays = Set(water.map { cal.startOfDay(for: $0.date) }).count
+            let dailyAvg = waterDays > 0 ? water.map { $0.amount }.reduce(0, +) / Double(waterDays) : 0
+            lines.append("── WATER (\(water.count) entries) ──")
             lines.append("  Total 30-day intake: \(String(format: "%.1f", totalL)) L")
+            lines.append("  Daily average: \(Int(dailyAvg)) ml (target: \(Int(userProfile.targetWater * 1000)) ml)")
+            lines.append("")
+        }
+
+        // Body Temperature
+        let temps = bodyTempReadings.filter { $0.date >= cutoff }
+        if !temps.isEmpty {
+            let avg = temps.map { $0.value }.reduce(0, +) / Double(temps.count)
+            let feverEpisodes = temps.filter { $0.value > 37.5 }
+            lines.append("── BODY TEMPERATURE (\(temps.count) readings) ──")
+            lines.append("  Average: \(String(format: "%.1f", avg))°C")
+            if !feverEpisodes.isEmpty {
+                lines.append("  ⚠️ Fever episodes (>37.5°C): \(feverEpisodes.count)")
+                for f in feverEpisodes.sorted(by: { $0.date > $1.date }).prefix(3) {
+                    lines.append("    • \(f.date.formatted(date: .abbreviated, time: .shortened)): \(String(format: "%.1f", f.value))°C")
+                }
+            }
+            lines.append("")
+        }
+
+        // Nutrition Details
+        let nutr = nutritionLogs.filter { $0.date >= cutoff }
+        if !nutr.isEmpty {
+            let avgCal = nutr.map { $0.calories }.reduce(0, +) / nutr.count
+            let avgCarbs = nutr.map { Double($0.carbs) }.reduce(0, +) / Double(nutr.count)
+            let avgProtein = nutr.map { Double($0.protein) }.reduce(0, +) / Double(nutr.count)
+            let avgFat = nutr.map { Double($0.fat) }.reduce(0, +) / Double(nutr.count)
+            let avgSugar = nutr.map { Double($0.sugar) }.reduce(0, +) / Double(nutr.count)
+            let avgSalt = nutr.map { $0.salt }.reduce(0, +) / Double(nutr.count)
+            lines.append("── NUTRITION (\(nutr.count) meals logged) ──")
+            lines.append("  Average per meal: \(avgCal) kcal")
+            lines.append("  Macros avg: \(Int(avgCarbs))g carbs, \(Int(avgProtein))g protein, \(Int(avgFat))g fat")
+            lines.append("  Sugar: \(Int(avgSugar))g (NHS limit: 30g/day), Salt: \(String(format: "%.1f", avgSalt))g (NHS limit: 6g/day)")
+            lines.append("")
+        }
+
+        // Cycle Tracking
+        let cyc = cycles.filter { $0.startDate >= cutoff }
+        if !cyc.isEmpty {
+            lines.append("── MENSTRUAL CYCLE (\(cyc.count) entries) ──")
+            for c in cyc.sorted(by: { $0.startDate > $1.startDate }).prefix(5) {
+                let endStr = c.endDate.map { " to \($0.formatted(date: .abbreviated, time: .omitted))" } ?? " (ongoing)"
+                lines.append("  • \(c.startDate.formatted(date: .abbreviated, time: .omitted))\(endStr) — Flow: \(c.flow.rawValue)")
+                if !c.symptoms.isEmpty {
+                    lines.append("    Symptoms: \(c.symptoms.prefix(5).joined(separator: ", "))")
+                }
+            }
+            lines.append("")
+        }
+
+        // Prescriptions
+        if !prescriptions.isEmpty {
+            lines.append("── PRESCRIPTIONS (\(prescriptions.count)) ──")
+            for rx in prescriptions.sorted(by: { $0.date > $1.date }).prefix(5) {
+                lines.append("  • \(rx.date.formatted(date: .abbreviated, time: .omitted)): \(rx.diagnosis)")
+                lines.append("    Doctor: \(rx.doctorName)")
+                lines.append("    Medications: \(rx.medications.joined(separator: ", "))")
+                if rx.validUntil > Date() {
+                    lines.append("    Valid until: \(rx.validUntil.formatted(date: .abbreviated, time: .omitted))")
+                } else {
+                    lines.append("    ⚠️ Expired: \(rx.validUntil.formatted(date: .abbreviated, time: .omitted))")
+                }
+            }
+            lines.append("")
+        }
+
+        // Health Goals
+        let activeGoals = healthGoals.filter { !$0.isCompleted }
+        if !activeGoals.isEmpty {
+            lines.append("── ACTIVE HEALTH GOALS ──")
+            for g in activeGoals.prefix(5) {
+                let pct = Int(g.progress * 100)
+                lines.append("  • \(g.title): \(pct)% (\(String(format: "%.0f", g.currentValue))/\(String(format: "%.0f", g.targetValue)) \(g.unit))")
+            }
+            let completedCount = healthGoals.filter { $0.isCompleted }.count
+            if completedCount > 0 {
+                lines.append("  ✅ Completed goals: \(completedCount)")
+            }
             lines.append("")
         }
 
@@ -1929,11 +2501,20 @@ class HealthStore {
 
     // MARK: Persistence
     private let defaults = UserDefaults.standard
-    private init() { load() }
+    private init() {
+        load()
+        migrateToEncryptedIfNeeded()
+    }
 
     func save() {
         func enc<T: Encodable>(_ v: T, key: String) {
-            if let d = try? JSONEncoder().encode(v) { defaults.set(d, forKey: key) }
+            guard let jsonData = try? JSONEncoder().encode(v) else { return }
+            if let encrypted = try? EncryptedStore.encrypt(jsonData) {
+                defaults.set(encrypted, forKey: key)
+            } else {
+                // Fallback: save plain if encryption fails (should not happen)
+                defaults.set(jsonData, forKey: key)
+            }
         }
         enc(glucoseReadings,   key: "glucoseReadings")
         enc(bpReadings,        key: "bpReadings")
@@ -1960,18 +2541,86 @@ class HealthStore {
         enc(subscription,      key: "subscription")
         enc(medicalRecords,  key: "medicalRecords")
         enc(doctorReviews,   key: "doctorReviews")
+        enc(doctorRequests,  key: "doctorRequests")
         enc(products,          key: "products")
         enc(cartItems,         key: "cartItems")
         enc(orders,            key: "orders")
         enc(wearableDevices,   key: "wearableDevices")
         enc(userProfile,       key: "userProfile")
+        enc(supportTickets,    key: "supportTickets")
+        enc(chatHistories,     key: "chatHistories")
         defaults.set(totalXP,  forKey: "totalXP")
+    }
+
+    // MARK: - Reset (Account Deletion)
+
+    /// Clear all in-memory data and persisted storage. Used during account deletion.
+    func resetAllData() {
+        // Core health data
+        glucoseReadings = []
+        bpReadings = []
+        heartRateReadings = []
+        hrvReadings = []
+        sleepEntries = []
+        stressReadings = []
+        bodyTempReadings = []
+        stepEntries = []
+        waterEntries = []
+        nutritionLogs = []
+        symptomLogs = []
+        medications = []
+        cycles = []
+
+        // AI coaching & goals
+        healthAlerts = []
+        healthGoals = []
+        healthChallenges = []
+        achievements = []
+        userStreaks = []
+        dailyGuidance = nil
+        totalXP = 0
+
+        // Community & telemedicine
+        communityGroups = []
+        doctors = []
+        appointments = []
+        prescriptions = []
+
+        // Shop & subscription
+        subscription = .free
+        products = []
+        cartItems = []
+        orders = []
+        wearableDevices = []
+        giftCodes = []
+        deliveryAddress = DeliveryAddress()
+
+        // Medical records & reviews
+        medicalRecords = []
+        doctorReviews = []
+
+        // Support & chat history
+        supportTickets = []
+        chatHistories = []
+
+        // Profile
+        userProfile = UserProfile()
+
+        // Persist the empty state
+        save()
     }
 
     private func load() {
         func dec<T: Decodable>(_ type: T.Type, key: String) -> T? {
-            guard let d = defaults.data(forKey: key) else { return nil }
-            return try? JSONDecoder().decode(type, from: d)
+            guard let stored = defaults.data(forKey: key) else { return nil }
+            // Try decrypting first (new encrypted format)
+            if EncryptedStore.isEncrypted(stored),
+               let decrypted = try? EncryptedStore.decrypt(stored),
+               let decoded = try? JSONDecoder().decode(type, from: decrypted) {
+                return decoded
+            }
+            // Fallback: try reading as plain JSON (legacy unencrypted data)
+            return try? JSONDecoder().decode(type, from: stored)
         }
         glucoseReadings   = dec([GlucoseReading].self,   key: "glucoseReadings")   ?? []
         bpReadings        = dec([BPReading].self,         key: "bpReadings")        ?? []
@@ -1998,15 +2647,47 @@ class HealthStore {
         subscription      = dec(SubscriptionPlan.self,    key: "subscription")      ?? .free
         medicalRecords   = dec([MedicalRecord].self,   key: "medicalRecords")   ?? []
         doctorReviews    = dec([DoctorReview].self,    key: "doctorReviews")    ?? []
+        doctorRequests   = dec([DoctorRegistrationRequest].self, key: "doctorRequests") ?? []
         products          = dec([Product].self,           key: "products")          ?? []
         cartItems         = dec([CartItem].self,          key: "cartItems")         ?? []
         orders            = dec([Order].self,             key: "orders")            ?? []
         wearableDevices   = dec([WearableDevice].self,    key: "wearableDevices")   ?? []
         userProfile       = dec(UserProfile.self,         key: "userProfile")       ?? UserProfile()
+        supportTickets    = dec([SupportTicketRecord].self, key: "supportTickets")  ?? []
+        chatHistories     = dec([ChatHistoryRecord].self,   key: "chatHistories")   ?? []
         totalXP           = defaults.integer(forKey: "totalXP")
 
         if glucoseReadings.isEmpty { seedSampleData() }
         if products.isEmpty       { seedProducts() }     // always ensure products are present
+    }
+
+    /// One-time migration: re-save all data encrypted.
+    /// Runs once after update from unencrypted version.
+    private func migrateToEncryptedIfNeeded() {
+        let migrationKey = "encryptionMigrationV1Done"
+        guard !defaults.bool(forKey: migrationKey) else { return }
+        // Re-save triggers the encrypted enc() helper
+        save()
+        defaults.set(true, forKey: migrationKey)
+    }
+
+    // MARK: - Product CRUD (CEO)
+
+    func addProduct(_ product: Product) {
+        products.append(product)
+        save()
+    }
+
+    func updateProduct(_ product: Product) {
+        if let idx = products.firstIndex(where: { $0.id == product.id }) {
+            products[idx] = product
+            save()
+        }
+    }
+
+    func deleteProduct(_ product: Product) {
+        products.removeAll { $0.id == product.id }
+        save()
     }
 
     // MARK: - Seed Products (always run if missing)

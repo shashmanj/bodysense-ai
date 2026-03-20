@@ -40,12 +40,16 @@ struct DoctorListView: View {
     @State private var showDocDetail    = false
     @State private var detailDoc        : Doctor? = nil
 
+    var verifiedDoctors: [Doctor] {
+        store.doctors.filter { $0.isVerified }
+    }
+
     var allSpecialties: [String] {
-        ["All"] + Array(Set(store.doctors.map { $0.specialization })).sorted()
+        ["All"] + Array(Set(verifiedDoctors.map { $0.specialization })).sorted()
     }
 
     var filtered: [Doctor] {
-        store.doctors.filter { d in
+        verifiedDoctors.filter { d in
             let matchSpec   = selectedSpec == "All" || d.specialization == selectedSpec
             let matchSearch = search.isEmpty || d.name.localizedCaseInsensitiveContains(search) ||
                               d.specialization.localizedCaseInsensitiveContains(search) ||
@@ -268,7 +272,7 @@ struct DoctorProfileDetailView: View {
                                     .frame(width: 80, height: 80)
                                     .overlay(
                                         Text(initials(doctor.name))
-                                            .font(.system(size: 28, weight: .bold))
+                                            .font(.title.bold())
                                             .foregroundColor(.white)
                                     )
                                     .overlay(Circle().stroke(Color.white, lineWidth: 3))
@@ -412,7 +416,7 @@ struct DoctorProfileDetailView: View {
             if reviews.isEmpty {
                 HStack {
                     Image(systemName: "text.bubble")
-                        .font(.system(size: 32)).foregroundColor(.secondary.opacity(0.5))
+                        .font(.title).foregroundColor(.secondary.opacity(0.5))
                     Text("No reviews yet. Book a consultation to be the first!")
                         .font(.subheadline).foregroundColor(.secondary)
                 }
@@ -525,11 +529,11 @@ struct BookDoctorCard: View {
                                 .frame(width: 56, height: 56).clipShape(Circle())
                         } else {
                             Circle().fill(Color(hex: doctor.avatarColor)).frame(width: 56, height: 56)
-                                .overlay(Text(initials(doctor.name)).font(.system(size: 20, weight: .bold)).foregroundColor(.white))
+                                .overlay(Text(initials(doctor.name)).font(.title3.bold()).foregroundColor(.white))
                         }
                         if doctor.isVerified {
                             Image(systemName: "cross.circle.fill")
-                                .font(.system(size: 18, weight: .bold))
+                                .font(.headline)
                                 .foregroundColor(.red)
                                 .background(Circle().fill(.white).padding(1))
                                 .offset(x: 4, y: 4)
@@ -679,17 +683,16 @@ struct BookAppointmentView: View {
                     }
                 }
                 .sheet(isPresented: $showPayment) {
-                    PaymentSheetView(
+                    ApplePayCheckoutView(
                         title: "Consultation with \(doctor.name)",
                         subtitle: "\(selectedType.rawValue) · \(selectedTime)",
-                        amountGBP: Double(currentFee)
-                    ) { intentId, method in
-                        paymentMethod = method
-                        confirmBooking(intentId: intentId, method: method)
-                        showPayment = false
-                    } onCancel: {
-                        showPayment = false
-                    }
+                        amountGBP: Double(currentFee),
+                        onSuccess: { transactionId, method in
+                            paymentMethod = method
+                            confirmBooking(intentId: transactionId, method: method)
+                            showPayment = false
+                        }
+                    )
                 }
             }
         }
@@ -699,7 +702,7 @@ struct BookAppointmentView: View {
         HStack(spacing: 14) {
             Circle().fill(Color(hex: doctor.avatarColor)).frame(width: 52, height: 52)
                 .overlay(Text(doctor.name.components(separatedBy: " ").compactMap { $0.first.map { String($0) } }.prefix(2).joined())
-                    .font(.system(size: 18, weight: .bold)).foregroundColor(.white))
+                    .font(.headline).foregroundColor(.white))
             VStack(alignment: .leading, spacing: 3) {
                 Text(doctor.name).font(.headline)
                 Text(doctor.specialization).font(.subheadline).foregroundColor(.secondary)
@@ -722,7 +725,7 @@ struct BookAppointmentView: View {
                 ForEach(AppointmentType.allCases, id: \.self) { type in
                     Button { selectedType = type } label: {
                         VStack(spacing: 6) {
-                            Image(systemName: type.icon).font(.system(size: 20))
+                            Image(systemName: type.icon).font(.title3)
                             Text(type.rawValue).font(.caption).multilineTextAlignment(.center)
                             Text("£\(Int(Double(doctor.fee) * (type == .video ? 1.0 : type == .phone ? 0.7 : 1.5)))")
                                 .font(.caption2).fontWeight(.semibold)
@@ -1056,7 +1059,7 @@ struct BookingConfirmationView: View {
                 .foregroundColor(.brandGreen)
                 .shadow(color: .brandGreen.opacity(0.3), radius: 20)
 
-            Text("Appointment Booked!").font(.system(size: 30, weight: .bold))
+            Text("Appointment Booked!").font(.title.bold())
             Text("Your \(type.rawValue.lowercased()) consultation with \(doctor.name) is confirmed for \(date.formatted(date: .long, time: .omitted)) at \(time).")
                 .font(.body).multilineTextAlignment(.center).foregroundColor(.secondary)
                 .padding(.horizontal, 32)

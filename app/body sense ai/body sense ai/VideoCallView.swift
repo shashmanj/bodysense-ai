@@ -124,6 +124,17 @@ struct VideoCallView: View {
 
             // ── Top bar ──
             VStack {
+                // Demo mode banner
+                HStack(spacing: 6) {
+                    Image(systemName: "info.circle.fill").font(.caption2)
+                    Text("Demo Mode — Video call simulation").font(.caption2).fontWeight(.medium)
+                }
+                .padding(.horizontal, 12).padding(.vertical, 6)
+                .background(.ultraThinMaterial)
+                .cornerRadius(16)
+                .foregroundColor(.white.opacity(0.9))
+                .padding(.top, 4)
+
                 topBar
                 Spacer()
                 // ── Call controls ──
@@ -163,7 +174,7 @@ struct VideoCallView: View {
                         .frame(width: 120, height: 120)
                         .overlay(
                             Text(initials(session.doctor.name))
-                                .font(.system(size: 44, weight: .bold))
+                                .font(.largeTitle.bold())
                                 .foregroundColor(.white)
                         )
                         .shadow(radius: 20)
@@ -184,7 +195,7 @@ struct VideoCallView: View {
                         .frame(width: 100, height: 100)
                         .overlay(
                             Text(initials(session.doctor.name))
-                                .font(.system(size: 36, weight: .bold))
+                                .font(.largeTitle.bold())
                                 .foregroundColor(.white)
                         )
                     Text(session.doctor.name)
@@ -304,7 +315,7 @@ struct VideoCallView: View {
                     .frame(width: 72, height: 72)
                     .overlay(
                         Image(systemName: "phone.down.fill")
-                            .font(.system(size: 28))
+                            .font(.title)
                             .foregroundColor(.white)
                     )
                     .shadow(color: .red.opacity(0.4), radius: 12)
@@ -323,7 +334,7 @@ struct VideoCallView: View {
                     .frame(width: 56, height: 56)
                     .overlay(
                         Image(systemName: icon)
-                            .font(.system(size: 22))
+                            .font(.title2)
                             .foregroundColor(iconColor)
                     )
                 Text(label)

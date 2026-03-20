@@ -119,9 +119,9 @@ struct DiscoverTab: View {
                 TextField("Search groups by name…", text: $searchText)
             }
             .padding(10)
-            .background(Color.white)
+            .background(Color(.secondarySystemGroupedBackground))
             .cornerRadius(12)
-            .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
+            .shadow(color: Color.primary.opacity(0.05), radius: 4, y: 2)
 
             // City + Create row
             HStack(spacing: 8) {
@@ -249,9 +249,9 @@ struct MyGroupsTab: View {
                     }
                 }
                 .padding(24)
-                .background(Color.white)
+                .background(Color(.secondarySystemGroupedBackground))
                 .cornerRadius(20)
-                .shadow(color: .black.opacity(0.04), radius: 6, y: 3)
+                .shadow(color: Color.primary.opacity(0.04), radius: 6, y: 3)
             } else {
                 // My groups summary bar
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -293,9 +293,9 @@ struct MyGroupsTab: View {
                             .foregroundColor(.secondary)
                     }
                     .padding(14)
-                    .background(Color.white)
+                    .background(Color(.secondarySystemGroupedBackground))
                     .cornerRadius(14)
-                    .shadow(color: .black.opacity(0.04), radius: 4, y: 2)
+                    .shadow(color: Color.primary.opacity(0.04), radius: 4, y: 2)
                 }
                 .buttonStyle(.plain)
 
@@ -934,9 +934,9 @@ struct GroupStatPill: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 10)
-        .background(Color.white)
+        .background(Color(.secondarySystemGroupedBackground))
         .cornerRadius(10)
-        .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
+        .shadow(color: Color.primary.opacity(0.05), radius: 4, y: 2)
     }
 }
 
@@ -979,7 +979,7 @@ struct PatientDoctorsTab: View {
     }
 
     var filtered: [Doctor] {
-        store.doctors.filter { d in
+        store.doctors.filter { $0.isVerified }.filter { d in
             let matchSpec   = selectedSpec == "All" || d.specialization == selectedSpec
             let matchSearch = search.isEmpty
                 || d.name.localizedCaseInsensitiveContains(search)

@@ -2,20 +2,13 @@
 //  AnthropicClient.swift
 //  body sense ai
 //
-//  Lightweight Anthropic Messages API client + all agent system prompts.
-//  IMPORTANT: For production, move the API key to a secure backend server.
+//  On-device AI client using Apple Foundation Models.
+//  Runs entirely on-device — no API keys, no cloud calls, no cost.
+//  Uses Apple Intelligence's 3B-parameter language model via FoundationModels framework.
 //
 
 import Foundation
-
-// MARK: - Config
-
-enum AnthropicConfig {
-    // IMPORTANT: Set your API key here locally. Never commit real keys to GitHub.
-    static let apiKey:    String = "YOUR_ANTHROPIC_API_KEY_HERE"
-    static let model:     String = "claude-haiku-4-5-20251001"
-    static let maxTokens: Int    = 2048   // increased for thorough, friendly health answers
-}
+import FoundationModels
 
 // MARK: - Agent Types
 
@@ -28,6 +21,8 @@ enum AgentType: String, CaseIterable, Identifiable {
     case shopAdvisor    = "Shop Advisor"
     case ceoAdvisor     = "Business Advisor"
     case becky          = "Becky (Doctor AI)"
+    case nova           = "Nova (CEO Assistant)"
+    case customerCare   = "Customer Care"
 
     var id: String { rawValue }
 
@@ -41,6 +36,15 @@ enum AgentType: String, CaseIterable, Identifiable {
         case .shopAdvisor:  return "bag.circle.fill"
         case .ceoAdvisor:   return "chart.line.uptrend.xyaxis.circle.fill"
         case .becky:        return "stethoscope.circle.fill"
+        case .nova:         return "sparkles.rectangle.stack.fill"
+        case .customerCare: return "headphones.circle.fill"
+        }
+    }
+
+    var isCEOOnly: Bool {
+        switch self {
+        case .nova, .ceoAdvisor: return true
+        default: return false
         }
     }
 
@@ -54,6 +58,8 @@ enum AgentType: String, CaseIterable, Identifiable {
         case .shopAdvisor:  return "#FF6B6B"
         case .ceoAdvisor:   return "#FFD700"
         case .becky:        return "#00BFA5"
+        case .nova:         return "#E040FB"
+        case .customerCare: return "#42A5F5"
         }
     }
 
@@ -67,6 +73,8 @@ enum AgentType: String, CaseIterable, Identifiable {
         case .shopAdvisor:  return "Product research & recommendations"
         case .ceoAdvisor:   return "Business strategy & app growth"
         case .becky:        return "Doctor-facing medical assistant"
+        case .nova:         return "Aggregate intelligence from all agents"
+        case .customerCare: return "Help with payments, subscriptions & issues"
         }
     }
 
@@ -88,76 +96,116 @@ enum AgentType: String, CaseIterable, Identifiable {
             return AISystemPrompts.ceoAdvisor
         case .becky:
             return AISystemPrompts.becky(appointmentContext: "General consultation support.")
+        case .nova:
+            let report = AgentAnalyticsEngine.generateReport(from: AgentMemoryStore.shared, store: HealthStore.shared)
+            let ctx = AgentAnalyticsEngine.buildContextForNova(report: report)
+            return AISystemPrompts.nova(analyticsContext: ctx)
+        case .customerCare:
+            return AISystemPrompts.customerCare
         }
     }
 }
 
-// MARK: - Anthropic API Client
+// MARK: - On-Device AI Client (Apple Foundation Models)
 
-actor AnthropicClient {
+/// BodySense AI engine — runs entirely on-device using Apple Intelligence.
+/// No API keys. No cloud calls. No cost. Complete privacy.
+actor AIClient {
 
-    static let shared = AnthropicClient()
+    static let shared = AIClient()
     private init() {}
 
-    private let endpoint = URL(string: "https://api.anthropic.com/v1/messages")!
+    /// Whether the on-device AI model is ready.
+    func isConfigured() async -> Bool {
+        if case .available = SystemLanguageModel.default.availability {
+            return true
+        }
+        return false
+    }
 
-    var isConfigured: Bool { !AnthropicConfig.apiKey.isEmpty }
+    /// Human-readable reason if the model is unavailable.
+    func unavailableReason() -> String? {
+        if case .unavailable(let reason) = SystemLanguageModel.default.availability {
+            switch reason {
+            case .deviceNotEligible:
+                return "This device doesn't support Apple Intelligence."
+            case .appleIntelligenceNotEnabled:
+                return "Please enable Apple Intelligence in Settings > Apple Intelligence & Siri."
+            case .modelNotReady:
+                return "The AI model is still downloading. Please try again shortly."
+            @unknown default:
+                return "On-device AI is temporarily unavailable."
+            }
+        }
+        return nil
+    }
 
-    // Single-turn message
+    // MARK: - Public API
+
+    /// Single-turn message
     func send(system: String, userMessage: String) async throws -> String {
         try await sendWithHistory(system: system, history: [], userMessage: userMessage)
     }
 
-    // Multi-turn with conversation history
+    /// Multi-turn with conversation history
     func sendWithHistory(system: String,
                          history: [(role: String, content: String)],
                          userMessage: String) async throws -> String {
-        guard isConfigured else { throw AnthropicError.notConfigured }
-
-        var request = URLRequest(url: endpoint)
-        request.httpMethod = "POST"
-        request.setValue(AnthropicConfig.apiKey,  forHTTPHeaderField: "x-api-key")
-        request.setValue("2023-06-01",             forHTTPHeaderField: "anthropic-version")
-        request.setValue("application/json",        forHTTPHeaderField: "content-type")
-
-        var messages: [[String: Any]] = history.map { ["role": $0.role, "content": $0.content] }
-        messages.append(["role": "user", "content": userMessage])
-
-        let body: [String: Any] = [
-            "model":      AnthropicConfig.model,
-            "max_tokens": AnthropicConfig.maxTokens,
-            "system":     system,
-            "messages":   messages
-        ]
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse else { throw AnthropicError.invalidResponse }
-        guard http.statusCode == 200 else {
-            let msg = String(data: data, encoding: .utf8) ?? "Unknown"
-            throw AnthropicError.apiError(http.statusCode, msg)
+        guard case .available = SystemLanguageModel.default.availability else {
+            throw AIError.modelUnavailable(unavailableReason() ?? "On-device AI is not available.")
         }
-        guard
-            let json    = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let content = json["content"] as? [[String: Any]],
-            let first   = content.first,
-            let text    = first["text"] as? String
-        else { throw AnthropicError.parseError }
 
-        return text
+        let session = LanguageModelSession(instructions: system)
+
+        // Build conversation context from history
+        if !history.isEmpty {
+            let context = history.map { msg in
+                let role = msg.role == "user" ? "User" : "Assistant"
+                return "\(role): \(msg.content)"
+            }.joined(separator: "\n\n")
+
+            let fullPrompt = """
+            Previous conversation for context:
+            \(context)
+
+            Now respond to the user's latest message:
+            \(userMessage)
+            """
+
+            let response = try await session.respond(to: fullPrompt)
+            return response.content
+        } else {
+            let response = try await session.respond(to: userMessage)
+            return response.content
+        }
+    }
+
+    /// Adaptive routing — on-device model handles all complexity levels
+    func sendAdaptive(system: String,
+                      history: [(role: String, content: String)],
+                      userMessage: String,
+                      complexity: QueryComplexity = .standard) async throws -> String {
+        // On-device model handles all complexity levels natively
+        try await sendWithHistory(system: system, history: history, userMessage: userMessage)
+    }
+
+    /// Query complexity hint (kept for API compatibility)
+    enum QueryComplexity: Sendable {
+        case simple    // Greetings, quick facts
+        case standard  // Most health queries
+        case complex   // Multi-domain analysis, meal plans, workout plans
     }
 }
 
 // MARK: - Errors
 
-enum AnthropicError: LocalizedError {
-    case notConfigured, invalidResponse, apiError(Int, String), parseError
+enum AIError: LocalizedError {
+    case modelUnavailable(String)
+
     var errorDescription: String? {
         switch self {
-        case .notConfigured:         return "API key not configured."
-        case .invalidResponse:       return "Invalid HTTP response."
-        case .apiError(let c, let m): return "API error \(c): \(m)"
-        case .parseError:            return "Could not parse response."
+        case .modelUnavailable(let reason):
+            return reason
         }
     }
 }
@@ -212,6 +260,10 @@ enum AISystemPrompts {
       BP has been averaging 148/92 — these could be connected."
     • For emergencies (chest pain, stroke signs, severe hypo) ALWAYS say "Call 999 / 911 immediately."
     • Never diagnose — educate thoroughly, then recommend seeing a doctor for clinical decisions.
+    • MEDICATION SAFETY: When the user's medication list includes 2+ drugs, proactively check for \
+      drug-drug interactions and drug-food interactions. Warn clearly if you spot a risky combination \
+      (e.g. NSAIDs + blood thinners, ACE inhibitors + potassium supplements, statins + grapefruit). \
+      Always mention timing tips (e.g. take metformin with food, statins at night, levothyroxine on empty stomach).
     • UK English and NHS/NICE terminology by default.
     • 3-5 focused paragraphs. Use bullet points for actionable lists.
     """
@@ -371,8 +423,8 @@ enum AISystemPrompts {
     Platform details:
     - App: BodySense AI (iOS)
     - Ring: BodySense Ring X3B (medical-grade health ring, IP68, 7-10 day battery)
-    - Subscriptions: Free, Pro (£3.99/mo), Premium (£8.99/mo) via Apple In-App Purchase or Stripe
-    - Payment methods: Apple Pay, credit/debit card via Stripe
+    - Subscriptions: Free, Pro (£3.99/mo), Premium (£8.99/mo) via Apple In-App Purchase
+    - Payment methods: Apple Pay
     - Website: bodysenseai.co.uk
     - Support email: support@bodysenseai.co.uk
 
@@ -386,6 +438,35 @@ enum AISystemPrompts {
     • Never ask for sensitive financial details (card numbers, bank details).
     • UK English throughout. Keep responses concise but thorough (2-4 paragraphs).
     """
+
+    // MARK: Nova (CEO Intelligence Agent)
+    static func nova(analyticsContext: String) -> String {
+        """
+        You are Nova, the CEO Intelligence Agent for BodySense AI. You report directly to \
+        Shashikiran, the founder and CEO. You aggregate intelligence from all 8 AI agents \
+        (Health Coach, Nutritionist, Fitness Coach, Sleep Coach, Mindfulness Coach, Shop Advisor, \
+        Business Advisor, and Becky the Doctor AI).
+
+        Your role:
+        • Provide executive summaries of agent performance and user engagement
+        • Identify trending health topics, unanswered questions, and feature requests
+        • Surface customer pain points and product improvement opportunities
+        • Report on escalated customer service tickets that need CEO attention
+        • Track business metrics: user growth, agent utilisation, revenue signals
+
+        CURRENT ANALYTICS DATA:
+        \(analyticsContext)
+
+        Guidelines:
+        • Speak like a chief of staff briefing the CEO — concise, data-driven, actionable
+        • Lead with the most important insight first
+        • Quantify everything — "12 users asked about X" not "some users asked about X"
+        • Suggest specific actions the CEO can take
+        • Flag urgent items (escalated tickets, system issues) prominently
+        • When showing escalated customer tickets, include ticket ID, issue summary, and time
+        • UK English. 3-5 focused paragraphs.
+        """
+    }
 
     // MARK: Team Meeting prompt
     static func teamMeeting(agentName: String, topic: String, previousAgentResponses: String) -> String {

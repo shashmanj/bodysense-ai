@@ -101,14 +101,41 @@ curl -X POST https://api.bodysenseai.co.uk/create-subscription \
    - Privacy Policy URL (required)
    - Description, keywords, screenshots
 
+## New Endpoints (v2)
+```
+POST /register-user          — Register/sync user to Firebase
+POST /submit-doctor-request  — Doctor registration for CEO approval
+POST /approve-doctor         — CEO approves/rejects doctor (CEO-only)
+GET  /ceo/metrics            — Business dashboard data (CEO-only)
+POST /send-notification      — Push notification via FCM
+POST /gdpr/export            — GDPR data export (Article 20)
+DELETE /gdpr/delete          — GDPR account deletion (Article 17)
+```
+
+## Firebase Setup
+1. Go to https://console.firebase.google.com
+2. Create project "bodysenseai"
+3. Enable **Firestore Database** (production mode)
+4. Collections needed: `users`, `doctorRequests`, `orders`, `appointments`
+5. Project Settings → Service Accounts → Generate new private key
+6. Save as `firebase-service-account.json` in `backend/`
+7. Add to `.env`: `FIREBASE_PROJECT_ID=bodysenseai`
+
 ## Before Submission Checklist
-- [ ] Switch Stripe key from `pk_test_` → `pk_live_` in StripeManager.swift
+- [ ] Switch Stripe key from `pk_test_` → `pk_live_` in Keychain (Profile → API Keys)
 - [ ] Switch backend to `sk_live_` Stripe secret key
 - [ ] Real Stripe Price IDs in StripeManager.swift
 - [ ] Stripe SDK added via SPM
 - [ ] Apple Pay merchant registered
+- [ ] Firebase project created and Firestore enabled
+- [ ] Backend deployed with Firebase service account
 - [ ] App Store Connect app registered
 - [ ] Screenshots (6.7", 6.5", 5.5" iPhone + iPad 12.9")
-- [ ] Privacy Policy URL live
+- [ ] Privacy Policy URL live at bodysenseai.co.uk/privacy
+- [ ] Terms of Service URL live at bodysenseai.co.uk/terms
 - [ ] App privacy labels filled in App Store Connect
+- [ ] ICO registration completed (UK data protection)
 - [ ] TestFlight beta test completed
+- [ ] GDPR consent flow tested end-to-end
+- [ ] Account deletion verified working
+- [ ] Use in-app Launch Checklist (Profile → Launch Checklist)

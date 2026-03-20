@@ -85,8 +85,8 @@ struct GoalsView: View {
             }
         }
         .padding()
-        .background(Color.white)
-        .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
+        .background(Color(.secondarySystemGroupedBackground))
+        .shadow(color: Color.primary.opacity(0.05), radius: 4, y: 2)
     }
 }
 
@@ -493,10 +493,10 @@ struct FilterChip: View {
             Text(label)
                 .font(.caption.bold())
                 .padding(.horizontal, 12).padding(.vertical, 6)
-                .background(isSelected ? Color.brandPurple : Color.white)
+                .background(isSelected ? Color.brandPurple : Color(.secondarySystemGroupedBackground))
                 .foregroundColor(isSelected ? .white : .secondary)
                 .cornerRadius(14)
-                .shadow(color: .black.opacity(0.05), radius: 3, y: 1)
+                .shadow(color: Color.primary.opacity(0.05), radius: 3, y: 1)
         }
     }
 }

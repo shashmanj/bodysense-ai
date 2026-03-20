@@ -50,13 +50,13 @@ struct GoalPickerPage: View {
 
             // Header
             Image(systemName: "checklist")
-                .font(.system(size: 60))
+                .font(.largeTitle)
                 .foregroundColor(.white)
                 .shadow(radius: 10)
                 .padding(.bottom, 16)
 
             Text("Your Health Goals")
-                .font(.system(size: 28, weight: .bold))
+                .font(.title.bold())
                 .foregroundColor(.white)
                 .padding(.bottom, 8)
 
@@ -109,7 +109,7 @@ struct GoalPickerPage: View {
         } label: {
             VStack(spacing: 8) {
                 Text(goal.emoji)
-                    .font(.system(size: 32))
+                    .font(.largeTitle)
                 Text(goal.label)
                     .font(.caption)
                     .fontWeight(.semibold)

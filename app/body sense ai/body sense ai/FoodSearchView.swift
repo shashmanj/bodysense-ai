@@ -11,7 +11,7 @@ import SwiftUI
 
 // MARK: - Food Item Model
 
-struct FoodItem: Identifiable, Codable, Equatable {
+struct FoodItem: Identifiable, Codable, Equatable, Hashable {
     var id = UUID()
     let name: String
     let category: FoodCategory
@@ -69,6 +69,11 @@ enum FoodCategory: String, Codable, CaseIterable {
     case condiments  = "Condiments"
     case superfoods  = "Superfoods"
     case shop        = "Shop Products"
+    case composite   = "Composite Dishes"
+    case greens      = "Greens & Leaves"
+    case pickles     = "Pickles & Ferments"
+    case flowers     = "Edible Flowers"
+    case gymFuel     = "Gym & Workout"
 
     var icon: String {
         switch self {
@@ -86,6 +91,11 @@ enum FoodCategory: String, Codable, CaseIterable {
         case .condiments: return "🧂"
         case .superfoods: return "✨"
         case .shop:       return "🛒"
+        case .composite:  return "🍽️"
+        case .greens:     return "🥬"
+        case .pickles:    return "🫙"
+        case .flowers:    return "🌸"
+        case .gymFuel:    return "💪"
         }
     }
 }
@@ -473,6 +483,224 @@ struct FoodDatabase {
         add("Tempeh", .protein, serving: 100, cal: 192, pro: 20, carb: 8.0, fat: 11, fib: 5.5, sug: 0.5)
         add("Seitan", .protein, serving: 100, cal: 120, pro: 21, carb: 4.0, fat: 1.5, fib: 0.5, sug: 0.5)
 
+        // ═══════════════════════════════════════════
+        // VEGETABLES (World Collection)
+        // ═══════════════════════════════════════════
+        add("Beetroot (raw)", .vegetable, serving: 100, cal: 43, pro: 1.6, carb: 10, fat: 0.2, fib: 2.8, sug: 7.0)
+        add("Beetroot (cooked)", .vegetable, serving: 100, cal: 44, pro: 1.7, carb: 10, fat: 0.2, fib: 2.0, sug: 8.0)
+        add("Asparagus", .vegetable, serving: 100, cal: 20, pro: 2.2, carb: 3.9, fat: 0.1, fib: 2.1, sug: 1.9)
+        add("Artichoke", .vegetable, serving: 100, cal: 47, pro: 3.3, carb: 11, fat: 0.2, fib: 5.4, sug: 1.0)
+        add("Aubergine (Eggplant)", .vegetable, serving: 100, cal: 25, pro: 1.0, carb: 6.0, fat: 0.2, fib: 3.0, sug: 3.5)
+        add("Courgette (Zucchini)", .vegetable, serving: 100, cal: 17, pro: 1.2, carb: 3.1, fat: 0.3, fib: 1.0, sug: 2.5)
+        add("Peas (garden)", .vegetable, serving: 80, cal: 81, pro: 5.4, carb: 14, fat: 0.4, fib: 5.7, sug: 5.7)
+        add("Brussels Sprouts", .vegetable, serving: 80, cal: 43, pro: 3.4, carb: 9.0, fat: 0.3, fib: 3.8, sug: 2.2)
+        add("Cabbage (green, raw)", .vegetable, serving: 100, cal: 25, pro: 1.3, carb: 5.8, fat: 0.1, fib: 2.5, sug: 3.2)
+        add("Cabbage (red, raw)", .vegetable, serving: 100, cal: 31, pro: 1.4, carb: 7.4, fat: 0.2, fib: 2.1, sug: 3.8)
+        add("Celery", .vegetable, serving: 100, cal: 14, pro: 0.7, carb: 3.0, fat: 0.2, fib: 1.6, sug: 1.3)
+        add("Lettuce (Romaine)", .vegetable, serving: 100, cal: 17, pro: 1.2, carb: 3.3, fat: 0.3, fib: 2.1, sug: 1.2)
+        add("Lettuce (Iceberg)", .vegetable, serving: 100, cal: 14, pro: 0.9, carb: 3.0, fat: 0.1, fib: 1.2, sug: 2.0)
+        add("Radish", .vegetable, serving: 100, cal: 16, pro: 0.7, carb: 3.4, fat: 0.1, fib: 1.6, sug: 1.9)
+        add("Turnip", .vegetable, serving: 100, cal: 28, pro: 0.9, carb: 6.4, fat: 0.1, fib: 1.8, sug: 3.8)
+        add("Parsnip", .vegetable, serving: 100, cal: 75, pro: 1.2, carb: 18, fat: 0.3, fib: 4.9, sug: 4.8)
+        add("Leek", .vegetable, serving: 100, cal: 61, pro: 1.5, carb: 14, fat: 0.3, fib: 1.8, sug: 3.9)
+        add("Spring Onion", .vegetable, serving: 50, cal: 32, pro: 1.8, carb: 7.3, fat: 0.2, fib: 2.6, sug: 2.3)
+        add("Fennel", .vegetable, serving: 100, cal: 31, pro: 1.2, carb: 7.3, fat: 0.2, fib: 3.1, sug: 3.9)
+        add("Butternut Squash", .vegetable, serving: 150, cal: 45, pro: 1.0, carb: 12, fat: 0.1, fib: 2.0, sug: 2.2)
+        add("Pumpkin", .vegetable, serving: 150, cal: 26, pro: 1.0, carb: 6.5, fat: 0.1, fib: 0.5, sug: 2.8)
+        add("Okra (Ladies Finger)", .vegetable, serving: 100, cal: 33, pro: 1.9, carb: 7.5, fat: 0.2, fib: 3.2, sug: 1.5)
+        add("Drumstick (Moringa Pods)", .vegetable, serving: 100, cal: 37, pro: 2.1, carb: 8.5, fat: 0.2, fib: 3.2, sug: 0)
+        add("Bottle Gourd (Lauki)", .vegetable, serving: 100, cal: 14, pro: 0.6, carb: 3.4, fat: 0.02, fib: 0.5, sug: 2.0)
+        add("Ridge Gourd (Turai)", .vegetable, serving: 100, cal: 20, pro: 1.2, carb: 3.0, fat: 0.5, fib: 1.3, sug: 2.0)
+        add("Bitter Gourd (Karela)", .vegetable, serving: 100, cal: 17, pro: 1.0, carb: 3.7, fat: 0.2, fib: 2.8, sug: 1.0)
+        add("Snake Gourd", .vegetable, serving: 100, cal: 18, pro: 1.2, carb: 3.1, fat: 0.3, fib: 0.6, sug: 2.0)
+        add("Cluster Beans (Gavar)", .vegetable, serving: 100, cal: 16, pro: 3.2, carb: 10, fat: 0.4, fib: 4.2, sug: 0)
+        add("Yam (Suran)", .vegetable, serving: 100, cal: 118, pro: 1.5, carb: 28, fat: 0.2, fib: 4.1, sug: 0.5)
+        add("Taro (Arbi)", .vegetable, serving: 100, cal: 112, pro: 1.5, carb: 26, fat: 0.2, fib: 4.1, sug: 0.4)
+        add("Kohlrabi", .vegetable, serving: 100, cal: 27, pro: 1.7, carb: 6.2, fat: 0.1, fib: 3.6, sug: 2.6)
+        add("Ash Gourd", .vegetable, serving: 100, cal: 10, pro: 0.4, carb: 2.3, fat: 0.02, fib: 0.5, sug: 0)
+        add("Raw Banana (Green Plantain)", .vegetable, serving: 100, cal: 122, pro: 1.3, carb: 32, fat: 0.4, fib: 2.3, sug: 15)
+        add("Jackfruit (Raw/Unripe)", .vegetable, serving: 100, cal: 95, pro: 1.7, carb: 23, fat: 0.6, fib: 1.5, sug: 19)
+        add("Bamboo Shoots", .vegetable, serving: 100, cal: 27, pro: 2.6, carb: 5.2, fat: 0.3, fib: 2.2, sug: 3.0)
+        add("Bean Sprouts (Mung)", .vegetable, serving: 100, cal: 31, pro: 3.0, carb: 5.9, fat: 0.2, fib: 1.8, sug: 4.1)
+        add("Water Chestnut", .vegetable, serving: 100, cal: 97, pro: 1.4, carb: 24, fat: 0.1, fib: 3.0, sug: 5.0)
+        add("Lotus Stem (Kamal Kakdi)", .vegetable, serving: 100, cal: 74, pro: 2.6, carb: 17, fat: 0.1, fib: 4.9, sug: 0.5)
+        add("Pointed Gourd (Parwal)", .vegetable, serving: 100, cal: 20, pro: 2.0, carb: 2.7, fat: 0.3, fib: 3.0, sug: 0)
+        add("Ivy Gourd (Tindora)", .vegetable, serving: 100, cal: 18, pro: 1.2, carb: 3.1, fat: 0.1, fib: 1.6, sug: 0)
+        add("Long Beans (Yard Beans)", .vegetable, serving: 100, cal: 47, pro: 2.8, carb: 8.4, fat: 0.4, fib: 4.0, sug: 0)
+        add("Broad Beans (Fava)", .vegetable, serving: 100, cal: 88, pro: 7.6, carb: 18, fat: 0.7, fib: 8.0, sug: 1.8)
+        add("Chayote (Chow Chow)", .vegetable, serving: 100, cal: 19, pro: 0.8, carb: 4.5, fat: 0.1, fib: 1.7, sug: 1.7)
+        add("Elephant Foot Yam (Zimikand)", .vegetable, serving: 100, cal: 118, pro: 1.5, carb: 27, fat: 0.1, fib: 4.0, sug: 0.5)
+
+        // ═══════════════════════════════════════════
+        // GREEN LEAVES & HERBS
+        // ═══════════════════════════════════════════
+        add("Baby Spinach", .greens, serving: 50, cal: 23, pro: 2.9, carb: 3.6, fat: 0.4, fib: 2.2, sug: 0.4)
+        add("Methi / Fenugreek Leaves", .greens, serving: 50, cal: 49, pro: 4.4, carb: 6.0, fat: 0.9, fib: 4.2, sug: 0)
+        add("Amaranth Greens (Rajgira)", .greens, serving: 50, cal: 23, pro: 2.5, carb: 4.0, fat: 0.3, fib: 2.0, sug: 0)
+        add("Moringa Leaves", .greens, serving: 30, cal: 64, pro: 9.4, carb: 8.3, fat: 1.4, fib: 2.0, sug: 0)
+        add("Curry Leaves", .greens, serving: 10, cal: 108, pro: 6.1, carb: 18, fat: 1.0, fib: 6.4, sug: 0)
+        add("Mint (Fresh)", .greens, serving: 20, cal: 44, pro: 3.3, carb: 8.4, fat: 0.7, fib: 6.8, sug: 0)
+        add("Coriander / Cilantro (Fresh)", .greens, serving: 20, cal: 23, pro: 2.1, carb: 3.7, fat: 0.5, fib: 2.8, sug: 0.9)
+        add("Mustard Greens (Sarson)", .greens, serving: 50, cal: 26, pro: 2.7, carb: 4.7, fat: 0.2, fib: 3.2, sug: 1.3)
+        add("Bathua Leaves", .greens, serving: 50, cal: 43, pro: 4.2, carb: 7.3, fat: 0.8, fib: 4.0, sug: 0)
+        add("Malabar Spinach (Poi)", .greens, serving: 50, cal: 19, pro: 1.8, carb: 3.4, fat: 0.3, fib: 1.0, sug: 0)
+        add("Dill (Fresh)", .greens, serving: 20, cal: 43, pro: 3.5, carb: 7.0, fat: 1.1, fib: 2.1, sug: 0)
+        add("Sorrel Leaves (Gongura)", .greens, serving: 50, cal: 22, pro: 2.0, carb: 3.2, fat: 0.7, fib: 2.9, sug: 0)
+        add("Collard Greens", .greens, serving: 50, cal: 32, pro: 3.0, carb: 5.4, fat: 0.6, fib: 4.0, sug: 0.5)
+        add("Swiss Chard", .greens, serving: 50, cal: 19, pro: 1.8, carb: 3.7, fat: 0.2, fib: 1.6, sug: 1.1)
+        add("Arugula / Rocket", .greens, serving: 50, cal: 25, pro: 2.6, carb: 3.7, fat: 0.7, fib: 1.6, sug: 2.1)
+        add("Watercress", .greens, serving: 50, cal: 11, pro: 2.3, carb: 1.3, fat: 0.1, fib: 0.5, sug: 0.2)
+        add("Bok Choy", .greens, serving: 100, cal: 13, pro: 1.5, carb: 2.2, fat: 0.2, fib: 1.0, sug: 1.2)
+        add("Basil (Fresh)", .greens, serving: 10, cal: 23, pro: 3.2, carb: 2.7, fat: 0.6, fib: 1.6, sug: 0.3)
+        add("Parsley (Fresh)", .greens, serving: 20, cal: 36, pro: 3.0, carb: 6.3, fat: 0.8, fib: 3.3, sug: 0.9)
+        add("Microgreens", .greens, serving: 30, cal: 31, pro: 2.5, carb: 4.0, fat: 0.6, fib: 2.0, sug: 0.5)
+
+        // ═══════════════════════════════════════════
+        // FRUITS (World Collection)
+        // ═══════════════════════════════════════════
+        add("Papaya", .fruit, serving: 150, cal: 43, pro: 0.5, carb: 11, fat: 0.3, fib: 1.7, sug: 8.0)
+        add("Guava", .fruit, serving: 100, cal: 68, pro: 2.6, carb: 14, fat: 1.0, fib: 5.4, sug: 9.0)
+        add("Pomegranate", .fruit, serving: 100, cal: 83, pro: 1.7, carb: 19, fat: 1.2, fib: 4.0, sug: 14)
+        add("Lychee", .fruit, serving: 100, cal: 66, pro: 0.8, carb: 17, fat: 0.4, fib: 1.3, sug: 15)
+        add("Dragon Fruit", .fruit, serving: 100, cal: 50, pro: 1.1, carb: 11, fat: 0.4, fib: 3.0, sug: 8.0)
+        add("Passion Fruit", .fruit, serving: 50, cal: 97, pro: 2.2, carb: 23, fat: 0.7, fib: 10, sug: 11)
+        add("Jackfruit (Ripe)", .fruit, serving: 100, cal: 95, pro: 1.7, carb: 23, fat: 0.6, fib: 1.5, sug: 19)
+        add("Custard Apple", .fruit, serving: 100, cal: 94, pro: 2.1, carb: 24, fat: 0.3, fib: 4.4, sug: 19)
+        add("Sapota / Chikoo", .fruit, serving: 100, cal: 83, pro: 0.4, carb: 20, fat: 1.1, fib: 5.3, sug: 14)
+        add("Starfruit (Carambola)", .fruit, serving: 100, cal: 31, pro: 1.0, carb: 6.7, fat: 0.3, fib: 2.8, sug: 4.0)
+        add("Persimmon", .fruit, serving: 100, cal: 70, pro: 0.6, carb: 19, fat: 0.2, fib: 3.6, sug: 13)
+        add("Fig (Fresh)", .fruit, serving: 50, cal: 74, pro: 0.8, carb: 19, fat: 0.3, fib: 2.9, sug: 16)
+        add("Fig (Dried)", .fruit, serving: 30, cal: 249, pro: 3.3, carb: 64, fat: 0.9, fib: 10, sug: 48)
+        add("Coconut (Fresh)", .fruit, serving: 50, cal: 354, pro: 3.3, carb: 15, fat: 33, fib: 9.0, sug: 6.2)
+        add("Gooseberry (Amla)", .fruit, serving: 50, cal: 44, pro: 0.9, carb: 10, fat: 0.6, fib: 4.3, sug: 4.4)
+        add("Tamarind (Pulp)", .fruit, serving: 30, cal: 239, pro: 2.8, carb: 63, fat: 0.6, fib: 5.1, sug: 38)
+        add("Jamun (Java Plum)", .fruit, serving: 100, cal: 60, pro: 0.7, carb: 14, fat: 0.2, fib: 0.6, sug: 0)
+        add("Rambutan", .fruit, serving: 100, cal: 82, pro: 0.7, carb: 21, fat: 0.2, fib: 0.9, sug: 0)
+        add("Mulberry", .fruit, serving: 100, cal: 43, pro: 1.4, carb: 10, fat: 0.4, fib: 1.7, sug: 8.1)
+        add("Cranberry", .fruit, serving: 100, cal: 46, pro: 0.5, carb: 12, fat: 0.1, fib: 4.6, sug: 4.0)
+        add("Raspberry", .fruit, serving: 100, cal: 52, pro: 1.2, carb: 12, fat: 0.7, fib: 6.5, sug: 4.4)
+        add("Blackberry", .fruit, serving: 100, cal: 43, pro: 1.4, carb: 10, fat: 0.5, fib: 5.3, sug: 4.9)
+        add("Cherry", .fruit, serving: 100, cal: 63, pro: 1.1, carb: 16, fat: 0.2, fib: 2.1, sug: 13)
+        add("Plum", .fruit, serving: 100, cal: 46, pro: 0.7, carb: 11, fat: 0.3, fib: 1.4, sug: 10)
+        add("Apricot", .fruit, serving: 100, cal: 48, pro: 1.4, carb: 11, fat: 0.4, fib: 2.0, sug: 9.2)
+        add("Nectarine", .fruit, serving: 100, cal: 44, pro: 1.1, carb: 11, fat: 0.3, fib: 1.7, sug: 7.9)
+        add("Peach", .fruit, serving: 100, cal: 39, pro: 0.9, carb: 10, fat: 0.3, fib: 1.5, sug: 8.4)
+        add("Grapefruit", .fruit, serving: 150, cal: 42, pro: 0.8, carb: 11, fat: 0.1, fib: 1.6, sug: 7.0)
+        add("Cantaloupe", .fruit, serving: 150, cal: 34, pro: 0.8, carb: 8.2, fat: 0.2, fib: 0.9, sug: 7.9)
+        add("Honeydew Melon", .fruit, serving: 150, cal: 36, pro: 0.5, carb: 9.1, fat: 0.1, fib: 0.8, sug: 8.1)
+
+        // ═══════════════════════════════════════════
+        // PICKLES & FERMENTED FOODS
+        // ═══════════════════════════════════════════
+        add("Indian Lime Pickle", .pickles, serving: 15, cal: 195, pro: 1.0, carb: 12, fat: 15, fib: 1.5, sug: 3.0, salt: 5.0)
+        add("Indian Mixed Vegetable Pickle", .pickles, serving: 15, cal: 170, pro: 1.5, carb: 8.0, fat: 14, fib: 2.0, sug: 3.0, salt: 4.5)
+        add("Indian Garlic Pickle", .pickles, serving: 15, cal: 180, pro: 2.5, carb: 10, fat: 14, fib: 1.0, sug: 2.0, salt: 4.0)
+        add("Indian Green Chili Pickle", .pickles, serving: 15, cal: 160, pro: 1.5, carb: 7.0, fat: 13, fib: 2.0, sug: 2.5, salt: 5.0)
+        add("Indian Ginger Pickle", .pickles, serving: 15, cal: 150, pro: 1.0, carb: 10, fat: 12, fib: 1.5, sug: 4.0, salt: 4.0)
+        add("Pickled Ginger (Gari)", .pickles, serving: 30, cal: 20, pro: 0.1, carb: 4.5, fat: 0.1, fib: 0.2, sug: 3.0, salt: 1.5)
+        add("Umeboshi (Japanese Plum)", .pickles, serving: 10, cal: 33, pro: 0.9, carb: 7.0, fat: 0.2, fib: 3.0, sug: 0, salt: 22)
+        add("Pickled Onions (British)", .pickles, serving: 30, cal: 24, pro: 0.5, carb: 5.0, fat: 0, fib: 0.5, sug: 3.0, salt: 1.2)
+        add("Sauerkraut", .pickles, serving: 100, cal: 19, pro: 0.9, carb: 4.3, fat: 0.1, fib: 2.9, sug: 1.8, salt: 2.0)
+        add("Fermented Bamboo Shoot", .pickles, serving: 50, cal: 19, pro: 2.3, carb: 3.0, fat: 0.3, fib: 1.0, sug: 0, salt: 3.0)
+        add("Kanji (Fermented Carrot)", .pickles, serving: 100, cal: 20, pro: 0.5, carb: 4.5, fat: 0.1, fib: 1.0, sug: 3.0, salt: 1.5)
+        add("Achaar (Nepali Mixed Pickle)", .pickles, serving: 15, cal: 175, pro: 1.5, carb: 9.0, fat: 14, fib: 2.0, sug: 3.0, salt: 4.5)
+
+        // ═══════════════════════════════════════════
+        // EDIBLE FLOWERS
+        // ═══════════════════════════════════════════
+        add("Rose Petals (Dried)", .flowers, serving: 5, cal: 280, pro: 3.5, carb: 65, fat: 0.5, fib: 10, sug: 45)
+        add("Hibiscus (Dried)", .flowers, serving: 5, cal: 49, pro: 1.0, carb: 12, fat: 0.6, fib: 2.0, sug: 6.0)
+        add("Lavender (Dried)", .flowers, serving: 3, cal: 287, pro: 4.0, carb: 55, fat: 5.0, fib: 12, sug: 0)
+        add("Chamomile Flowers", .flowers, serving: 3, cal: 1, pro: 0, carb: 0.2, fat: 0, fib: 0.1, sug: 0)
+        add("Nasturtium Flowers", .flowers, serving: 10, cal: 22, pro: 2.6, carb: 3.3, fat: 0.1, fib: 1.0, sug: 0)
+        add("Calendula Petals", .flowers, serving: 5, cal: 25, pro: 1.5, carb: 4.0, fat: 0.4, fib: 2.0, sug: 0)
+        add("Elderflower", .flowers, serving: 10, cal: 73, pro: 0.6, carb: 18, fat: 0.2, fib: 7.0, sug: 0)
+        add("Pumpkin Blossom", .flowers, serving: 30, cal: 15, pro: 1.0, carb: 3.3, fat: 0.1, fib: 0.5, sug: 0)
+        add("Banana Flower", .flowers, serving: 50, cal: 51, pro: 1.6, carb: 10, fat: 0.6, fib: 5.7, sug: 0)
+        add("Agathi / Sesbania Flower", .flowers, serving: 30, cal: 73, pro: 1.3, carb: 14, fat: 1.4, fib: 0, sug: 0)
+
+        // ═══════════════════════════════════════════
+        // SOUTH INDIAN (Missing Dishes)
+        // ═══════════════════════════════════════════
+        add("Masala Dosa", .prepared, serving: 150, cal: 195, pro: 5.5, carb: 28, fat: 7.0, fib: 2.0, sug: 2.0, salt: 0.5)
+        add("Rava Dosa", .prepared, serving: 120, cal: 182, pro: 4.0, carb: 25, fat: 7.5, fib: 1.0, sug: 1.5, salt: 0.5)
+        add("Set Dosa", .prepared, serving: 120, cal: 145, pro: 3.5, carb: 22, fat: 4.5, fib: 1.0, sug: 1.0, salt: 0.3)
+        add("Medu Vada", .prepared, serving: 50, cal: 280, pro: 13, carb: 28, fat: 14, fib: 4.5, sug: 1.5, salt: 0.6)
+        add("Uttapam", .prepared, serving: 150, cal: 158, pro: 5.0, carb: 25, fat: 4.0, fib: 2.0, sug: 2.5, salt: 0.4)
+        add("Appam", .bakery, serving: 80, cal: 150, pro: 2.5, carb: 28, fat: 3.5, fib: 0.5, sug: 2.0, salt: 0.3)
+        add("Sambhar", .prepared, serving: 200, cal: 65, pro: 3.5, carb: 10, fat: 1.5, fib: 3.0, sug: 2.5, salt: 0.8)
+        add("Rasam", .prepared, serving: 200, cal: 30, pro: 1.5, carb: 5.0, fat: 0.5, fib: 1.0, sug: 2.0, salt: 0.7)
+        add("Bisi Bele Bath", .prepared, serving: 250, cal: 145, pro: 5.0, carb: 22, fat: 4.0, fib: 3.0, sug: 2.0, salt: 0.6)
+        add("Pesarattu", .prepared, serving: 100, cal: 155, pro: 8.5, carb: 20, fat: 4.5, fib: 4.0, sug: 1.0, salt: 0.3)
+        add("Puttu", .grain, serving: 150, cal: 190, pro: 3.0, carb: 35, fat: 4.5, fib: 2.0, sug: 1.0, salt: 0.2)
+        add("Lemon Rice", .prepared, serving: 200, cal: 155, pro: 3.0, carb: 28, fat: 3.5, fib: 1.0, sug: 0.5, salt: 0.5)
+        add("Curd Rice", .prepared, serving: 200, cal: 130, pro: 4.0, carb: 22, fat: 3.0, fib: 0.5, sug: 3.0, salt: 0.3)
+        add("Mysore Bonda", .snacks, serving: 50, cal: 310, pro: 6.0, carb: 35, fat: 16, fib: 2.0, sug: 1.5, salt: 0.5)
+        add("Bajji / Pakora (Onion)", .snacks, serving: 50, cal: 250, pro: 5.0, carb: 30, fat: 12, fib: 2.0, sug: 2.5, salt: 0.6)
+
+        // ═══════════════════════════════════════════
+        // NORTH INDIAN (Missing Dishes)
+        // ═══════════════════════════════════════════
+        add("Aloo Paratha", .prepared, serving: 100, cal: 260, pro: 5.5, carb: 35, fat: 11, fib: 2.5, sug: 1.5, salt: 0.6)
+        add("Paneer Tikka", .prepared, serving: 100, cal: 250, pro: 16, carb: 5.0, fat: 18, fib: 1.0, sug: 2.0, salt: 0.8)
+        add("Tandoori Roti", .bakery, serving: 50, cal: 260, pro: 8.5, carb: 50, fat: 3.0, fib: 3.5, sug: 1.5, salt: 0.5)
+        add("Kadhi Pakoda", .prepared, serving: 200, cal: 90, pro: 4.0, carb: 10, fat: 4.0, fib: 1.5, sug: 2.0, salt: 0.6)
+        add("Malai Kofta", .prepared, serving: 200, cal: 190, pro: 7.0, carb: 14, fat: 12, fib: 2.0, sug: 3.5, salt: 0.8)
+        add("Aloo Tikki", .snacks, serving: 80, cal: 210, pro: 3.5, carb: 28, fat: 10, fib: 2.5, sug: 1.5, salt: 0.7)
+        add("Puri", .bakery, serving: 30, cal: 350, pro: 7.0, carb: 45, fat: 16, fib: 2.0, sug: 1.0, salt: 0.5)
+        add("Shahi Paneer", .prepared, serving: 200, cal: 200, pro: 10, carb: 8.0, fat: 15, fib: 1.5, sug: 3.0, salt: 0.7)
+        add("Gobi Manchurian", .prepared, serving: 150, cal: 180, pro: 4.0, carb: 22, fat: 8.5, fib: 2.5, sug: 4.0, salt: 1.2)
+        add("Kachori", .snacks, serving: 60, cal: 340, pro: 6.5, carb: 38, fat: 18, fib: 3.0, sug: 2.0, salt: 0.8)
+
+        // ═══════════════════════════════════════════
+        // COMPOSITE / CAFE-STYLE DISHES
+        // ═══════════════════════════════════════════
+        add("Avocado Toast with Sourdough", .composite, serving: 200, cal: 215, pro: 6.5, carb: 22, fat: 12, fib: 5.0, sug: 2.0, salt: 0.8)
+        add("Overnight Oats with Berries", .composite, serving: 250, cal: 155, pro: 6.0, carb: 26, fat: 4.0, fib: 4.5, sug: 10, salt: 0.1)
+        add("Poke Bowl (Salmon)", .composite, serving: 350, cal: 140, pro: 12, carb: 16, fat: 4.0, fib: 2.0, sug: 3.0, salt: 1.0)
+        add("Eggs Benedict", .composite, serving: 250, cal: 230, pro: 14, carb: 18, fat: 12, fib: 1.0, sug: 1.5, salt: 1.2)
+        add("Full English Breakfast", .composite, serving: 400, cal: 195, pro: 12, carb: 14, fat: 10, fib: 2.5, sug: 3.0, salt: 1.5)
+        add("Granola Bowl", .composite, serving: 200, cal: 250, pro: 7.0, carb: 35, fat: 10, fib: 4.0, sug: 15, salt: 0.1)
+        add("Smoothie Bowl", .composite, serving: 300, cal: 110, pro: 3.5, carb: 20, fat: 2.5, fib: 3.5, sug: 14, salt: 0.1)
+        add("Chicken Caesar Wrap", .composite, serving: 250, cal: 175, pro: 14, carb: 16, fat: 7.0, fib: 1.5, sug: 1.5, salt: 1.0)
+        add("Caprese Sandwich", .composite, serving: 200, cal: 240, pro: 12, carb: 22, fat: 12, fib: 1.5, sug: 3.0, salt: 1.0)
+        add("Buddha Bowl", .composite, serving: 400, cal: 130, pro: 6.0, carb: 18, fat: 4.5, fib: 5.0, sug: 4.0, salt: 0.5)
+        add("Protein Pancakes", .composite, serving: 150, cal: 190, pro: 18, carb: 20, fat: 5.0, fib: 2.0, sug: 4.0, salt: 0.5)
+        add("Chia Pudding", .composite, serving: 200, cal: 120, pro: 4.5, carb: 14, fat: 6.0, fib: 8.0, sug: 5.0, salt: 0.1)
+        add("Loaded Sweet Potato", .composite, serving: 300, cal: 120, pro: 5.0, carb: 20, fat: 3.0, fib: 4.0, sug: 5.0, salt: 0.4)
+        add("Quinoa Power Salad", .composite, serving: 300, cal: 115, pro: 5.0, carb: 16, fat: 4.0, fib: 3.5, sug: 3.0, salt: 0.4)
+        add("Acai Bowl with Granola", .composite, serving: 300, cal: 125, pro: 3.0, carb: 20, fat: 4.5, fib: 4.0, sug: 13, salt: 0.1)
+
+        // ═══════════════════════════════════════════
+        // UK HIGH-STREET FOOD
+        // ═══════════════════════════════════════════
+        add("Greggs Sausage Roll", .shop, "Greggs", serving: 103, cal: 327, pro: 8.5, carb: 26, fat: 21, fib: 0.8, sug: 1.5, salt: 1.1)
+        add("Greggs Steak Bake", .shop, "Greggs", serving: 138, cal: 236, pro: 8.5, carb: 24, fat: 12, fib: 0.9, sug: 0.7, salt: 0.9)
+        add("Nandos Quarter Chicken", .shop, "Nandos", serving: 200, cal: 155, pro: 26, carb: 1.0, fat: 5.5, fib: 0, sug: 0.5, salt: 1.3)
+        add("Nandos Halloumi Wrap", .shop, "Nandos", serving: 280, cal: 165, pro: 9.0, carb: 16, fat: 8.0, fib: 2.0, sug: 2.5, salt: 1.1)
+        add("Wagamama Chicken Katsu Curry", .shop, "Wagamama", serving: 500, cal: 168, pro: 9.0, carb: 18, fat: 6.5, fib: 1.5, sug: 4.0, salt: 1.0)
+        add("Pret Protein Pot", .shop, "Pret", serving: 200, cal: 95, pro: 11, carb: 4.0, fat: 4.0, fib: 1.5, sug: 2.5, salt: 0.5)
+        add("Subway 6-inch Turkey Sub", .shop, "Subway", serving: 230, cal: 115, pro: 9.0, carb: 14, fat: 2.5, fib: 2.0, sug: 3.0, salt: 0.8)
+        add("Five Guys Cheeseburger", .shop, "Five Guys", serving: 303, cal: 270, pro: 18, carb: 14, fat: 17, fib: 1.0, sug: 4.0, salt: 1.4)
+        add("Leon Love Burger", .shop, "Leon", serving: 250, cal: 180, pro: 14, carb: 16, fat: 7.0, fib: 3.0, sug: 3.5, salt: 0.9)
+        add("Costa Almond Croissant", .shop, "Costa", serving: 90, cal: 410, pro: 9.0, carb: 42, fat: 23, fib: 2.5, sug: 16, salt: 0.6)
+
+        // ═══════════════════════════════════════════
+        // GYM & WORKOUT NUTRITION
+        // ═══════════════════════════════════════════
+        add("Whey Protein Shake", .gymFuel, serving: 350, cal: 120, pro: 24, carb: 4.0, fat: 1.5, fib: 0.5, sug: 2.0, salt: 0.3)
+        add("Casein Protein Shake", .gymFuel, serving: 350, cal: 115, pro: 22, carb: 5.0, fat: 1.0, fib: 0, sug: 3.0, salt: 0.3)
+        add("Pre-Workout Drink", .gymFuel, serving: 300, cal: 10, pro: 0, carb: 2.5, fat: 0, fib: 0, sug: 0, salt: 0.1)
+        add("BCAA Drink", .gymFuel, serving: 500, cal: 5, pro: 0, carb: 1.0, fat: 0, fib: 0, sug: 0.5, salt: 0.1)
+        add("Mass Gainer Shake", .gymFuel, serving: 400, cal: 310, pro: 20, carb: 50, fat: 4.5, fib: 2.0, sug: 12, salt: 0.5)
+        add("Protein Oat Bar", .gymFuel, serving: 65, cal: 345, pro: 27, carb: 38, fat: 10, fib: 5.0, sug: 6.0, salt: 0.4)
+        add("Peanut Butter Protein Balls", .gymFuel, serving: 40, cal: 420, pro: 22, carb: 28, fat: 24, fib: 4.0, sug: 10, salt: 0.3)
+        add("Chicken & Rice Meal Prep", .gymFuel, serving: 350, cal: 140, pro: 14, carb: 16, fat: 2.5, fib: 1.0, sug: 0.5, salt: 0.5)
+        add("Egg White Omelette", .gymFuel, serving: 150, cal: 52, pro: 11, carb: 0.7, fat: 0.2, fib: 0, sug: 0.7, salt: 0.4)
+        add("Turkey Mince Bowl", .gymFuel, serving: 300, cal: 120, pro: 18, carb: 4.0, fat: 4.0, fib: 1.0, sug: 1.5, salt: 0.6)
+        add("Tuna Rice Cakes", .gymFuel, serving: 100, cal: 155, pro: 18, carb: 14, fat: 2.5, fib: 0.5, sug: 0.5, salt: 0.6)
+        add("Sweet Potato & Chicken", .gymFuel, serving: 350, cal: 125, pro: 14, carb: 13, fat: 2.0, fib: 2.5, sug: 3.5, salt: 0.5)
+
         return db
     }
 }
@@ -497,15 +725,34 @@ let defaultServingPresets: [ServingPreset] = [
     ServingPreset(label: "500g", grams: 500),
 ]
 
-// MARK: - Food Search View (Main entry point)
+// MARK: - Food Search View (Thin wrapper with NavigationStack)
 
 struct FoodSearchView: View {
-    @Environment(HealthStore.self) var store
     @Environment(\.dismiss) var dismiss
+
+    var body: some View {
+        NavigationStack {
+            EmbeddedFoodSearchView()
+                .navigationTitle("Food Search")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Close") { dismiss() }
+                    }
+                }
+        }
+    }
+}
+
+// MARK: - Embedded Food Search View (No NavigationStack — embeddable)
+
+struct EmbeddedFoodSearchView: View {
+    @Environment(HealthStore.self) var store
+
+    var onFoodLogged: (() -> Void)? = nil
 
     @State private var searchText = ""
     @State private var selectedFood: FoodItem? = nil
-    @State private var showNutritionDetail = false
     @FocusState private var searchFocused: Bool
 
     private let db = FoodDatabase.shared
@@ -514,53 +761,58 @@ struct FoodSearchView: View {
         db.search(searchText)
     }
 
-    var body: some View {
-        NavigationStack {
-            ZStack {
-                Color.brandBg.ignoresSafeArea()
-
-                VStack(spacing: 0) {
-                    // Search bar
-                    searchBar
-                    // Results
-                    if searchText.isEmpty {
-                        emptyState
-                    } else if searchResults.isEmpty {
-                        noResultsView
-                    } else {
-                        resultsList
-                    }
-                }
-            }
-            .navigationTitle("Food Search")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") { dismiss() }
-                }
-            }
-            .sheet(isPresented: $showNutritionDetail) {
-                if let food = selectedFood {
-                    FoodNutritionDetailView(food: food)
-                }
-            }
-            .onAppear { searchFocused = true }
+    // Dynamic popular searches based on time of day
+    var dynamicPopularSearches: [String] {
+        let hour = Calendar.current.component(.hour, from: Date())
+        switch hour {
+        case 6..<10:   return ["Oats", "Idli", "Avocado Toast", "Eggs", "Masala Dosa", "Smoothie Bowl", "Banana", "Greek Yoghurt"]
+        case 10..<14:  return ["Chicken Breast", "Rice", "Biryani", "Quinoa Salad", "Dal", "Buddha Bowl", "Salmon", "Masala Dosa"]
+        case 14..<17:  return ["Protein Bar", "Greek Yoghurt", "Trail Mix", "Almonds", "Apple", "Protein Shake", "Guava", "Avocado"]
+        case 17..<21:  return ["Salmon", "Stir Fry", "Soup", "Biryani", "Masala Dosa", "Pad Thai", "Grilled Chicken", "Buddha Bowl"]
+        default:       return ["Chamomile", "Banana", "Warm Milk", "Almonds", "Cottage Cheese", "Oats", "Honey", "Mint"]
         }
+    }
+
+    var body: some View {
+        ZStack {
+            Color.brandBg.ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                // Search bar
+                searchBar
+                // Results
+                if searchText.isEmpty {
+                    emptyState
+                } else if searchResults.isEmpty {
+                    noResultsView
+                } else {
+                    resultsList
+                }
+            }
+        }
+        .navigationDestination(item: $selectedFood) { food in
+            FoodNutritionDetailView(food: food, embedded: true, onFoodLogged: onFoodLogged)
+        }
+        .onAppear { searchFocused = true }
     }
 
     var searchBar: some View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
                 .foregroundColor(.secondary)
+                .accessibilityHidden(true)
             TextField("Search any food or product...", text: $searchText)
                 .focused($searchFocused)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
+                .accessibilityLabel("Search foods")
+                .accessibilityHint("Type a food name to see nutrition information")
             if !searchText.isEmpty {
                 Button { searchText = "" } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundColor(.secondary)
                 }
+                .accessibilityLabel("Clear search")
             }
         }
         .padding(12)
@@ -585,18 +837,13 @@ struct FoodSearchView: View {
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 40)
 
-                // Popular categories
+                // Popular categories — dynamic based on time of day
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Popular Searches").font(.headline).padding(.horizontal)
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                        popularChip("Chicken Breast")
-                        popularChip("Rice")
-                        popularChip("Banana")
-                        popularChip("Eggs")
-                        popularChip("Oats")
-                        popularChip("Salmon")
-                        popularChip("Avocado")
-                        popularChip("Greek Yoghurt")
+                        ForEach(dynamicPopularSearches, id: \.self) { chip in
+                            popularChip(chip)
+                        }
                     }
                     .padding(.horizontal)
                 }
@@ -615,6 +862,7 @@ struct FoodSearchView: View {
                 .background(Color.brandPurple.opacity(0.08))
                 .cornerRadius(10)
         }
+        .accessibilityLabel("Search for \(name)")
     }
 
     var noResultsView: some View {
@@ -635,7 +883,6 @@ struct FoodSearchView: View {
         List(searchResults.prefix(20)) { food in
             Button {
                 selectedFood = food
-                showNutritionDetail = true
             } label: {
                 HStack(spacing: 12) {
                     Text(food.category.icon)
@@ -664,6 +911,9 @@ struct FoodSearchView: View {
                         .font(.caption).foregroundColor(.secondary)
                 }
                 .padding(.vertical, 4)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("\(food.name)\(food.brand.isEmpty ? "" : " by \(food.brand)"), \(Int(food.caloriesPer100g)) calories per 100 grams")
+                .accessibilityHint("View full nutritional breakdown")
             }
         }
         .listStyle(.plain)
@@ -677,14 +927,18 @@ struct FoodNutritionDetailView: View {
     @Environment(\.dismiss) var dismiss
 
     let food: FoodItem
+    let embedded: Bool
+    var onFoodLogged: (() -> Void)? = nil
 
     @State private var selectedGrams: Double
     @State private var customGrams: String = ""
     @State private var mealType: MealType = .snack
     @State private var showSaved = false
 
-    init(food: FoodItem) {
+    init(food: FoodItem, embedded: Bool = false, onFoodLogged: (() -> Void)? = nil) {
         self.food = food
+        self.embedded = embedded
+        self.onFoodLogged = onFoodLogged
         _selectedGrams = State(initialValue: Double(food.defaultServingGrams))
     }
 
@@ -693,141 +947,197 @@ struct FoodNutritionDetailView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 20) {
-                    // Header
-                    VStack(spacing: 8) {
-                        Text(food.category.icon).font(.system(size: 50))
-                        Text(food.name).font(.title2.bold())
-                        if !food.brand.isEmpty {
-                            Text(food.brand)
-                                .font(.caption).foregroundColor(.white)
-                                .padding(.horizontal, 12).padding(.vertical, 4)
-                                .background(Color.brandTeal).cornerRadius(8)
-                        }
-                    }
-                    .padding(.top, 10)
-
-                    // Gram size selector
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Serving Size").font(.headline)
-
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 8) {
-                                // Default serving
-                                gramButton(label: "Default (\(food.defaultServingGrams)g)", grams: Double(food.defaultServingGrams))
-
-                                ForEach(defaultServingPresets) { preset in
-                                    if Int(preset.grams) != food.defaultServingGrams {
-                                        gramButton(label: preset.label, grams: preset.grams)
-                                    }
-                                }
+        Group {
+            if embedded {
+                detailContent
+            } else {
+                NavigationStack {
+                    detailContent
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) {
+                                Button("Done") { dismiss() }
                             }
                         }
-
-                        // Custom gram input
-                        HStack {
-                            TextField("Custom grams", text: $customGrams)
-                                .keyboardType(.numberPad)
-                                .textFieldStyle(.roundedBorder)
-                                .frame(width: 120)
-                            Text("g")
-                                .foregroundColor(.secondary)
-                            Button("Apply") {
-                                if let g = Double(customGrams), g > 0 {
-                                    selectedGrams = g
-                                }
-                            }
-                            .font(.subheadline.bold())
-                            .foregroundColor(.brandPurple)
-                        }
-                    }
-                    .padding(.horizontal)
-
-                    // Big calorie card
-                    VStack(spacing: 6) {
-                        Text("\(Int(nutrition.calories))")
-                            .font(.system(size: 48, weight: .bold, design: .rounded))
-                            .foregroundColor(.brandAmber)
-                        Text("calories for \(Int(selectedGrams))g")
-                            .font(.subheadline).foregroundColor(.secondary)
-                    }
-                    .padding().frame(maxWidth: .infinity)
-                    .background(Color.brandAmber.opacity(0.08))
-                    .cornerRadius(16).padding(.horizontal)
-
-                    // Macronutrient bars
-                    VStack(spacing: 12) {
-                        Text("Nutritional Breakdown").font(.headline)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-
-                        nutrientRow("Protein", value: nutrition.protein, color: .brandTeal, unit: "g")
-                        nutrientRow("Carbohydrates", value: nutrition.carbs, color: .brandCoral, unit: "g")
-                        nutrientRow("  of which sugars", value: nutrition.sugar, color: .brandCoral.opacity(0.7), unit: "g")
-                        nutrientRow("Fat", value: nutrition.fat, color: .brandAmber, unit: "g")
-                        nutrientRow("Fibre", value: nutrition.fiber, color: .brandGreen, unit: "g")
-                        nutrientRow("Salt", value: nutrition.salt, color: .secondary, unit: "g")
-                    }
-                    .padding(.horizontal)
-
-                    // Per-100g reference
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Per 100g Reference").font(.subheadline.bold())
-                            .foregroundColor(.secondary)
-                        HStack(spacing: 16) {
-                            miniStat("Cal", "\(Int(food.caloriesPer100g))")
-                            miniStat("Pro", "\(String(format: "%.1f", food.proteinPer100g))g")
-                            miniStat("Carb", "\(String(format: "%.1f", food.carbsPer100g))g")
-                            miniStat("Fat", "\(String(format: "%.1f", food.fatPer100g))g")
-                            miniStat("Fib", "\(String(format: "%.1f", food.fiberPer100g))g")
-                        }
-                    }
-                    .padding()
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color(.systemGray6))
-                    .cornerRadius(12).padding(.horizontal)
-
-                    // Log to nutrition section
-                    VStack(spacing: 12) {
-                        Text("Log This Food").font(.headline)
-                        Picker("Meal", selection: $mealType) {
-                            ForEach(MealType.allCases, id: \.self) { t in
-                                Text(t.rawValue).tag(t)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-
-                        Button {
-                            logFood()
-                        } label: {
-                            HStack {
-                                Image(systemName: showSaved ? "checkmark.circle.fill" : "plus.circle.fill")
-                                Text(showSaved ? "Saved!" : "Add to \(mealType.rawValue)")
-                            }
-                            .font(.headline)
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                            .background(showSaved ? Color.brandGreen : Color.brandPurple)
-                            .cornerRadius(14)
-                        }
-                        .disabled(showSaved)
-                    }
-                    .padding(.horizontal)
-                    .padding(.bottom, 30)
-                }
-            }
-            .background(Color.brandBg)
-            .navigationTitle("Nutrition Info")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") { dismiss() }
                 }
             }
         }
     }
+
+    var detailContent: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                // Header
+                VStack(spacing: 8) {
+                    Text(food.category.icon).font(.system(size: 50))
+                    Text(food.name).font(.title2.bold())
+                    if !food.brand.isEmpty {
+                        Text(food.brand)
+                            .font(.caption).foregroundColor(.white)
+                            .padding(.horizontal, 12).padding(.vertical, 4)
+                            .background(Color.brandTeal).cornerRadius(8)
+                    }
+                }
+                .padding(.top, 10)
+
+                // Gram size selector
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Serving Size").font(.headline)
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            // Default serving
+                            gramButton(label: "Default (\(food.defaultServingGrams)g)", grams: Double(food.defaultServingGrams))
+
+                            ForEach(defaultServingPresets) { preset in
+                                if Int(preset.grams) != food.defaultServingGrams {
+                                    gramButton(label: preset.label, grams: preset.grams)
+                                }
+                            }
+                        }
+                    }
+
+                    // Custom gram input
+                    HStack {
+                        TextField("Custom grams", text: $customGrams)
+                            .keyboardType(.numberPad)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 120)
+                        Text("g")
+                            .foregroundColor(.secondary)
+                        Button("Apply") {
+                            if let g = Double(customGrams), g > 0 {
+                                selectedGrams = g
+                            }
+                        }
+                        .font(.subheadline.bold())
+                        .foregroundColor(.brandPurple)
+                    }
+                }
+                .padding(.horizontal)
+
+                // Big calorie card
+                VStack(spacing: 6) {
+                    Text("\(Int(nutrition.calories))")
+                        .font(.system(size: 48, weight: .bold, design: .rounded))
+                        .foregroundColor(.brandAmber)
+                    Text("calories for \(Int(selectedGrams))g")
+                        .font(.subheadline).foregroundColor(.secondary)
+                }
+                .padding().frame(maxWidth: .infinity)
+                .background(Color.brandAmber.opacity(0.08))
+                .cornerRadius(16).padding(.horizontal)
+
+                // Contextual fitness tip
+                if food.category == .gymFuel {
+                    gymTipBanner(for: food)
+                } else if food.proteinPer100g > 20 {
+                    tipBanner("Great for muscle recovery \u{1F4AA}", color: .brandTeal)
+                } else if food.carbsPer100g > 40 && Calendar.current.component(.hour, from: Date()) < 14 {
+                    tipBanner("Good pre-workout energy source \u{26A1}", color: .brandAmber)
+                }
+
+                // Macronutrient bars
+                VStack(spacing: 12) {
+                    Text("Nutritional Breakdown").font(.headline)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    nutrientRow("Protein", value: nutrition.protein, color: .brandTeal, unit: "g")
+                    nutrientRow("Carbohydrates", value: nutrition.carbs, color: .brandCoral, unit: "g")
+                    nutrientRow("  of which sugars", value: nutrition.sugar, color: .brandCoral.opacity(0.7), unit: "g")
+                    nutrientRow("Fat", value: nutrition.fat, color: .brandAmber, unit: "g")
+                    nutrientRow("Fibre", value: nutrition.fiber, color: .brandGreen, unit: "g")
+                    nutrientRow("Salt", value: nutrition.salt, color: .secondary, unit: "g")
+                }
+                .padding(.horizontal)
+
+                // Per-100g reference
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Per 100g Reference").font(.subheadline.bold())
+                        .foregroundColor(.secondary)
+                    HStack(spacing: 16) {
+                        miniStat("Cal", "\(Int(food.caloriesPer100g))")
+                        miniStat("Pro", "\(String(format: "%.1f", food.proteinPer100g))g")
+                        miniStat("Carb", "\(String(format: "%.1f", food.carbsPer100g))g")
+                        miniStat("Fat", "\(String(format: "%.1f", food.fatPer100g))g")
+                        miniStat("Fib", "\(String(format: "%.1f", food.fiberPer100g))g")
+                    }
+                }
+                .padding()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(.systemGray6))
+                .cornerRadius(12).padding(.horizontal)
+
+                // Log to nutrition section
+                VStack(spacing: 12) {
+                    Text("Log This Food").font(.headline)
+                    Picker("Meal", selection: $mealType) {
+                        ForEach(MealType.allCases, id: \.self) { t in
+                            Text(t.rawValue).tag(t)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                    Button {
+                        logFood()
+                    } label: {
+                        HStack {
+                            Image(systemName: showSaved ? "checkmark.circle.fill" : "plus.circle.fill")
+                            Text(showSaved ? "Saved!" : "Add to \(mealType.rawValue)")
+                        }
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(showSaved ? Color.brandGreen : Color.brandPurple)
+                        .cornerRadius(14)
+                    }
+                    .disabled(showSaved)
+                }
+                .padding(.horizontal)
+                .padding(.bottom, 30)
+            }
+        }
+        .background(Color.brandBg)
+        .navigationTitle("Nutrition Info")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    // MARK: - Tip Banners
+
+    func tipBanner(_ text: String, color: Color) -> some View {
+        HStack {
+            Image(systemName: "lightbulb.fill").foregroundColor(color)
+            Text(text).font(.caption).foregroundColor(.primary)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(color.opacity(0.1))
+        .cornerRadius(10)
+        .padding(.horizontal)
+    }
+
+    func gymTipBanner(for food: FoodItem) -> some View {
+        let tip: String
+        let name = food.name.lowercased()
+        if name.contains("pre-workout") {
+            tip = "Best consumed 30 min before workout \u{23F1}\u{FE0F}"
+        } else if name.contains("whey") || name.contains("protein shake") {
+            tip = "Ideal within 45 min post-workout window \u{1F3CB}\u{FE0F}"
+        } else if name.contains("casein") {
+            tip = "Best before bed \u{2014} slow-release protein overnight \u{1F319}"
+        } else if name.contains("bcaa") {
+            tip = "Sip during workout for endurance & recovery \u{1F4A7}"
+        } else if name.contains("mass gainer") {
+            tip = "Use on training days for caloric surplus \u{1F4C8}"
+        } else if name.contains("meal prep") || name.contains("chicken & rice") {
+            tip = "Perfect post-workout macro balance \u{1F3AF}"
+        } else {
+            tip = "Fuel your fitness goals \u{1F4AA}"
+        }
+        return tipBanner(tip, color: .brandPurple)
+    }
+
+    // MARK: - Helpers
 
     func gramButton(label: String, grams: Double) -> some View {
         Button {
@@ -878,6 +1188,7 @@ struct FoodNutritionDetailView: View {
         store.nutritionLogs.append(log)
         store.save()
         showSaved = true
+        onFoodLogged?()
 
         // Reset after delay
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {

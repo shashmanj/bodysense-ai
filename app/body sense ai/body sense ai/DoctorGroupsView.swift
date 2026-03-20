@@ -113,7 +113,7 @@ struct DoctorAppointmentsSection: View {
     private var emptyState: some View {
         VStack(spacing: 16) {
             Image(systemName: "calendar.badge.clock")
-                .font(.system(size: 56))
+                .font(.largeTitle)
                 .foregroundColor(.brandTeal.opacity(0.45))
             Text("No upcoming appointments")
                 .font(.headline)

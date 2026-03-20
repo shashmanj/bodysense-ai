@@ -26,8 +26,8 @@ struct ReportsView: View {
 
                     // Tab
                     Picker("", selection: $segment) {
-                        Text("🩸 Glucose").tag(0)
-                        Text("❤️ Blood Pressure").tag(1)
+                        Text("Glucose").tag(0)
+                        Text("Blood Pressure").tag(1)
                     }
                     .pickerStyle(.segmented)
                     .padding(.horizontal)
@@ -282,7 +282,7 @@ struct ReportsView: View {
     func summaryCol(_ title: String, _ val: String, _ sub: String, _ color: Color) -> some View {
         VStack(spacing: 2) {
             Text(title).font(.caption2).foregroundColor(.secondary)
-            Text(val).font(.system(size: 20, weight: .bold)).foregroundColor(color)
+            Text(val).font(.title3.bold()).foregroundColor(color)
             Text(sub).font(.caption2).foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
