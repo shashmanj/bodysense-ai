@@ -497,9 +497,31 @@ struct PatientProfileView: View {
 
             Divider().padding(.leading, 52)
 
+            // ── Account Recovery (Apple ID) ──
+            Button {
+                // Sign in with Apple — password is managed by Apple ID
+                if let url = URL(string: "https://iforgot.apple.com") {
+                    UIApplication.shared.open(url)
+                }
+            } label: {
+                HStack(spacing: 14) {
+                    Image(systemName: "person.badge.key.fill").font(.body).foregroundColor(.white)
+                        .frame(width: 32, height: 32).background(Color.blue).cornerRadius(8)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Account Recovery").font(.body)
+                        Text("Managed by your Apple ID").font(.caption2).foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "arrow.up.right").font(.caption).foregroundColor(.secondary)
+                }
+                .padding(.horizontal).padding(.vertical, 12)
+            }
+
+            Divider().padding(.leading, 52)
+
             // ── Sign Out ──
             Button {
-                // Reset onboarding to force re-login
+                AuthService.shared.signOut()
                 UserDefaults.standard.set(false, forKey: "onboardingDone")
                 store.userProfile = UserProfile()
                 store.save()

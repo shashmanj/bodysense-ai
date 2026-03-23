@@ -116,7 +116,7 @@ actor AIClient {
     private init() {}
 
     /// Whether the on-device AI model is ready.
-    func isConfigured() async -> Bool {
+    nonisolated func isConfigured() -> Bool {
         if case .available = SystemLanguageModel.default.availability {
             return true
         }
@@ -124,7 +124,7 @@ actor AIClient {
     }
 
     /// Human-readable reason if the model is unavailable.
-    func unavailableReason() -> String? {
+    nonisolated func unavailableReason() -> String? {
         if case .unavailable(let reason) = SystemLanguageModel.default.availability {
             switch reason {
             case .deviceNotEligible:

@@ -10,6 +10,7 @@
 
 import SwiftUI
 import Foundation
+import UserNotifications
 
 // MARK: - Appearance Mode
 
@@ -2016,6 +2017,53 @@ class HealthStore {
     var isDoctor: Bool { userProfile.isDoctor }
     var doctorProfile: DoctorProfile? { userProfile.doctorProfile }
 
+    /// Sync the doctor's profile to the public doctors list so patients can find and book them.
+    /// Called after saving DoctorProfile changes.
+    func syncDoctorToPublicList() {
+        guard let dp = userProfile.doctorProfile, dp.isVerified else { return }
+        let name = userProfile.name
+        guard !name.isEmpty else { return }
+
+        if let idx = doctors.firstIndex(where: { $0.name == name }) {
+            // Update existing
+            doctors[idx].specialization     = dp.specialty
+            doctors[idx].qualifications     = dp.qualifications
+            doctors[idx].hospital           = dp.hospital
+            doctors[idx].fee                = Int(dp.videoConsultationFee)
+            doctors[idx].bio                = dp.introduction
+            doctors[idx].postcode           = dp.postcode
+            doctors[idx].country            = dp.country
+            doctors[idx].licenseNumber      = dp.licenseNumber
+            doctors[idx].regulatoryBody     = dp.regulatoryBody
+            doctors[idx].isVerified         = true
+            doctors[idx].profilePhotoData   = dp.profilePhotoData
+            doctors[idx].available          = true
+        } else {
+            // Create new public listing
+            let doc = Doctor(
+                name: name,
+                specialization: dp.specialty,
+                qualifications: dp.qualifications,
+                experience: max(1, Calendar.current.component(.year, from: Date()) - dp.pmqYear),
+                rating: 5.0,
+                reviews: 0,
+                hospital: dp.hospital,
+                city: dp.postcode.isEmpty ? "UK" : String(dp.postcode.prefix(4)),
+                fee: Int(dp.videoConsultationFee),
+                available: true,
+                bio: dp.introduction,
+                postcode: dp.postcode,
+                country: dp.country,
+                licenseNumber: dp.licenseNumber,
+                regulatoryBody: dp.regulatoryBody,
+                isVerified: true,
+                profilePhotoData: dp.profilePhotoData
+            )
+            doctors.append(doc)
+        }
+        save()
+    }
+
     // MARK: Computed convenience
 
     // Use .max(by:) — O(n) instead of .sorted().first — O(n log n)
@@ -2201,6 +2249,24 @@ class HealthStore {
         orders.insert(order, at: 0)
         cartItems.removeAll()
         save()
+
+        // Schedule receipt email notification
+        scheduleReceiptNotification(order: order)
+    }
+
+    /// Schedule a local notification as a "receipt email" placeholder.
+    /// In production this would trigger a backend email via Stripe receipt or SendGrid.
+    private func scheduleReceiptNotification(order: Order) {
+        let content = UNMutableNotificationContent()
+        content.title = "Order Confirmed — \(order.orderNumber)"
+        content.body = "Total: \(CurrencyService.format(order.total, currencyCode: userCurrency)). " +
+            "Estimated delivery: \(order.estimatedDelivery?.formatted(.dateTime.day().month()) ?? "3-7 days"). " +
+            "Receipt sent to \(userProfile.email.isEmpty ? "your email" : userProfile.email)."
+        content.sound = .default
+
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 2, repeats: false)
+        let request = UNNotificationRequest(identifier: "receipt-\(order.orderNumber)", content: content, trigger: trigger)
+        UNUserNotificationCenter.current().add(request)
     }
 
     // MARK: Gift Code Helpers

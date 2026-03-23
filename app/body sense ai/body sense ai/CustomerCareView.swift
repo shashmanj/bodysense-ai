@@ -549,7 +549,7 @@ struct SupportCategorySheet: View {
         // Use AI to generate an immediate response
         Task {
             let prompt = buildSupportPrompt(issue: issue, detail: additionalDetail)
-            if await AIClient.shared.isConfigured() {
+            if AIClient.shared.isConfigured() {
                 do {
                     let reply = try await AIClient.shared.send(
                         system: AISystemPrompts.customerCare,

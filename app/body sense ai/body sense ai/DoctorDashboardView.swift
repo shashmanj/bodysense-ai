@@ -37,6 +37,7 @@ struct DoctorDashboardView: View {
 
 struct DoctorHomeView: View {
     @Environment(HealthStore.self) var store
+    @State private var showBecky = false
 
     var profile: DoctorProfile? { store.userProfile.doctorProfile }
 
@@ -79,6 +80,25 @@ struct DoctorHomeView: View {
                         .padding(.top, 20)
                     }
 
+                    // Becky AI quick access
+                    Button { showBecky = true } label: {
+                        HStack(spacing: 14) {
+                            Image(systemName: "stethoscope.circle.fill")
+                                .font(.title2).foregroundColor(.white)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Ask Becky").font(.headline).foregroundColor(.white)
+                                Text("Your AI medical assistant").font(.caption).foregroundColor(.white.opacity(0.8))
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right").foregroundColor(.white.opacity(0.6))
+                        }
+                        .padding()
+                        .background(LinearGradient(colors: [Color(hex: "#00BFA5"), Color(hex: "#00897B")],
+                                                   startPoint: .leading, endPoint: .trailing))
+                        .cornerRadius(16)
+                    }
+                    .padding(.horizontal)
+
                     Spacer(minLength: 24)
                 }
                 .padding(.top, 8)
@@ -86,9 +106,11 @@ struct DoctorHomeView: View {
             }
             .navigationTitle("Doctor Dashboard")
             .navigationBarTitleDisplayMode(.large)
-            // Glassy / frosted navigation bar that stays above content
             .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
+            .sheet(isPresented: $showBecky) {
+                BeckyAIView(appointment: nil)
+            }
         }
     }
 
@@ -988,7 +1010,7 @@ struct AttachmentDetailView: View {
 struct BeckyAIView: View {
     @Environment(HealthStore.self) var store
     @Environment(\.dismiss) var dismiss
-    let appointment: Appointment
+    let appointment: Appointment?
 
     @State private var messages: [BeckyMessage] = []
     @State private var inputText = ""
@@ -1064,7 +1086,17 @@ struct BeckyAIView: View {
                 }
             }
         }
-        .onAppear { generateInitialSummary() }
+        .onAppear {
+            if appointment != nil {
+                generateInitialSummary()
+            } else {
+                messages.append(BeckyMessage(
+                    content: "Hello, Doctor. I'm Becky, your AI medical assistant. Ask me anything — clinical queries, drug interactions, patient prep, or evidence-based guidance.",
+                    isUser: false,
+                    chips: ["Drug interactions", "Clinical guidelines", "Patient prep", "Evidence check"]
+                ))
+            }
+        }
     }
 
     var beckyHeader: some View {
@@ -1106,6 +1138,9 @@ struct BeckyAIView: View {
     // MARK: - Appointment context for Claude
 
     private var appointmentContext: String {
+        guard let appointment = appointment else {
+            return "General consultation support. No specific appointment selected — the doctor is asking a general clinical question."
+        }
         var ctx = """
         Appointment type: \(appointment.type.rawValue)
         Date: \(appointment.date.formatted(date: .abbreviated, time: .shortened))
@@ -1139,7 +1174,7 @@ struct BeckyAIView: View {
 
         Task {
             // ── Try Claude ────────────────────────────────────────────────
-            if await AIClient.shared.isConfigured() {
+            if AIClient.shared.isConfigured() {
                 let ctx = appointmentContext
                 do {
                     let reply = try await AIClient.shared.send(
@@ -1170,7 +1205,7 @@ struct BeckyAIView: View {
         isTyping = true
         Task {
             // ── Try Claude ────────────────────────────────────────────────
-            if await AIClient.shared.isConfigured() {
+            if AIClient.shared.isConfigured() {
                 let ctx = appointmentContext
                 do {
                     let reply = try await AIClient.shared.send(
@@ -1202,8 +1237,10 @@ struct BeckyAIView: View {
         var lines: [String] = []
         lines.append("**Becky — Patient Records Analysis**\n")
 
-        let atts = appointment.attachments
-        lines.append("I've reviewed **\(atts.count) document\(atts.count == 1 ? "" : "s")** shared for this appointment.\n")
+        let atts = appointment?.attachments ?? []
+        lines.append(atts.isEmpty
+            ? "No patient documents available. Ask me any clinical question and I'll assist.\n"
+            : "I've reviewed **\(atts.count) document\(atts.count == 1 ? "" : "s")** shared for this appointment.\n")
 
         // Summarize health readings if present
         if let readingsAtt = atts.first(where: { $0.type == .healthReadings }),
@@ -1322,7 +1359,7 @@ struct BeckyAIView: View {
     }
 
     func glucoseAnalysis() -> BeckyMessage {
-        guard let att = appointment.attachments.first(where: { $0.type == .healthReadings }),
+        guard let att = (appointment?.attachments ?? []).first(where: { $0.type == .healthReadings }),
               let data = att.data, let text = String(data: data, encoding: .utf8) else {
             return BeckyMessage(content: "No health readings data available for glucose analysis.", isUser: false)
         }
@@ -1348,7 +1385,7 @@ struct BeckyAIView: View {
     }
 
     func bpAnalysis() -> BeckyMessage {
-        guard let att = appointment.attachments.first(where: { $0.type == .healthReadings }),
+        guard let att = (appointment?.attachments ?? []).first(where: { $0.type == .healthReadings }),
               let data = att.data, let text = String(data: data, encoding: .utf8) else {
             return BeckyMessage(content: "No health readings data available for BP analysis.", isUser: false)
         }
@@ -1372,7 +1409,7 @@ struct BeckyAIView: View {
     }
 
     func medicationAnalysis() -> BeckyMessage {
-        guard let att = appointment.attachments.first(where: { $0.type == .healthReadings }),
+        guard let att = (appointment?.attachments ?? []).first(where: { $0.type == .healthReadings }),
               let data = att.data, let text = String(data: data, encoding: .utf8) else {
             return BeckyMessage(content: "No health readings data available for medication review.", isUser: false)
         }
@@ -1396,7 +1433,7 @@ struct BeckyAIView: View {
     }
 
     func riskAnalysis() -> BeckyMessage {
-        guard let att = appointment.attachments.first(where: { $0.type == .healthReadings }),
+        guard let att = (appointment?.attachments ?? []).first(where: { $0.type == .healthReadings }),
               let data = att.data, let text = String(data: data, encoding: .utf8) else {
             return BeckyMessage(content: "No health readings data available for risk analysis.", isUser: false)
         }
@@ -1411,7 +1448,7 @@ struct BeckyAIView: View {
     }
 
     func sleepAnalysis() -> BeckyMessage {
-        guard let att = appointment.attachments.first(where: { $0.type == .healthReadings }),
+        guard let att = (appointment?.attachments ?? []).first(where: { $0.type == .healthReadings }),
               let data = att.data, let text = String(data: data, encoding: .utf8) else {
             return BeckyMessage(content: "No sleep data available.", isUser: false)
         }
@@ -1432,7 +1469,7 @@ struct BeckyAIView: View {
     }
 
     func stressAnalysis() -> BeckyMessage {
-        guard let att = appointment.attachments.first(where: { $0.type == .healthReadings }),
+        guard let att = (appointment?.attachments ?? []).first(where: { $0.type == .healthReadings }),
               let data = att.data, let text = String(data: data, encoding: .utf8) else {
             return BeckyMessage(content: "No stress data available.", isUser: false)
         }
@@ -1663,6 +1700,7 @@ struct DoctorProfileEditView: View {
         p.pmqYear                = pmqYear
         store.userProfile.doctorProfile = p
         store.save()
+        store.syncDoctorToPublicList()
         saved = true
     }
 }

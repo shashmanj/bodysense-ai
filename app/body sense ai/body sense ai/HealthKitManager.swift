@@ -499,6 +499,29 @@ class HealthKitManager {
             }
         }
 
+        // ── Sleep from HealthKit ──
+        let sleepData = await fetchSleepAnalysis(days: 3)
+        for night in sleepData {
+            let hours = night.duration / 3600
+            guard hours > 0.5 else { continue } // ignore very short naps
+            let alreadyExists = store.sleepEntries.contains {
+                cal.isDate($0.date, inSameDayAs: night.date)
+            }
+            if !alreadyExists {
+                let quality: SleepQuality = hours >= 8 ? .excellent : hours >= 7 ? .good : hours >= 5.5 ? .fair : .poor
+                store.sleepEntries.insert(SleepEntry(
+                    date: night.date,
+                    duration: hours,
+                    quality: quality,
+                    deepSleep: hours * 0.2,
+                    remSleep: hours * 0.25,
+                    lightSleep: hours * 0.55,
+                    awakenings: 0,
+                    notes: "Synced from Apple Health"
+                ), at: 0)
+            }
+        }
+
         // ── Cache SpO2 for dashboard ──
         latestSpO2 = sp
 

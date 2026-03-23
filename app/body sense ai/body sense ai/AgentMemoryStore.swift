@@ -18,12 +18,15 @@ class AgentMemoryStore {
 
     static let shared = AgentMemoryStore()
 
-    // MARK: - Storage Keys
+    // MARK: - Per-User Storage Keys
 
-    private let insightsKey      = "healthsense_agent_insights"
-    private let interactionsKey  = "healthsense_agent_interactions"
-    private let domainStatsKey   = "healthsense_agent_domain_stats"
-    private let firstDateKey     = "healthsense_agent_first_date"
+    /// Current user ID for scoping memory. Updated on sign-in, cleared on sign-out.
+    private var currentUserID: String = "anonymous"
+
+    private var insightsKey: String     { "healthsense_agent_insights_\(currentUserID)" }
+    private var interactionsKey: String { "healthsense_agent_interactions_\(currentUserID)" }
+    private var domainStatsKey: String  { "healthsense_agent_domain_stats_\(currentUserID)" }
+    private var firstDateKey: String    { "healthsense_agent_first_date_\(currentUserID)" }
 
     private let defaults = UserDefaults.standard
 
@@ -34,6 +37,17 @@ class AgentMemoryStore {
     private var cachedDomainCounts: [String: Int]?
 
     private init() {}
+
+    /// Call on sign-in to scope all memory to the current user.
+    func setUser(_ userID: String?) {
+        let newID = userID ?? "anonymous"
+        guard newID != currentUserID else { return }
+        // Flush caches so next access reads the new user's data
+        cachedInsights = nil
+        cachedLogs = nil
+        cachedDomainCounts = nil
+        currentUserID = newID
+    }
 
     // MARK: - Insights CRUD
 

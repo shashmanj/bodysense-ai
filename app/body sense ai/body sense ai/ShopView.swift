@@ -1446,10 +1446,30 @@ struct ProductDetailView2: View {
     }
 
     // MARK: Action Buttons
+    @State private var showAddressRequired = false
+
     var actionButtons: some View {
         VStack(spacing: 12) {
+            // Address required warning
+            if showAddressRequired {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.brandAmber)
+                    Text("Please add a delivery address before purchasing.")
+                        .font(.caption).foregroundColor(.brandAmber)
+                }
+                .padding(10)
+                .background(Color.brandAmber.opacity(0.1))
+                .cornerRadius(10)
+            }
+
             // Buy Now (Apple Pay or Card)
-            Button { showPayment = true } label: {
+            Button {
+                if !store.deliveryAddress.isComplete {
+                    withAnimation { showAddressRequired = true; showAddress = true }
+                } else {
+                    showPayment = true
+                }
+            } label: {
                 HStack {
                     Image(systemName: "lock.fill")
                     Text("Buy Now — \(CurrencyService.format(totalPrice, currencyCode: store.userCurrency))")
@@ -1530,6 +1550,8 @@ struct CartCheckoutView: View {
     @Environment(HealthStore.self) var store
     @Environment(\.dismiss) var dismiss
     @State private var showPayment = false
+    @State private var showAddressFields = false
+    @State private var addressWarning = false
 
     var freeShipping: Bool { store.cartTotal >= 100 }
     var shippingCost: Double { freeShipping ? 0 : 4.99 }
@@ -1584,10 +1606,43 @@ struct CartCheckoutView: View {
                         }
                     }
 
+                    // Delivery address
+                    Section("Delivery Address") {
+                        if store.deliveryAddress.isComplete {
+                            HStack(spacing: 8) {
+                                Image(systemName: "checkmark.circle.fill").foregroundColor(.brandGreen)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(store.deliveryAddress.fullName).font(.subheadline).fontWeight(.medium)
+                                    Text("\(store.deliveryAddress.addressLine1), \(store.deliveryAddress.postcode)")
+                                        .font(.caption).foregroundColor(.secondary)
+                                }
+                            }
+                            Button("Change Address") { showAddressFields = true }
+                                .font(.caption)
+                        } else {
+                            if addressWarning {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.brandAmber)
+                                    Text("Delivery address is required").font(.caption).foregroundColor(.brandAmber)
+                                }
+                            }
+                            Button {
+                                showAddressFields = true
+                            } label: {
+                                Label("Add Delivery Address", systemImage: "plus.circle.fill")
+                                    .foregroundColor(.brandPurple)
+                            }
+                        }
+                    }
+
                     Section {
                         // Apple Pay
                         if ApplePayManager.shared.canMakePayments {
                             ApplePayButtonView {
+                                guard store.deliveryAddress.isComplete else {
+                                    addressWarning = true
+                                    return
+                                }
                                 ApplePayManager.shared.purchaseProduct(
                                     name: "BodySense Order",
                                     amount: grandTotal
@@ -1601,7 +1656,13 @@ struct CartCheckoutView: View {
                         }
 
                         // Card / other
-                        Button { showPayment = true } label: {
+                        Button {
+                            guard store.deliveryAddress.isComplete else {
+                                withAnimation { addressWarning = true }
+                                return
+                            }
+                            showPayment = true
+                        } label: {
                             Label("Pay with Card or Other", systemImage: "creditcard.fill")
                                 .frame(maxWidth: .infinity)
                                 .padding()
@@ -1635,6 +1696,65 @@ struct CartCheckoutView: View {
                 dismiss()
             } onCancel: {
                 showPayment = false
+            }
+        }
+        .sheet(isPresented: $showAddressFields) {
+            DeliveryAddressSheet()
+        }
+    }
+}
+
+// MARK: - Delivery Address Sheet
+
+struct DeliveryAddressSheet: View {
+    @Environment(HealthStore.self) var store
+    @Environment(\.dismiss) var dismiss
+
+    var body: some View {
+        NavigationView {
+            Form {
+                Section("Delivery Details") {
+                    TextField("Full Name", text: Binding(
+                        get: { store.deliveryAddress.fullName },
+                        set: { store.deliveryAddress.fullName = $0 }
+                    ))
+                    TextField("Address Line 1", text: Binding(
+                        get: { store.deliveryAddress.addressLine1 },
+                        set: { store.deliveryAddress.addressLine1 = $0 }
+                    ))
+                    TextField("Address Line 2 (optional)", text: Binding(
+                        get: { store.deliveryAddress.addressLine2 },
+                        set: { store.deliveryAddress.addressLine2 = $0 }
+                    ))
+                    TextField("City", text: Binding(
+                        get: { store.deliveryAddress.city },
+                        set: { store.deliveryAddress.city = $0 }
+                    ))
+                    TextField("Postcode", text: Binding(
+                        get: { store.deliveryAddress.postcode },
+                        set: { store.deliveryAddress.postcode = $0 }
+                    ))
+                    TextField("Phone Number", text: Binding(
+                        get: { store.deliveryAddress.phone },
+                        set: { store.deliveryAddress.phone = $0 }
+                    ))
+                    .keyboardType(.phonePad)
+                }
+            }
+            .navigationTitle("Delivery Address")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        store.save()
+                        dismiss()
+                    }
+                    .disabled(!store.deliveryAddress.isComplete)
+                    .fontWeight(.bold)
+                }
             }
         }
     }

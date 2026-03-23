@@ -243,6 +243,33 @@ class HealthAIEngine {
 
         ctx += "\n--- IMPORTANT: Cross-reference symptoms with vitals, meds, sleep, activity. Spot patterns. ---\n"
         ctx += "Subscription: \(store.subscription.rawValue)\n"
+
+        // ── Data-first enforcement ──────────────────────────────────────
+        let threeDaysAgo = cal.date(byAdding: .day, value: -3, to: Date())!
+        var dataGaps: [String] = []
+
+        if !p.diabetesType.isEmpty && !store.glucoseReadings.contains(where: { $0.date >= threeDaysAgo }) {
+            dataGaps.append("GLUCOSE: User has diabetes but NO glucose readings in the last 3 days. Do NOT give specific glucose management tips or blood sugar targets. Encourage them to log or sync glucose first.")
+        }
+        if p.hasHypertension && !store.bpReadings.contains(where: { $0.date >= threeDaysAgo }) {
+            dataGaps.append("BP: User has hypertension but NO BP readings in the last 3 days. Do NOT recommend DASH diet, sodium limits, or specific BP strategies. Encourage logging BP first.")
+        }
+        if !store.sleepEntries.contains(where: { $0.date >= threeDaysAgo }) {
+            dataGaps.append("SLEEP: No sleep data in 3 days. Do NOT give specific sleep advice based on their patterns.")
+        }
+        if !store.nutritionLogs.contains(where: { $0.date >= threeDaysAgo }) {
+            dataGaps.append("NUTRITION: No nutrition logs in 3 days. Do NOT give calorie-specific advice.")
+        }
+
+        if !dataGaps.isEmpty {
+            ctx += "\n--- DATA-FIRST RULES (CRITICAL) ---\n"
+            ctx += "This user is still building their health profile. For areas below:\n"
+            ctx += "1. Do NOT give specific numerical or condition-tailored advice\n"
+            ctx += "2. Warmly encourage them to log or sync data for 2-3 days first\n"
+            ctx += "3. You CAN answer general health questions\n\n"
+            for gap in dataGaps { ctx += "* \(gap)\n" }
+        }
+
         return ctx
     }
 
@@ -276,7 +303,7 @@ class HealthAIEngine {
         // ── Legacy path (only if agent init failed) ──────────────────────
         conversationHistory.append((role: "user", content: input))
 
-        if await AIClient.shared.isConfigured() {
+        if AIClient.shared.isConfigured() {
             do {
                 let personalPrompt = AISystemPrompts.healthCoach + userHealthContext
                 let recentHistory = Array(conversationHistory.suffix(20))

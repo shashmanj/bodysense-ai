@@ -124,6 +124,9 @@ final class AuthService {
         if let name = name { self.userName = name }
         if let email = email { self.userEmail = email }
 
+        // Scope agent memory to this user
+        AgentMemoryStore.shared.setUser(uid)
+
         isLoading = false
     }
 
@@ -155,6 +158,9 @@ final class AuthService {
         userName = nil
         userEmail = nil
         errorMessage = nil
+
+        // Clear agent memory scope
+        AgentMemoryStore.shared.setUser(nil)
     }
 
     // MARK: - Delete Account (GDPR / App Store Requirement)
@@ -223,6 +229,9 @@ final class AuthService {
             userIdentifier = try KeychainService.loadString(forKey: Keys.userID)
             userName = try KeychainService.loadString(forKey: Keys.userName)
             userEmail = try KeychainService.loadString(forKey: Keys.userEmail)
+
+            // Restore per-user agent memory scope
+            AgentMemoryStore.shared.setUser(userIdentifier)
         } catch {
             print("⚠️ AuthService: Failed to load stored credentials: \(error)")
         }

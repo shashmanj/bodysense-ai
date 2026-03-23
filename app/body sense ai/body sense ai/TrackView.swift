@@ -220,7 +220,7 @@ struct WellnessSection: View {
     var body: some View {
         Group {
             // Sleep
-            TrackCard(title: "Sleep", icon: "bed.double.fill", color: .brandPurple, onAdd: { showAddSleep = true }) {
+            TrackCard(title: "Sleep", icon: "bed.double.fill", color: .brandPurple, syncedFromDevice: store.lastSleep?.notes == "Synced from Apple Health", onAdd: { showAddSleep = true }) {
                 if let s = store.lastSleep {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
@@ -260,7 +260,7 @@ struct WellnessSection: View {
             .sheet(isPresented: $showAddStress) { AddStressSheet() }
 
             // Steps
-            TrackCard(title: "Steps Today", icon: "figure.walk", color: .brandTeal, onAdd: { showAddSteps = true }) {
+            TrackCard(title: "Steps Today", icon: "figure.walk", color: .brandTeal, syncedFromDevice: store.stepEntries.contains(where: { Calendar.current.isDateInToday($0.date) && $0.source == "healthkit" }), onAdd: { showAddSteps = true }) {
                 let steps = store.todaySteps
                 let target = store.userProfile.targetSteps
                 HStack {
@@ -1430,10 +1430,11 @@ struct TrackCard<Content: View>: View {
     let icon   : String
     let color  : Color
     let onAdd  : () -> Void
+    let syncedFromDevice: Bool
     let content: Content
 
-    init(title: String, icon: String, color: Color, onAdd: @escaping () -> Void, @ViewBuilder content: () -> Content) {
-        self.title = title; self.icon = icon; self.color = color; self.onAdd = onAdd; self.content = content()
+    init(title: String, icon: String, color: Color, syncedFromDevice: Bool = false, onAdd: @escaping () -> Void, @ViewBuilder content: () -> Content) {
+        self.title = title; self.icon = icon; self.color = color; self.syncedFromDevice = syncedFromDevice; self.onAdd = onAdd; self.content = content()
     }
 
     var body: some View {
@@ -1442,6 +1443,11 @@ struct TrackCard<Content: View>: View {
                 HStack {
                     Label(title, systemImage: icon).font(.headline).foregroundColor(color)
                     Spacer()
+                    if syncedFromDevice {
+                        Label("Auto-synced", systemImage: "applewatch")
+                            .font(.caption2).fontWeight(.medium)
+                            .foregroundColor(.secondary)
+                    }
                     Button(action: onAdd) {
                         Image(systemName: "plus.circle.fill").font(.title3).foregroundColor(color)
                     }

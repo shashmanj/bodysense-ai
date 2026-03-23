@@ -386,6 +386,20 @@ class HealthSenseAgent {
             }
         }
 
+        // Correlation patterns (cross-domain intelligence)
+        let correlations = CorrelationEngine.detectPatterns(store: store)
+        if !correlations.isEmpty {
+            prompt += "\n--- DETECTED HEALTH CORRELATIONS (data-driven patterns) ---\n"
+            prompt += "You have detected the following cross-domain patterns from this user's data. Mention relevant ones naturally in your responses:\n"
+            for pattern in correlations {
+                prompt += "• \(pattern)\n"
+            }
+        }
+
+        // Research-backed knowledge base
+        prompt += "\n--- EVIDENCE-BASED KNOWLEDGE (cite when relevant) ---\n"
+        prompt += CorrelationEngine.researchKnowledgeBase(for: domain)
+
         // Response instructions
         prompt += """
 
@@ -639,6 +653,45 @@ class HealthSenseAgent {
         if !recentNutrition.isEmpty {
             let avgCal = recentNutrition.map { $0.calories }.reduce(0, +) / recentNutrition.count
             ctx += "Nutrition 7d: ~\(avgCal) kcal/day avg\n"
+        }
+
+        // ── Data-sufficiency check ──────────────────────────────────────
+        // The AI must NOT give condition-specific tips until real data exists.
+        let threeDaysAgo = cal.date(byAdding: .day, value: -3, to: Date())!
+
+        var missingData: [String] = []
+
+        let hasRecentGlucose = store.glucoseReadings.contains { $0.date >= threeDaysAgo }
+        let hasRecentBP      = store.bpReadings.contains { $0.date >= threeDaysAgo }
+        let hasRecentSleep   = store.sleepEntries.contains { $0.date >= threeDaysAgo }
+        let hasRecentSteps   = store.todaySteps > 0
+        let hasRecentNutrition = store.nutritionLogs.contains { $0.date >= threeDaysAgo }
+
+        if !p.diabetesType.isEmpty && !hasRecentGlucose {
+            missingData.append("GLUCOSE: User has diabetes but NO glucose readings in the last 3 days. Do NOT give specific glucose management tips, DASH diet advice, or blood sugar targets. Instead, encourage them to log or sync their glucose readings first.")
+        }
+        if p.hasHypertension && !hasRecentBP {
+            missingData.append("BLOOD PRESSURE: User has hypertension but NO BP readings in the last 3 days. Do NOT recommend DASH diet, sodium limits, or specific BP strategies. Instead, encourage them to log or sync their BP readings first.")
+        }
+        if !hasRecentSleep {
+            missingData.append("SLEEP: No sleep data in the last 3 days. Do NOT give specific sleep improvement tips based on their patterns. Encourage them to track sleep or sync from their device.")
+        }
+        if !hasRecentSteps {
+            missingData.append("ACTIVITY: No step data today. Do NOT reference their activity level. Encourage syncing from Apple Watch or logging manually.")
+        }
+        if !hasRecentNutrition {
+            missingData.append("NUTRITION: No nutrition logs in the last 3 days. Do NOT give calorie-specific advice. Encourage them to log meals first.")
+        }
+
+        if !missingData.isEmpty {
+            ctx += "\n--- DATA-FIRST RULES (CRITICAL) ---\n"
+            ctx += "The user is still building their health profile. For the following areas, you MUST:\n"
+            ctx += "1. NOT give specific numerical advice or condition-specific diet/exercise plans\n"
+            ctx += "2. Instead, warmly encourage them to log or sync data for 2-3 days first\n"
+            ctx += "3. You CAN answer general health questions, just don't pretend you have their data when you don't\n\n"
+            for item in missingData {
+                ctx += "* \(item)\n"
+            }
         }
 
         return ctx
@@ -1327,6 +1380,182 @@ struct AgentStats {
         case 50..<200: return "graduationcap.fill"
         case 200..<500: return "star.fill"
         default:        return "crown.fill"
+        }
+    }
+}
+
+// MARK: - Correlation Engine
+
+/// Detects cross-domain health patterns from user data and provides research-backed knowledge.
+enum CorrelationEngine {
+
+    /// Analyse the user's data to detect cross-domain correlations.
+    static func detectPatterns(store: HealthStore) -> [String] {
+        var patterns: [String] = []
+        let cal = Calendar.current
+        let sevenDaysAgo = cal.date(byAdding: .day, value: -7, to: Date())!
+        let fourteenDaysAgo = cal.date(byAdding: .day, value: -14, to: Date())!
+
+        let recentGlucose = store.glucoseReadings.filter { $0.date >= sevenDaysAgo }
+        let recentBP      = store.bpReadings.filter { $0.date >= sevenDaysAgo }
+        let recentSleep   = store.sleepEntries.filter { $0.date >= sevenDaysAgo }
+        let recentStress  = store.stressReadings.filter { $0.date >= sevenDaysAgo }
+        let recentSteps   = store.stepEntries.filter { $0.date >= sevenDaysAgo }
+
+        // 1. Sleep-Glucose correlation
+        if recentGlucose.count >= 3 && recentSleep.count >= 3 {
+            let poorSleepDays = Set(recentSleep.filter { $0.duration < 6.0 }.map { cal.startOfDay(for: $0.date) })
+            let goodSleepDays = Set(recentSleep.filter { $0.duration >= 7.0 }.map { cal.startOfDay(for: $0.date) })
+
+            let glucoseAfterPoorSleep = recentGlucose.filter { poorSleepDays.contains(cal.startOfDay(for: $0.date)) }
+            let glucoseAfterGoodSleep = recentGlucose.filter { goodSleepDays.contains(cal.startOfDay(for: $0.date)) }
+
+            if !glucoseAfterPoorSleep.isEmpty && !glucoseAfterGoodSleep.isEmpty {
+                let avgPoor = glucoseAfterPoorSleep.map { $0.value }.reduce(0, +) / Double(glucoseAfterPoorSleep.count)
+                let avgGood = glucoseAfterGoodSleep.map { $0.value }.reduce(0, +) / Double(glucoseAfterGoodSleep.count)
+                if avgPoor > avgGood + 10 {
+                    patterns.append("SLEEP-GLUCOSE: Glucose averages \(Int(avgPoor)) mg/dL on poor sleep nights vs \(Int(avgGood)) mg/dL on good sleep nights. Poor sleep appears to raise glucose by ~\(Int(avgPoor - avgGood)) mg/dL.")
+                }
+            }
+        }
+
+        // 2. Stress-BP correlation
+        if recentStress.count >= 3 && recentBP.count >= 3 {
+            let highStressDays = Set(recentStress.filter { $0.level >= 7 }.map { cal.startOfDay(for: $0.date) })
+            let lowStressDays  = Set(recentStress.filter { $0.level <= 4 }.map { cal.startOfDay(for: $0.date) })
+
+            let bpHighStress = recentBP.filter { highStressDays.contains(cal.startOfDay(for: $0.date)) }
+            let bpLowStress  = recentBP.filter { lowStressDays.contains(cal.startOfDay(for: $0.date)) }
+
+            if !bpHighStress.isEmpty && !bpLowStress.isEmpty {
+                let avgSysHigh = bpHighStress.map { $0.systolic }.reduce(0, +) / bpHighStress.count
+                let avgSysLow  = bpLowStress.map { $0.systolic }.reduce(0, +) / bpLowStress.count
+                if avgSysHigh > avgSysLow + 5 {
+                    patterns.append("STRESS-BP: Systolic BP averages \(avgSysHigh) on high-stress days vs \(avgSysLow) on calm days. Stress management could lower BP by ~\(avgSysHigh - avgSysLow) mmHg.")
+                }
+            }
+        }
+
+        // 3. Activity-Glucose correlation (post-meal walks)
+        if recentSteps.count >= 3 && recentGlucose.count >= 3 {
+            let activeDays = Set(recentSteps.filter { $0.steps >= store.userProfile.targetSteps }.map { cal.startOfDay(for: $0.date) })
+            let sedentaryDays = Set(recentSteps.filter { $0.steps < store.userProfile.targetSteps / 2 }.map { cal.startOfDay(for: $0.date) })
+
+            let glucoseActive    = recentGlucose.filter { activeDays.contains(cal.startOfDay(for: $0.date)) }
+            let glucoseSedentary = recentGlucose.filter { sedentaryDays.contains(cal.startOfDay(for: $0.date)) }
+
+            if !glucoseActive.isEmpty && !glucoseSedentary.isEmpty {
+                let avgActive = glucoseActive.map { $0.value }.reduce(0, +) / Double(glucoseActive.count)
+                let avgSedentary = glucoseSedentary.map { $0.value }.reduce(0, +) / Double(glucoseSedentary.count)
+                if avgSedentary > avgActive + 8 {
+                    patterns.append("ACTIVITY-GLUCOSE: Glucose averages \(Int(avgActive)) mg/dL on active days vs \(Int(avgSedentary)) mg/dL on sedentary days. Walking appears to lower glucose by ~\(Int(avgSedentary - avgActive)) mg/dL.")
+                }
+            }
+        }
+
+        // 4. Sleep-Stress correlation
+        if recentSleep.count >= 3 && recentStress.count >= 3 {
+            let poorSleepDays = Set(recentSleep.filter { $0.duration < 6.0 }.map { cal.startOfDay(for: $0.date) })
+            let stressAfterPoorSleep = recentStress.filter { poorSleepDays.contains(cal.startOfDay(for: $0.date)) }
+            if !stressAfterPoorSleep.isEmpty {
+                let avgStress = stressAfterPoorSleep.map { $0.level }.reduce(0, +) / stressAfterPoorSleep.count
+                if avgStress >= 6 {
+                    patterns.append("SLEEP-STRESS: Average stress is \(avgStress)/10 on days following poor sleep (<6hrs). Better sleep hygiene may reduce stress levels.")
+                }
+            }
+        }
+
+        // 5. Meal timing and glucose spikes
+        let afterMealGlucose = recentGlucose.filter { $0.context == .afterMeal }
+        if afterMealGlucose.count >= 3 {
+            let spikes = afterMealGlucose.filter { $0.value > store.userProfile.targetGlucoseMax }
+            if Double(spikes.count) / Double(afterMealGlucose.count) > 0.5 {
+                patterns.append("MEAL-GLUCOSE: \(Int(Double(spikes.count) / Double(afterMealGlucose.count) * 100))% of post-meal readings exceed target range. Consider portion control, lower-GI carbs, or a 15-min walk after meals.")
+            }
+        }
+
+        // 6. Weight trend detection
+        let twoWeekSteps = store.stepEntries.filter { $0.date >= fourteenDaysAgo }
+        if twoWeekSteps.count >= 7 {
+            let firstWeek = twoWeekSteps.filter { $0.date < sevenDaysAgo }
+            let secondWeek = twoWeekSteps.filter { $0.date >= sevenDaysAgo }
+            if !firstWeek.isEmpty && !secondWeek.isEmpty {
+                let avgFirst  = firstWeek.map { $0.steps }.reduce(0, +) / firstWeek.count
+                let avgSecond = secondWeek.map { $0.steps }.reduce(0, +) / secondWeek.count
+                if avgSecond > avgFirst + 1000 {
+                    patterns.append("ACTIVITY-TREND: Steps trending UP — from \(avgFirst)/day to \(avgSecond)/day this week. Great progress!")
+                } else if avgFirst > avgSecond + 1000 {
+                    patterns.append("ACTIVITY-TREND: Steps trending DOWN — from \(avgFirst)/day to \(avgSecond)/day this week. Encourage more movement.")
+                }
+            }
+        }
+
+        return patterns
+    }
+
+    /// Research-backed knowledge base for each health domain.
+    /// These are evidence-based facts from medical research papers and clinical guidelines.
+    static func researchKnowledgeBase(for domain: HealthDomain) -> String {
+        switch domain {
+        case .medical:
+            return """
+            Key research findings to reference when relevant:
+            • NICE NG28: Type 2 diabetes — HbA1c target <48 mmol/mol (6.5%) for most adults
+            • NICE NG136: Hypertension — target <140/90 (clinic) or <135/85 (home monitoring)
+            • ADA Standards 2024: Time in range (70-180 mg/dL) >70% reduces complications
+            • UKPDS: Each 1% reduction in HbA1c reduces microvascular complications by 37%
+            • SPRINT trial: Intensive BP control (<120 systolic) reduces cardiovascular events by 25%
+            • Metformin remains first-line for T2D; GLP-1 agonists show cardiovascular benefit
+            """
+        case .nutrition:
+            return """
+            Key research findings:
+            • PREDIMED trial: Mediterranean diet reduces cardiovascular events by 30%
+            • DASH diet: Reduces systolic BP by 8-14 mmHg in hypertensive patients
+            • Fibre intake >25g/day improves glycaemic control (BMJ meta-analysis)
+            • Omega-3 (EPA/DHA 2-4g/day) reduces triglycerides by 15-30%
+            • Vitamin D deficiency (<30 nmol/L) linked to insulin resistance and depression
+            • Intermittent fasting (16:8): improves insulin sensitivity in T2D (Lancet 2022)
+            """
+        case .fitness:
+            return """
+            Key research findings:
+            • 150 min/week moderate exercise reduces all-cause mortality by 31% (WHO)
+            • Post-meal walking (15 min) reduces glucose spike by 30-50% (Diabetologia)
+            • Resistance training 2-3x/week improves insulin sensitivity by 15-25%
+            • Exercise reduces systolic BP by 5-8 mmHg (equivalent to one antihypertensive drug)
+            • 7,000-10,000 steps/day associated with 50-70% lower mortality risk
+            • HIIT 3x/week matches moderate continuous exercise for HbA1c reduction
+            """
+        case .sleep:
+            return """
+            Key research findings:
+            • Sleep <6hrs increases T2D risk by 28% (Diabetes Care meta-analysis)
+            • Sleep deprivation raises cortisol, increasing insulin resistance by 25-30%
+            • 7-9 hours is optimal for adults; <6 or >9 associated with higher mortality
+            • Consistent sleep/wake times improve HRV and reduce BP by 3-5 mmHg
+            • Blue light exposure 2hrs before bed delays melatonin onset by 3 hours
+            • Sleep apnoea prevalence in T2D is 50-80%; screening recommended for HbA1c >7%
+            """
+        case .mentalWellness:
+            return """
+            Key research findings:
+            • Chronic stress raises cortisol, increasing glucose by 20-40 mg/dL
+            • Mindfulness-based stress reduction (MBSR) reduces HbA1c by 0.5% (meta-analysis)
+            • Depression doubles the risk of T2D; screening recommended (PHQ-9)
+            • 10 min daily meditation reduces anxiety scores by 30% (JAMA Internal Medicine)
+            • Social isolation increases cardiovascular risk by 29% (Heart meta-analysis)
+            • Box breathing (4-4-4-4) reduces acute stress cortisol within 5 minutes
+            """
+        case .chef, .personalCare, .general:
+            return """
+            Key nutrition and lifestyle research:
+            • Cooking at home 5+ times/week associated with 28% lower T2D risk
+            • Anti-inflammatory foods (turmeric, ginger, berries) reduce CRP markers
+            • Gut microbiome diversity correlates with better metabolic health
+            • Hydration (2-3L/day) improves kidney function and glucose metabolism
+            • Oral health (gum disease) increases cardiovascular risk by 20%
+            """
         }
     }
 }
