@@ -119,12 +119,17 @@ struct DoctorHomeView: View {
         let status = profile?.verificationStatus ?? "Pending"
         if status != "Verified" {
             HStack(spacing: 12) {
-                Image(systemName: status == "Under Review" ? "clock.fill" : "exclamationmark.triangle.fill")
-                    .foregroundColor(status == "Under Review" ? .brandAmber : .brandCoral)
+                Image(systemName: status == "Rejected" ? "xmark.circle.fill" :
+                                  status == "Under Review" ? "clock.fill" : "exclamationmark.triangle.fill")
+                    .foregroundColor(status == "Rejected" ? .brandCoral :
+                                     status == "Under Review" ? .brandAmber : .brandCoral)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(status == "Under Review" ? "Under Review" : "Verification Pending")
+                    Text(status == "Rejected" ? "Registration Rejected" :
+                         status == "Under Review" ? "Under Review" : "Verification Pending")
                         .font(.subheadline).fontWeight(.semibold)
-                    Text("Complete your profile and credentials to start receiving patient bookings.")
+                    Text(status == "Rejected"
+                         ? "Your registration was not approved. Please contact support@bodysenseai.co.uk."
+                         : "Complete your profile and credentials to start receiving patient bookings.")
                         .font(.caption).foregroundColor(.secondary)
                 }
                 Spacer()

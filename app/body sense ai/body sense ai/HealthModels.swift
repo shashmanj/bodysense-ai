@@ -2101,34 +2101,53 @@ class HealthStore {
         save()
     }
 
-    /// CEO approves a doctor → adds to verified doctors list
+    /// CEO approves a doctor → adds to verified doctors list + updates their profile
     func approveDoctor(_ request: DoctorRegistrationRequest) {
         guard let idx = doctorRequests.firstIndex(where: { $0.id == request.id }) else { return }
         doctorRequests[idx].status = "Approved"
         doctorRequests[idx].reviewedAt = Date()
 
-        // Create a Doctor entry visible to patients
+        // ── Update the doctor's own profile so they see "Verified" ──
+        // On a single-device app the doctor IS the current user (or was when they registered).
+        // Match by email to update their DoctorProfile when they next open the app.
+        if userProfile.email.lowercased() == request.email.lowercased(),
+           userProfile.doctorProfile != nil {
+            userProfile.doctorProfile?.isVerified = true
+            userProfile.doctorProfile?.verificationStatus = "Verified"
+        }
+
+        // ── Create / update a Doctor entry visible to patients ──
         let yearsExp = max(1, Calendar.current.component(.year, from: Date()) - request.pmqYear)
-        let newDoctor = Doctor(
-            name: request.name,
-            specialization: request.specialty,
-            qualifications: request.pmqDegree,
-            experience: yearsExp,
-            rating: 0,
-            reviews: 0,
-            hospital: request.hospital,
-            city: request.city,
-            fee: Int(request.videoFee),
-            languages: ["English"],
-            bio: request.introduction,
-            postcode: request.postcode,
-            country: request.country,
-            licenseNumber: request.gmcNumber,
-            regulatoryBody: request.regulatoryBody,
-            certifications: buildCertifications(request),
-            isVerified: true
-        )
-        doctors.append(newDoctor)
+
+        // Check if doctor already exists (from syncDoctorToPublicList or previous approval)
+        if let existingIdx = doctors.firstIndex(where: { $0.name == request.name && $0.licenseNumber == request.gmcNumber }) {
+            doctors[existingIdx].isVerified = true
+            doctors[existingIdx].specialization = request.specialty
+            doctors[existingIdx].hospital = request.hospital
+            doctors[existingIdx].fee = Int(request.videoFee)
+            doctors[existingIdx].bio = request.introduction
+        } else {
+            let newDoctor = Doctor(
+                name: request.name,
+                specialization: request.specialty,
+                qualifications: request.pmqDegree,
+                experience: yearsExp,
+                rating: 0,
+                reviews: 0,
+                hospital: request.hospital,
+                city: request.city,
+                fee: Int(request.videoFee),
+                languages: ["English"],
+                bio: request.introduction,
+                postcode: request.postcode,
+                country: request.country,
+                licenseNumber: request.gmcNumber,
+                regulatoryBody: request.regulatoryBody,
+                certifications: buildCertifications(request),
+                isVerified: true
+            )
+            doctors.append(newDoctor)
+        }
         save()
     }
 
@@ -2137,6 +2156,12 @@ class HealthStore {
         guard let idx = doctorRequests.firstIndex(where: { $0.id == request.id }) else { return }
         doctorRequests[idx].status = "Rejected"
         doctorRequests[idx].reviewedAt = Date()
+
+        // Update the doctor's own profile if they're the current user
+        if userProfile.email.lowercased() == request.email.lowercased(),
+           userProfile.doctorProfile != nil {
+            userProfile.doctorProfile?.verificationStatus = "Rejected"
+        }
         save()
     }
 
