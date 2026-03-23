@@ -30,20 +30,24 @@ struct ContentView: View {
 struct MainTabView: View {
     @Environment(HealthStore.self) var store
     @State private var tab = 0
+    @AppStorage("doctorModeEnabled") private var doctorMode = false
+
+    /// Doctor Mode is only available when the doctor is fully verified/approved
+    private var showDoctorHome: Bool {
+        doctorMode && store.isDoctorApproved
+    }
 
     var body: some View {
         TabView(selection: $tab) {
-            // ── Home: different dashboard per role ──
+            // ── Home: Patient dashboard for everyone; Doctor dashboard when Doctor Mode ON ──
             Group {
-                if store.userProfile.isCEO {
-                    NavigationStack { CEODashboardView() }
-                } else if store.isDoctor {
+                if showDoctorHome {
                     DoctorDashboardView()
                 } else {
                     DashboardView()
                 }
             }
-            .tabItem { Label("Home", systemImage: "house.fill") }
+            .tabItem { Label("Home", systemImage: showDoctorHome ? "stethoscope" : "house.fill") }
             .tag(0)
 
             TrackView()
@@ -54,22 +58,17 @@ struct MainTabView: View {
                 .tabItem { Label("Shop", systemImage: "bag.fill") }
                 .tag(2)
 
-            // ── Groups: doctors get hub with appointments ──
-            if store.isDoctor {
-                DoctorGroupsView()
-                    .tabItem { Label("Groups", systemImage: "person.3.fill") }
-                    .tag(3)
-            } else {
-                CommunityView()
-                    .tabItem { Label("Groups", systemImage: "person.3.fill") }
-                    .tag(3)
-            }
+            // ── Groups: everyone gets the same community view ──
+            // Doctor appointment features are in the Doctor dashboard (Home tab when Doctor Mode ON)
+            CommunityView()
+                .tabItem { Label("Groups", systemImage: "person.3.fill") }
+                .tag(3)
 
             ProfileView()
                 .tabItem { Label("Profile", systemImage: "person.crop.circle.fill") }
                 .tag(4)
         }
-        .tint(store.isDoctor ? .brandTeal : .brandPurple)
+        .tint(showDoctorHome ? .brandTeal : .brandPurple)
         // Ensure all tab items render at equal width
         .onAppear {
             let appearance = UITabBarAppearance()

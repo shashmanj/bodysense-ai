@@ -158,6 +158,7 @@ struct DoctorAppointmentsSection: View {
 // MARK: - Doctor Patient Appointment Card
 
 struct DoctorPatientApptCard: View {
+    @Environment(HealthStore.self) var store
     let appointment: Appointment
     @State private var showDetail = false
     @State private var showBecky  = false
@@ -229,11 +230,11 @@ struct DoctorPatientApptCard: View {
                         }
                         Spacer()
                         Button {
-                            showBecky = true
+                            if store.isDoctorApproved { showBecky = true }
                         } label: {
                             HStack(spacing: 4) {
-                                Image(systemName: "brain.head.profile")
-                                Text("Ask Becky")
+                                Image(systemName: store.isDoctorApproved ? "brain.head.profile" : "lock.fill")
+                                Text(store.isDoctorApproved ? "Ask Becky" : "Locked")
                             }
                             .font(.caption.bold())
                             .foregroundColor(.white)

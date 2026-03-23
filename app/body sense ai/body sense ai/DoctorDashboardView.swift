@@ -80,24 +80,42 @@ struct DoctorHomeView: View {
                         .padding(.top, 20)
                     }
 
-                    // Becky AI quick access
-                    Button { showBecky = true } label: {
+                    // Becky AI quick access — GATED behind approval
+                    if store.isDoctorApproved {
+                        Button { showBecky = true } label: {
+                            HStack(spacing: 14) {
+                                Image(systemName: "stethoscope.circle.fill")
+                                    .font(.title2).foregroundColor(.white)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Ask Becky").font(.headline).foregroundColor(.white)
+                                    Text("Your AI medical assistant").font(.caption).foregroundColor(.white.opacity(0.8))
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right").foregroundColor(.white.opacity(0.6))
+                            }
+                            .padding()
+                            .background(LinearGradient(colors: [Color(hex: "#00BFA5"), Color(hex: "#00897B")],
+                                                       startPoint: .leading, endPoint: .trailing))
+                            .cornerRadius(16)
+                        }
+                        .padding(.horizontal)
+                    } else {
+                        // Locked Becky — not yet approved
                         HStack(spacing: 14) {
-                            Image(systemName: "stethoscope.circle.fill")
-                                .font(.title2).foregroundColor(.white)
+                            Image(systemName: "lock.fill")
+                                .font(.title2).foregroundColor(.secondary)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Ask Becky").font(.headline).foregroundColor(.white)
-                                Text("Your AI medical assistant").font(.caption).foregroundColor(.white.opacity(0.8))
+                                Text("Becky AI").font(.headline).foregroundColor(.secondary)
+                                Text("Available after your application is approved")
+                                    .font(.caption).foregroundColor(.secondary)
                             }
                             Spacer()
-                            Image(systemName: "chevron.right").foregroundColor(.white.opacity(0.6))
                         }
                         .padding()
-                        .background(LinearGradient(colors: [Color(hex: "#00BFA5"), Color(hex: "#00897B")],
-                                                   startPoint: .leading, endPoint: .trailing))
+                        .background(Color(.systemGray5))
                         .cornerRadius(16)
+                        .padding(.horizontal)
                     }
-                    .padding(.horizontal)
 
                     Spacer(minLength: 24)
                 }

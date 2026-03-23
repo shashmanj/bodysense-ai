@@ -595,12 +595,14 @@ struct PatientProfileView: View {
 
 struct DoctorUserProfileView: View {
     @Environment(HealthStore.self) var store
+    @AppStorage("doctorModeEnabled") private var doctorMode = false
     @State private var showEdit       = false
     @State private var showRecords    = false
     @State private var showDevices    = false
     @State private var showGiftCode   = false
     @State private var showSubPlans   = false
     @State private var showSupport    = false
+    @State private var showAppStatus  = false
     @State private var pickerItem     : PhotosPickerItem? = nil
 
     var body: some View {
@@ -610,12 +612,52 @@ struct DoctorUserProfileView: View {
                     // Doctor profile header
                     doctorProfileHeader
 
-                    // Doctor can access all same features as patients
+                    // ── Doctor Mode toggle (only when approved) ──
+                    if store.isDoctorApproved {
+                        HStack(spacing: 14) {
+                            Image(systemName: "stethoscope.circle.fill")
+                                .font(.title2).foregroundColor(.brandTeal)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Doctor Mode").font(.headline)
+                                Text(doctorMode ? "Home tab shows your doctor dashboard" : "Home tab shows your health dashboard")
+                                    .font(.caption).foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            Toggle("", isOn: $doctorMode).tint(.brandTeal).labelsHidden()
+                        }
+                        .padding(14)
+                        .background(doctorMode ? Color.brandTeal.opacity(0.08) : Color(.secondarySystemBackground))
+                        .cornerRadius(14)
+                        .padding(.horizontal)
+                    } else if store.isDoctor {
+                        // Doctor registered but not yet approved — show status
+                        Button { showAppStatus = true } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "clock.badge.exclamationmark.fill")
+                                    .font(.title3).foregroundColor(.brandAmber)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Application \(store.doctorApplicationStatus)")
+                                        .font(.headline)
+                                    Text("Tap to view your application status")
+                                        .font(.caption).foregroundColor(.secondary)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right").foregroundColor(.secondary)
+                            }
+                            .padding(14)
+                            .background(Color.brandAmber.opacity(0.08))
+                            .cornerRadius(14)
+                        }
+                        .foregroundColor(.primary)
+                        .padding(.horizontal)
+                    }
+
+                    // Info banner
                     VStack(spacing: 0) {
-                        Text("As a Doctor, you can also use all BodySense AI health tracking features, buy the Smart Ring, and consult other doctors.")
+                        Text("You have full access to all BodySense AI health features as a user. Toggle Doctor Mode above to manage appointments and patients.")
                             .font(.caption).foregroundColor(.secondary)
                             .padding()
-                            .background(Color.brandTeal.opacity(0.08))
+                            .background(Color.brandTeal.opacity(0.06))
                             .cornerRadius(12)
                     }
                     .padding(.horizontal)
@@ -653,6 +695,7 @@ struct DoctorUserProfileView: View {
         .sheet(isPresented: $showGiftCode) { GiftCodeView() }
         .sheet(isPresented: $showSubPlans) { SubscriptionPlansSheet() }
         .sheet(isPresented: $showSupport) { CustomerCareView() }
+        .sheet(isPresented: $showAppStatus) { DoctorApplicationStatusView() }
         .onChange(of: pickerItem) { _, item in
             Task {
                 if let data = try? await item?.loadTransferable(type: Data.self) {
@@ -1580,5 +1623,146 @@ struct APIKeysView: View {
     private func maskedKey(_ key: String) -> String {
         guard key.count > 8 else { return String(repeating: "•", count: key.count) }
         return key.prefix(4) + String(repeating: "•", count: key.count - 8) + key.suffix(4)
+    }
+}
+
+// MARK: - Doctor Application Status View
+
+struct DoctorApplicationStatusView: View {
+    @Environment(HealthStore.self) var store
+    @Environment(\.dismiss) var dismiss
+
+    var status: String { store.doctorApplicationStatus }
+    var dp: DoctorProfile? { store.doctorProfile }
+
+    var statusColor: Color {
+        switch status {
+        case "Verified": return .brandGreen
+        case "Under Review": return .blue
+        case "Rejected": return .brandCoral
+        default: return .brandAmber
+        }
+    }
+
+    var statusIcon: String {
+        switch status {
+        case "Verified": return "checkmark.seal.fill"
+        case "Under Review": return "clock.fill"
+        case "Rejected": return "xmark.circle.fill"
+        default: return "hourglass"
+        }
+    }
+
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(spacing: 24) {
+                    // ── Status hero ──
+                    VStack(spacing: 16) {
+                        Image(systemName: statusIcon)
+                            .font(.system(size: 64)).foregroundColor(statusColor)
+                        Text(status)
+                            .font(.title).fontWeight(.bold)
+                        Text(statusSubtitle)
+                            .font(.subheadline).foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 32)
+                    }
+                    .padding(.top, 32)
+
+                    // ── Checklist ──
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("Application Checklist").font(.headline).padding(.horizontal).padding(.bottom, 8)
+                        checkRow("Personal Details", done: !(store.userProfile.name.isEmpty))
+                        checkRow("Professional Details", done: !(dp?.specialty.isEmpty ?? true))
+                        checkRow("GMC Number", done: !(dp?.gmcNumber.isEmpty ?? true))
+                        checkRow("Photo ID", done: false) // Phase 2
+                        checkRow("DBS Certificate", done: false) // Phase 2
+                        checkRow("Indemnity Insurance", done: false) // Phase 2
+                        checkRow("Qualification Certificate", done: false) // Phase 2
+                    }
+                    .padding().background(Color(.secondarySystemBackground)).cornerRadius(16)
+                    .padding(.horizontal)
+
+                    // ── Timeline ──
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Timeline").font(.headline)
+
+                        if let req = store.doctorRequests.first(where: { $0.email.lowercased() == store.userProfile.email.lowercased() }) {
+                            timelineRow("Submitted", date: req.submittedAt, isActive: true)
+                            if req.status == "Approved" || status == "Under Review" {
+                                timelineRow("Under Review", date: req.reviewedAt, isActive: status == "Under Review")
+                            }
+                            if req.status == "Approved" {
+                                timelineRow("Approved", date: req.reviewedAt, isActive: true)
+                            }
+                            if req.status == "Rejected" {
+                                timelineRow("Rejected", date: req.reviewedAt, isActive: true)
+                                if !req.reviewNotes.isEmpty {
+                                    Text("Reason: \(req.reviewNotes)")
+                                        .font(.caption).foregroundColor(.brandCoral)
+                                        .padding(.leading, 32)
+                                }
+                            }
+                        } else {
+                            Text("No application found").font(.caption).foregroundColor(.secondary)
+                        }
+                    }
+                    .padding().background(Color(.secondarySystemBackground)).cornerRadius(16)
+                    .padding(.horizontal)
+
+                    // ── Notice ──
+                    HStack(spacing: 10) {
+                        Image(systemName: "clock.fill").foregroundColor(.brandAmber)
+                        Text("Applications are typically reviewed within 24-48 hours.")
+                            .font(.caption).foregroundColor(.secondary)
+                    }
+                    .padding(12).background(Color.brandAmber.opacity(0.06)).cornerRadius(12)
+                    .padding(.horizontal)
+
+                    Spacer(minLength: 32)
+                }
+            }
+            .navigationTitle("Application Status")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                }
+            }
+        }
+    }
+
+    var statusSubtitle: String {
+        switch status {
+        case "Verified": return "Your doctor profile is live. Patients can find and book you."
+        case "Under Review": return "Our team is reviewing your credentials. You'll be notified when approved."
+        case "Rejected": return "Your application was not approved. See the reason below."
+        default: return "Your application has been submitted and is waiting for review."
+        }
+    }
+
+    func checkRow(_ label: String, done: Bool) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: done ? "checkmark.circle.fill" : "circle")
+                .foregroundColor(done ? .brandGreen : .secondary)
+            Text(label).font(.subheadline)
+                .foregroundColor(done ? .primary : .secondary)
+            Spacer()
+        }
+        .padding(.horizontal).padding(.vertical, 8)
+    }
+
+    func timelineRow(_ label: String, date: Date?, isActive: Bool) -> some View {
+        HStack(spacing: 12) {
+            Circle().fill(isActive ? Color.brandTeal : Color(.systemGray4))
+                .frame(width: 10, height: 10)
+            Text(label).font(.subheadline).fontWeight(isActive ? .semibold : .regular)
+            Spacer()
+            if let d = date {
+                Text(d.formatted(date: .abbreviated, time: .shortened))
+                    .font(.caption).foregroundColor(.secondary)
+            }
+        }
     }
 }

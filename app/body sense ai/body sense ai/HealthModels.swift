@@ -2017,6 +2017,18 @@ class HealthStore {
     var isDoctor: Bool { userProfile.isDoctor }
     var doctorProfile: DoctorProfile? { userProfile.doctorProfile }
 
+    /// True ONLY when the doctor has been verified/approved by the CEO.
+    /// This gates access to Becky AI, patient data, and the doctor dashboard.
+    var isDoctorApproved: Bool {
+        guard isDoctor, let dp = doctorProfile else { return false }
+        return dp.isVerified && dp.verificationStatus == "Verified"
+    }
+
+    /// The doctor's current application status for display purposes.
+    var doctorApplicationStatus: String {
+        doctorProfile?.verificationStatus ?? "None"
+    }
+
     /// Sync the doctor's profile to the public doctors list so patients can find and book them.
     /// Called after saving DoctorProfile changes.
     func syncDoctorToPublicList() {
@@ -2995,8 +3007,9 @@ class HealthStore {
             .masimoPulseOx, .beurer,
             .withingsScale, .eufy
         ]
+        // List available devices but none connected — user must pair them manually
         wearableDevices = seedDeviceTypes.map {
-            WearableDevice(type: $0, isConnected: $0 == .bodySenseRing || $0 == .appleWatch, batteryLevel: $0 == .bodySenseRing ? 82 : ($0 == .appleWatch ? 67 : 0), lastSync: ($0 == .bodySenseRing || $0 == .appleWatch) ? cal.date(byAdding: .hour, value: -1, to: now) : nil, color: $0.colorHex)
+            WearableDevice(type: $0, isConnected: false, batteryLevel: 0, lastSync: nil, color: $0.colorHex)
         }
 
         // ── Shop Products (delegated to seedProducts so they always stay current) ──
