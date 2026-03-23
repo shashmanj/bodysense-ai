@@ -849,87 +849,98 @@ struct DoctorRegistrationView: View {
     private let pageLabels = ["Personal", "Professional", "GMC", "International", "Fees", "Done"]
 
     var body: some View {
-        VStack(spacing: 0) {
-            // ── Header ──
-            VStack(spacing: 10) {
-                HStack {
-                    Button(action: { if page == 0 { onBack() } else { withAnimation { page -= 1 } } }) {
-                        Image(systemName: "chevron.left").font(.body.bold())
-                            .foregroundColor(.white)
-                            .padding(10).background(Color.white.opacity(0.2)).clipShape(Circle())
+        ZStack {
+            // ── Clean white/light background instead of gradient ──
+            Color(.systemGroupedBackground).ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                // ── Compact header ──
+                VStack(spacing: 8) {
+                    HStack(spacing: 14) {
+                        Button(action: { if page == 0 { onBack() } else { withAnimation { page -= 1 } } }) {
+                            Image(systemName: "chevron.left")
+                                .font(.body.bold()).foregroundColor(.primary)
+                        }
+                        VStack(spacing: 2) {
+                            Text(page < 5 ? pageLabels[page] : "Done")
+                                .font(.headline)
+                            Text("Step \(min(page + 1, 5)) of 5")
+                                .font(.caption2).foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        // Step indicator dots
+                        HStack(spacing: 5) {
+                            ForEach(0..<5, id: \.self) { i in
+                                Circle()
+                                    .fill(i < page ? Color.brandTeal : i == page ? Color.brandPurple : Color(.systemGray4))
+                                    .frame(width: i == page ? 10 : 7, height: i == page ? 10 : 7)
+                            }
+                        }
                     }
-                    Spacer()
-                    Text("Doctor Registration")
-                        .font(.headline).foregroundColor(.white)
-                    Spacer()
-                    Color.clear.frame(width: 40)
-                }
+                    .padding(.horizontal, 20)
 
-                // Progress bar
-                HStack(spacing: 4) {
-                    ForEach(0..<6, id: \.self) { i in
-                        Capsule()
-                            .fill(i <= page ? Color.white : Color.white.opacity(0.3))
-                            .frame(height: 4)
+                    // Progress bar
+                    GeometryReader { g in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(Color(.systemGray5)).frame(height: 3)
+                            Capsule().fill(Color.brandTeal)
+                                .frame(width: g.size.width * (Double(min(page, 4) + 1) / 5.0), height: 3)
+                        }
                     }
+                    .frame(height: 3)
+                    .padding(.horizontal, 20)
                 }
+                .padding(.top, 8).padding(.bottom, 4)
+                .background(Color(.systemBackground))
 
-                if page < pageLabels.count {
-                    Text("Step \(page + 1) of 5 — \(pageLabels[page])")
-                        .font(.caption2).foregroundColor(.white.opacity(0.7))
-                }
-            }
-            .padding(.horizontal, 20).padding(.top, 50).padding(.bottom, 8)
-
-            TabView(selection: $page) {
-                // ── Page 0: Personal Info ──
-                ScrollView {
-                    VStack(spacing: 16) {
-                        docRegCard {
-                            VStack(spacing: 14) {
-                                docRegSectionTitle("Personal Information")
-                                docRegTextField("Full Name", prompt: "Dr. Jane Smith", text: $fullName, icon: "person.fill")
-                                docRegTextField("Email", prompt: "doctor@example.com", text: $email, icon: "envelope.fill")
+                // ── Form pages ──
+                TabView(selection: $page) {
+                    // ── Page 0: Personal Info ──
+                    ScrollView {
+                        VStack(spacing: 14) {
+                            docRegSection("Personal Information") {
+                                docRegField("Full Name", prompt: "Dr. Jane Smith", text: $fullName, icon: "person.fill")
+                                docRegField("Email", prompt: "doctor@example.com", text: $email, icon: "envelope.fill")
+                                    .textInputAutocapitalization(.never)
+                                    .keyboardType(.emailAddress)
                                 HStack {
-                                    Text("Age").font(.subheadline).foregroundColor(.secondary)
+                                    Label("Age", systemImage: "calendar").font(.subheadline).foregroundColor(.secondary)
                                     Spacer()
-                                    Stepper("\(age)", value: $age, in: 25...80)
-                                        .frame(width: 140)
+                                    Stepper("\(age)", value: $age, in: 25...80).frame(width: 140)
                                 }
+                                .padding(.horizontal, 4)
                                 Picker("Gender", selection: $gender) {
                                     Text("Male").tag("Male"); Text("Female").tag("Female")
                                 }.pickerStyle(.segmented)
                             }
-                        }
-                        docRegCard {
-                            VStack(spacing: 14) {
-                                docRegSectionTitle("Location")
-                                docRegTextField("City", prompt: "London", text: $city, icon: "building.2.fill")
-                                HStack(spacing: 12) {
-                                    docRegTextField("Country", prompt: "United Kingdom", text: $country, icon: "globe")
-                                    docRegTextField("Postcode", prompt: "SW1A 1AA", text: $postcode, icon: "location.fill")
-                                        .frame(width: 140)
+
+                            docRegSection("Location") {
+                                docRegField("City", prompt: "London", text: $city, icon: "building.2.fill")
+                                HStack(spacing: 10) {
+                                    docRegField("Country", prompt: "UK", text: $country, icon: "globe")
+                                    docRegField("Postcode", prompt: "SW1A 1AA", text: $postcode, icon: "location.fill")
+                                        .frame(maxWidth: 130)
                                 }
                             }
-                        }
-                        docRegNextBtn("Continue") { withAnimation { page = 1 } }
-                            .disabled(fullName.isEmpty || email.isEmpty)
-                    }.padding(.horizontal, 20).padding(.vertical, 16).padding(.bottom, 24)
-                }.tag(0)
 
-                // ── Page 1: Professional Details ──
-                ScrollView {
-                    VStack(spacing: 16) {
-                        docRegCard {
-                            VStack(alignment: .leading, spacing: 14) {
-                                docRegSectionTitle("Specialty")
+                            docRegCTA("Continue") { withAnimation { page = 1 } }
+                                .disabled(fullName.isEmpty || email.isEmpty)
+                                .opacity(fullName.isEmpty || email.isEmpty ? 0.5 : 1)
+                        }
+                        .padding(16).padding(.bottom, 24)
+                    }.tag(0)
+
+                    // ── Page 1: Professional Details ──
+                    ScrollView {
+                        VStack(spacing: 14) {
+                            docRegSection("Specialty") {
                                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
                                     ForEach(specialties, id: \.self) { spec in
                                         Button { specialty = spec } label: {
                                             Text(spec).font(.caption).fontWeight(.medium)
-                                                .multilineTextAlignment(.center)
+                                                .lineLimit(1).minimumScaleFactor(0.8)
                                                 .padding(.vertical, 10).frame(maxWidth: .infinity)
-                                                .background(specialty == spec ? Color.brandTeal.opacity(0.15) : Color(.systemGray6))
+                                                .background(specialty == spec ? Color.brandTeal.opacity(0.12) : Color(.systemGray6))
                                                 .foregroundColor(specialty == spec ? .brandTeal : .primary)
                                                 .cornerRadius(10)
                                                 .overlay(RoundedRectangle(cornerRadius: 10)
@@ -938,80 +949,74 @@ struct DoctorRegistrationView: View {
                                     }
                                 }
                             }
-                        }
-                        docRegCard {
-                            VStack(spacing: 14) {
-                                docRegSectionTitle("Practice & Qualification")
-                                docRegTextField("Hospital / Clinic", prompt: "St Mary's Hospital", text: $hospital, icon: "building.columns.fill")
-                                docRegTextField("Degree", prompt: "MBBS, MBBCh, MD", text: $pmqDegree, icon: "graduationcap.fill")
-                                docRegTextField("Country of Award", prompt: "United Kingdom", text: $pmqCountry, icon: "globe")
+
+                            docRegSection("Practice & Qualification") {
+                                docRegField("Hospital / Clinic", prompt: "St Mary's Hospital", text: $hospital, icon: "building.columns.fill")
+                                docRegField("Degree (PMQ)", prompt: "MBBS, MBBCh, MD", text: $pmqDegree, icon: "graduationcap.fill")
+                                docRegField("Country of Award", prompt: "United Kingdom", text: $pmqCountry, icon: "globe")
                                 HStack {
-                                    Text("Year of Qualification").font(.subheadline).foregroundColor(.secondary)
+                                    Label("Year", systemImage: "calendar").font(.subheadline).foregroundColor(.secondary)
                                     Spacer()
-                                    Stepper("\(pmqYear)", value: $pmqYear, in: 1970...2024)
-                                        .frame(width: 140)
+                                    Stepper("\(pmqYear)", value: $pmqYear, in: 1970...2024).frame(width: 140)
+                                }.padding(.horizontal, 4)
+                            }
+
+                            docRegCTA("Continue") { withAnimation { page = 2 } }
+                        }
+                        .padding(16).padding(.bottom, 24)
+                    }.tag(1)
+
+                    // ── Page 2: GMC Registration ──
+                    ScrollView {
+                        VStack(spacing: 14) {
+                            // Info banner
+                            HStack(spacing: 10) {
+                                Image(systemName: "checkmark.shield.fill").foregroundColor(.brandTeal)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Verified against GMC Medical Register").font(.caption).fontWeight(.medium)
+                                    Link("View GMC Register →", destination: URL(string: "https://www.gmc-uk.org/registration-and-licensing/the-medical-register")!)
+                                        .font(.caption2)
                                 }
+                                Spacer()
                             }
-                        }
-                        docRegNextBtn("Continue") { withAnimation { page = 2 } }
-                    }.padding(.horizontal, 20).padding(.vertical, 16).padding(.bottom, 24)
-                }.tag(1)
+                            .padding(12)
+                            .background(Color.brandTeal.opacity(0.06))
+                            .cornerRadius(12)
 
-                // ── Page 2: GMC Registration ──
-                ScrollView {
-                    VStack(spacing: 16) {
-                        // Info banner
-                        HStack(spacing: 12) {
-                            Image(systemName: "info.circle.fill").foregroundColor(.brandTeal)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Verified against GMC Medical Register")
-                                    .font(.caption).fontWeight(.medium)
-                                Link("View GMC Register", destination: URL(string: "https://www.gmc-uk.org/registration-and-licensing/the-medical-register")!)
-                                    .font(.caption2)
-                            }
-                        }
-                        .padding(12)
-                        .background(Color.brandTeal.opacity(0.08))
-                        .cornerRadius(12)
-
-                        docRegCard {
-                            VStack(spacing: 14) {
-                                docRegSectionTitle("GMC Details")
-                                docRegTextField("GMC Reference Number", prompt: "1234567", text: $gmcNumber, icon: "number")
+                            docRegSection("GMC Details") {
+                                docRegField("GMC Reference Number", prompt: "1234567", text: $gmcNumber, icon: "number")
+                                    .keyboardType(.numberPad)
                                 VStack(alignment: .leading, spacing: 6) {
                                     Text("Registration Status").font(.caption).foregroundColor(.secondary)
                                     Picker("Status", selection: $gmcStatus) {
                                         ForEach(gmcStatuses, id: \.self) { Text($0).tag($0) }
                                     }.pickerStyle(.segmented)
                                 }
-                                docRegTextField("First Registration Date", prompt: "DD/MM/YYYY", text: $gmcDate, icon: "calendar")
+                                docRegField("First Registration", prompt: "DD/MM/YYYY", text: $gmcDate, icon: "calendar")
                             }
-                        }
-                        docRegCard {
-                            VStack(spacing: 12) {
+
+                            docRegSection("Certifications") {
                                 docRegToggle("Certificate of Good Standing", isOn: $hasCGOS)
+                                Divider()
                                 docRegToggle("PLAB / UKMLA Passed", isOn: $plabPassed)
                             }
-                        }
-                        docRegNextBtn("Continue") { withAnimation { page = 3 } }
-                    }.padding(.horizontal, 20).padding(.vertical, 16).padding(.bottom, 24)
-                }.tag(2)
 
-                // ── Page 3: International Credentials ──
-                ScrollView {
-                    VStack(spacing: 16) {
-                        HStack(spacing: 12) {
-                            Image(systemName: "globe").foregroundColor(.brandPurple)
-                            Text("For doctors qualified outside the UK")
-                                .font(.caption).foregroundColor(.secondary)
+                            docRegCTA("Continue") { withAnimation { page = 3 } }
                         }
-                        .padding(12)
-                        .background(Color.brandPurple.opacity(0.06))
-                        .cornerRadius(12)
+                        .padding(16).padding(.bottom, 24)
+                    }.tag(2)
 
-                        docRegCard {
-                            VStack(alignment: .leading, spacing: 14) {
-                                docRegSectionTitle("Regulatory Body")
+                    // ── Page 3: International Credentials ──
+                    ScrollView {
+                        VStack(spacing: 14) {
+                            HStack(spacing: 10) {
+                                Image(systemName: "globe.europe.africa.fill").foregroundColor(.brandPurple)
+                                Text("For doctors qualified outside the UK").font(.caption).foregroundColor(.secondary)
+                                Spacer()
+                            }
+                            .padding(12).background(Color.brandPurple.opacity(0.05)).cornerRadius(12)
+
+                            docRegSection("Regulatory Body") {
                                 ScrollView(.horizontal, showsIndicators: false) {
                                     HStack(spacing: 8) {
                                         ForEach(regulatoryBodies, id: \.self) { rb in
@@ -1025,134 +1030,130 @@ struct DoctorRegistrationView: View {
                                         }
                                     }
                                 }
-                                docRegTextField("ECFMG Number", prompt: "If applicable", text: $ecfmgNumber, icon: "doc.badge.checkmark")
+                                docRegField("ECFMG Number", prompt: "If applicable", text: $ecfmgNumber, icon: "doc.badge.checkmark")
                             }
-                        }
-                        docRegCard {
-                            VStack(spacing: 12) {
+
+                            docRegSection("Credentials") {
                                 docRegToggle("ECFMG Certified", isOn: $ecfmgCerted)
+                                Divider()
                                 docRegToggle("WDOM Listed", isOn: $wdomListed)
                             }
-                        }
-                        docRegNextBtn("Continue") { withAnimation { page = 4 } }
-                    }.padding(.horizontal, 20).padding(.vertical, 16).padding(.bottom, 24)
-                }.tag(3)
 
-                // ── Page 4: Fees & Introduction ──
-                ScrollView {
-                    VStack(spacing: 16) {
-                        docRegCard {
-                            VStack(spacing: 14) {
-                                docRegSectionTitle("Consultation Fees")
-                                docRegFeeRow("Video Call", fee: $videoFee, icon: "video.fill", color: .brandTeal)
-                                docRegFeeRow("Phone Call", fee: $phoneFee, icon: "phone.fill", color: .brandPurple)
-                                docRegFeeRow("In Person", fee: $inPersonFee, icon: "person.fill", color: .brandAmber)
-                            }
+                            docRegCTA("Continue") { withAnimation { page = 4 } }
                         }
-                        docRegCard {
-                            VStack(alignment: .leading, spacing: 10) {
-                                docRegSectionTitle("Introduction")
-                                Text("This is shown to patients when they browse doctors")
+                        .padding(16).padding(.bottom, 24)
+                    }.tag(3)
+
+                    // ── Page 4: Fees & Introduction ──
+                    ScrollView {
+                        VStack(spacing: 14) {
+                            docRegSection("Consultation Fees") {
+                                docRegFee("Video Call", fee: $videoFee, icon: "video.fill", color: .brandTeal)
+                                Divider()
+                                docRegFee("Phone Call", fee: $phoneFee, icon: "phone.fill", color: .brandPurple)
+                                Divider()
+                                docRegFee("In Person", fee: $inPersonFee, icon: "person.fill", color: .brandAmber)
+                            }
+
+                            docRegSection("Introduction") {
+                                Text("Shown to patients when browsing doctors")
                                     .font(.caption).foregroundColor(.secondary)
                                 TextEditor(text: $intro)
-                                    .frame(height: 120)
+                                    .frame(height: 100)
                                     .padding(8)
                                     .background(Color(.systemGray6))
                                     .cornerRadius(10)
+                                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color(.systemGray4), lineWidth: 0.5))
                             }
+
+                            docRegCTA("Submit for Verification") { completeDocReg() }
                         }
-                        docRegNextBtn("Submit for Verification") { completeDocReg() }
-                    }.padding(.horizontal, 20).padding(.vertical, 16).padding(.bottom, 24)
-                }.tag(4)
+                        .padding(16).padding(.bottom, 24)
+                    }.tag(4)
 
-                // ── Page 5: Submitted ──
-                VStack(spacing: 28) {
-                    Spacer()
-                    Image(systemName: "checkmark.shield.fill")
-                        .font(.system(size: 72))
-                        .foregroundColor(.brandTeal)
-                    Text("Registration Submitted")
-                        .font(.title.bold()).foregroundColor(.white)
-                    VStack(spacing: 10) {
-                        Text("Your credentials are now under review.")
-                            .font(.body).foregroundColor(.white.opacity(0.9))
-                        Text("Once verified, your profile goes live and patients can book consultations.")
-                            .font(.subheadline).foregroundColor(.white.opacity(0.7))
-                            .multilineTextAlignment(.center)
-                        HStack(spacing: 6) {
-                            Image(systemName: "clock.fill").foregroundColor(.brandAmber)
-                            Text("Typical review: 24–48 hours").font(.caption).foregroundColor(.white.opacity(0.7))
-                        }.padding(.top, 4)
-                    }.padding(.horizontal, 32)
-                    Spacer()
-                    docRegNextBtn("Continue to App") { onDone() }
+                    // ── Page 5: Submitted confirmation ──
+                    VStack(spacing: 24) {
+                        Spacer()
+                        Image(systemName: "checkmark.shield.fill")
+                            .font(.system(size: 72)).foregroundColor(.brandTeal)
+                        Text("Registration Submitted").font(.title.bold())
+                        VStack(spacing: 8) {
+                            Text("Your credentials are now under review.")
+                                .font(.body).foregroundColor(.secondary)
+                            Text("Once verified, your profile goes live and patients can book consultations.")
+                                .font(.subheadline).foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                            HStack(spacing: 6) {
+                                Image(systemName: "clock.fill").foregroundColor(.brandAmber)
+                                Text("Typical review: 24–48 hours").font(.caption).foregroundColor(.secondary)
+                            }.padding(.top, 4)
+                        }.padding(.horizontal, 32)
+                        Spacer()
+                        docRegCTA("Continue to App") { onDone() }
+                            .padding(.horizontal, 16).padding(.bottom, 32)
+                    }
+                    .tag(5)
                 }
-                .padding()
-                .tag(5)
+                .tabViewStyle(.page(indexDisplayMode: .never))
             }
-            .tabViewStyle(.page(indexDisplayMode: .never))
         }
     }
 
-    // ── Clean form components ──
+    // ── Reusable components ──
 
-    func docRegCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            content()
+    func docRegSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title).font(.subheadline).fontWeight(.semibold).foregroundColor(.secondary)
+                .padding(.leading, 4)
+            VStack(spacing: 14) { content() }
+                .padding(14)
+                .background(Color(.systemBackground))
+                .cornerRadius(14)
         }
-        .padding(16)
-        .background(Color(.systemBackground))
-        .cornerRadius(16)
-        .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
     }
 
-    func docRegSectionTitle(_ t: String) -> some View {
-        Text(t).font(.headline).foregroundColor(.primary)
-    }
-
-    func docRegTextField(_ label: String, prompt: String, text: Binding<String>, icon: String) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: icon).foregroundColor(.brandTeal).frame(width: 20)
-            VStack(alignment: .leading, spacing: 2) {
+    func docRegField(_ label: String, prompt: String, text: Binding<String>, icon: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon).foregroundColor(.brandTeal).font(.subheadline).frame(width: 18)
+            VStack(alignment: .leading, spacing: 1) {
                 Text(label).font(.caption2).foregroundColor(.secondary)
-                TextField(prompt, text: text)
-                    .font(.subheadline)
+                TextField(prompt, text: text).font(.body)
             }
         }
-        .padding(12)
+        .padding(10)
         .background(Color(.systemGray6))
         .cornerRadius(10)
     }
 
     func docRegToggle(_ label: String, isOn: Binding<Bool>) -> some View {
-        HStack {
+        Toggle(isOn: isOn) {
             Text(label).font(.subheadline)
-            Spacer()
-            Toggle("", isOn: isOn).tint(.brandTeal)
         }
-        .padding(.vertical, 4)
+        .tint(.brandTeal)
     }
 
-    func docRegFeeRow(_ label: String, fee: Binding<String>, icon: String, color: Color) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: icon).foregroundColor(color).frame(width: 20)
+    func docRegFee(_ label: String, fee: Binding<String>, icon: String, color: Color) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon).foregroundColor(color).frame(width: 18)
             Text(label).font(.subheadline)
             Spacer()
-            HStack(spacing: 4) {
-                Text("£").foregroundColor(.secondary)
+            HStack(spacing: 2) {
+                Text("£").font(.subheadline).foregroundColor(.secondary)
                 TextField("50", text: fee).keyboardType(.numberPad)
+                    .font(.body.bold())
                     .multilineTextAlignment(.trailing).frame(width: 50)
             }
-            .padding(.horizontal, 10).padding(.vertical, 8)
+            .padding(.horizontal, 10).padding(.vertical, 6)
             .background(Color(.systemGray6)).cornerRadius(8)
         }
     }
 
-    func docRegNextBtn(_ label: String, action: @escaping () -> Void) -> some View {
+    func docRegCTA(_ label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text(label).font(.headline).frame(maxWidth: .infinity).padding()
-                .background(Color.white).foregroundColor(.brandPurple)
-                .cornerRadius(16).shadow(color: .black.opacity(0.15), radius: 8, y: 4)
+            Text(label).font(.headline).frame(maxWidth: .infinity).padding(.vertical, 14)
+                .background(Color.brandTeal)
+                .foregroundColor(.white)
+                .cornerRadius(14)
         }
         .padding(.top, 4)
     }
