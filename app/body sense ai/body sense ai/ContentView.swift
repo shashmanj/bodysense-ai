@@ -103,12 +103,25 @@ struct AuthRootView: View {
         case intro, welcome, signIn, registerPatient, registerDoctor, permissions
     }
 
+    /// Flows that use the branded purple gradient background
+    private var usesGradient: Bool {
+        switch flow {
+        case .intro, .welcome, .signIn, .registerPatient: return true
+        case .registerDoctor, .permissions: return false
+        }
+    }
+
     var body: some View {
         ZStack {
-            LinearGradient(
-                colors: [.brandPurple, Color(hex: "#4834d4")],
-                startPoint: .topLeading, endPoint: .bottomTrailing
-            ).ignoresSafeArea()
+            // Purple gradient for welcome/sign-in; clean background for forms
+            if usesGradient {
+                LinearGradient(
+                    colors: [.brandPurple, Color(hex: "#4834d4")],
+                    startPoint: .topLeading, endPoint: .bottomTrailing
+                ).ignoresSafeArea()
+            } else {
+                Color(.systemGroupedBackground).ignoresSafeArea()
+            }
 
             switch flow {
             case .intro:
@@ -354,39 +367,18 @@ struct WelcomeScreen: View {
                     .padding(.horizontal, 28)
                     .padding(.bottom, 10)
 
-                // ── Apple Sign In (native via AuthService) ──────────────────────
+                // ── Sign in with Apple (the only real auth method) ──
                 SignInWithAppleButton(
                     onSuccess: {
                         onSignIn()
                     }
                 )
                 .padding(.horizontal, 28)
-                .padding(.bottom, 10)
+                .padding(.bottom, 16)
                 .accessibilityLabel("Sign in with Apple")
                 .accessibilityHint("Create or sign into your BodySense AI account")
 
-                // ── Google Sign In ────────────────────────────────────────────
-                socialBtn(icon: "g.circle.fill",
-                          label: "Sign in with Google",
-                          bg: .white, fg: .primary,
-                          iconTint: Color(red: 0.26, green: 0.52, blue: 0.96),
-                          action: onSignIn)
-
-                // ── Facebook ──────────────────────────────────────────────────
-                socialBtn(icon: "f.circle.fill",
-                          label: "Continue with Facebook",
-                          bg: Color(red: 0.23, green: 0.35, blue: 0.60),
-                          fg: .white, iconTint: .white,
-                          action: onSignIn)
-
-                // ── Email Sign In ─────────────────────────────────────────────
-                socialBtn(icon: "envelope.fill",
-                          label: "Sign in with Email",
-                          bg: Color.white.opacity(0.14),
-                          fg: .white, iconTint: .white,
-                          outlined: true, action: onSignIn)
-
-                // ── Create Account ────────────────────────────────────────────
+                // ── Create New Account ──
                 Button(action: onRegisterPatient) {
                     Text("Create New Account")
                         .font(.headline)
@@ -398,7 +390,6 @@ struct WelcomeScreen: View {
                         .shadow(color: .black.opacity(0.12), radius: 6, y: 3)
                 }
                 .padding(.horizontal, 28)
-                .padding(.top, 6)
                 .accessibilityLabel("Create new account")
                 .accessibilityHint("Register a new patient account with BodySense AI")
 
