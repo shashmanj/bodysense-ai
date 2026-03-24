@@ -17,7 +17,7 @@ struct ShopView: View {
     @State private var showProductAdmin = false
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             TabView(selection: $tab) {
                 ShopProductsTab()
                     .tabItem { Label("Shop", systemImage: "bag.fill") }
@@ -66,7 +66,7 @@ struct ShopView: View {
             CartCheckoutView()
         }
         .sheet(isPresented: $showProductAdmin) {
-            NavigationView {
+            NavigationStack {
                 ProductAdminView()
                     .environment(store)
             }
@@ -951,7 +951,7 @@ struct ProductCard2: View {
             .background(.ultraThinMaterial)
             .overlay(
                 RoundedRectangle(cornerRadius: 18)
-                    .fill(Color.white.opacity(0.55))
+                    .fill(Color(.systemBackground).opacity(0.55))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 18)
@@ -990,7 +990,7 @@ struct ProductDetailView2: View {
     var totalPrice: Double { (product.price * Double(quantity)) + subscriptionAddOnPrice }
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: 24) {
 
@@ -1558,7 +1558,7 @@ struct CartCheckoutView: View {
     var grandTotal: Double { store.cartTotal + shippingCost }
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Group {
             if store.cartItems.isEmpty {
                 VStack(spacing: 20) {
@@ -1711,7 +1711,7 @@ struct DeliveryAddressSheet: View {
     @Environment(\.dismiss) var dismiss
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Form {
                 Section("Delivery Details") {
                     TextField("Full Name", text: Binding(

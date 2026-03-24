@@ -73,7 +73,7 @@ struct PatientProfileView: View {
     }
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(spacing: 20) {
@@ -629,7 +629,7 @@ struct DoctorUserProfileView: View {
     @State private var pickerItem     : PhotosPickerItem? = nil
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
                     // Doctor profile header
@@ -850,7 +850,7 @@ struct MedicalRecordsView: View {
     }
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(spacing: 0) {
                 // Search
                 HStack {
@@ -973,7 +973,7 @@ struct AddMedicalRecordView: View {
     @State private var saved        = false
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Form {
                 Section("Record Details") {
                     TextField("Title (e.g. Blood Test Results)", text: $title)
@@ -1066,7 +1066,7 @@ struct ManageDevicesView: View {
     }
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             List {
                 // ── 1. Active, connected devices ──
                 Section("Connected") {
@@ -1254,7 +1254,7 @@ struct GiftCodeView: View {
     var myGiftCodes: [GiftCode] { store.giftCodes.filter { !$0.isRedeemed } }
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             List {
                 // ── Redeem a code ──
                 Section("Redeem a Gift Code") {
@@ -1374,7 +1374,7 @@ struct EditProfileSheet: View {
     @State private var saved    = false
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Form {
                 Section("Personal") {
                     TextField("Name", text: $name)
@@ -1487,7 +1487,7 @@ struct SubscriptionPlansSheet: View {
     @Environment(\.dismiss) var dismiss
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
                     ForEach(SubscriptionPlan.allCases, id: \.self) { plan in
@@ -1673,7 +1673,7 @@ struct DoctorApplicationStatusView: View {
     }
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: 24) {
                     // ── Status hero ──
@@ -1801,7 +1801,7 @@ struct CEOActivationSheet: View {
     var isAlreadyActive: Bool { CEOAccessManager.isActivated }
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(spacing: 24) {
                 Spacer()
 

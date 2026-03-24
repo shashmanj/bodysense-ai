@@ -44,13 +44,13 @@ struct ProductAdminView: View {
             }
         }
         .sheet(isPresented: $showAddForm) {
-            NavigationView {
+            NavigationStack {
                 ProductFormView(mode: .add)
                     .environment(store)
             }
         }
         .sheet(item: $editingProduct) { product in
-            NavigationView {
+            NavigationStack {
                 ProductFormView(mode: .edit(product))
                     .environment(store)
             }

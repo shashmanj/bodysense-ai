@@ -194,13 +194,13 @@ struct PrivacySettingsView: View {
             }
         }
         .sheet(isPresented: $showPrivacyPolicy) {
-            NavigationView {
+            NavigationStack {
                 PrivacyPolicyView()
                     .environment(store)
             }
         }
         .sheet(isPresented: $showTerms) {
-            NavigationView {
+            NavigationStack {
                 TermsOfServiceView()
                     .environment(store)
             }
@@ -767,12 +767,12 @@ struct OnboardingConsentView: View {
             .padding(.horizontal, 28).padding(.bottom, 40)
         }
         .sheet(isPresented: $showPrivacy) {
-            NavigationView {
+            NavigationStack {
                 PrivacyPolicyAcceptView(accepted: $privacyAccepted)
             }
         }
         .sheet(isPresented: $showTerms) {
-            NavigationView {
+            NavigationStack {
                 TermsAcceptView(accepted: $termsAccepted)
             }
         }

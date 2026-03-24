@@ -181,7 +181,7 @@ struct PaymentSheetView: View {
     private let stripe = StripeManager.shared
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: 24) {
 

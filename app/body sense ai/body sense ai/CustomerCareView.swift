@@ -122,7 +122,7 @@ struct CustomerCareView: View {
     @State private var showDeleteAccountAlert = false
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
                     // ── Header card ──
@@ -392,7 +392,7 @@ struct SupportCategorySheet: View {
     @State private var ticketSubmitted = false
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
                     // Category header

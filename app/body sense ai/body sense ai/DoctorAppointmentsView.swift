@@ -68,7 +68,7 @@ struct DoctorListView: View {
     }
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: 0) {
 
@@ -200,7 +200,7 @@ struct SpecialtyFilterSheet: View {
     @Environment(\.dismiss) var dismiss
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             List {
                 ForEach(specialties, id: \.self) { spec in
                     Button {
@@ -252,7 +252,7 @@ struct DoctorProfileDetailView: View {
     }
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: 0) {
                     // ── Header gradient ──
@@ -656,7 +656,7 @@ struct BookAppointmentView: View {
     }
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             if booked {
                 BookingConfirmationView(doctor: doctor, date: selectedDate,
                                         time: selectedTime, type: selectedType,
@@ -1109,7 +1109,7 @@ struct LeaveReviewView: View {
     @State private var saved   = false
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Form {
                 Section("Rate your consultation") {
                     HStack {
@@ -1176,7 +1176,7 @@ struct MyAppointmentsView: View {
     var past: [Appointment]     { store.appointments.filter { $0.status != .upcoming }.sorted { $0.date > $1.date } }
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Group {
                 if store.appointments.isEmpty {
                     VStack(spacing: 16) {

@@ -303,7 +303,7 @@ struct DoctorAppointmentListView: View {
     var past: [Appointment]     { store.appointments.filter { $0.status != .upcoming }.sorted { $0.date > $1.date } }
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Group {
                 if store.appointments.isEmpty {
                     VStack(spacing: 16) {
@@ -356,7 +356,7 @@ struct DoctorEarningsView: View {
     var doctorCut: Double    { totalRevenue * 0.60 }
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
                     earningsSummaryCard
@@ -490,7 +490,7 @@ struct DoctorFullProfileView: View {
     }
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: 0) {
                     // ── Profile Header ──
@@ -797,7 +797,7 @@ struct AppointmentDocumentsView: View {
     @State private var selectedAttachment: AppointmentAttachment? = nil
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
                     // Header
@@ -945,7 +945,7 @@ struct AttachmentDetailView: View {
     let attachment: AppointmentAttachment
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
                     // Type badge
@@ -1040,7 +1040,7 @@ struct BeckyAIView: View {
     @State private var isTyping  = false
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(spacing: 0) {
                 // Header
                 beckyHeader
@@ -1607,7 +1607,7 @@ struct DoctorProfileEditView: View {
                        "Dermatologist","Orthopaedic Surgeon","Paediatrician","Gynaecologist"]
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Form {
                 // ── Practice Details ──
                 Section("Practice Details") {
