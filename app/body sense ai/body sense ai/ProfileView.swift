@@ -41,6 +41,7 @@ struct PatientProfileView: View {
     @State private var showDoctorApproval = false
     @State private var showAPIKeys        = false
     @State private var showLaunchChecklist = false
+    @State private var showAgentTeam      = false
     @State private var showCEOCodeEntry   = false
     @State private var ceoTapCount        = 0
     @AppStorage("biometricLockEnabled") private var biometricLockEnabled = false
@@ -470,6 +471,8 @@ struct PatientProfileView: View {
 
                     settingsRow("CEO Dashboard", icon: "chart.bar.fill", color: .brandAmber) { showCEODashboard = true }
                     Divider().padding(.leading, 52)
+                    settingsRow("AI Agent Team", icon: "sparkles.rectangle.stack.fill", color: Color(hex: "#E040FB")) { showAgentTeam = true }
+                    Divider().padding(.leading, 52)
                     Button {
                         showDoctorApproval = true
                     } label: {
@@ -545,6 +548,7 @@ struct PatientProfileView: View {
         .sheet(isPresented: $showDoctorApproval) { NavigationStack { DoctorApprovalView() } }
         .sheet(isPresented: $showAPIKeys) { NavigationStack { APIKeysView() } }
         .sheet(isPresented: $showLaunchChecklist) { NavigationStack { LaunchChecklistView() } }
+        .sheet(isPresented: $showAgentTeam) { NavigationStack { AgentTeamView() } }
     }
 
     func settingsRow(_ label: String, icon: String, color: Color, action: @escaping () -> Void) -> some View {
