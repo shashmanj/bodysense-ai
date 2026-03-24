@@ -166,7 +166,7 @@ actor RateLimiter {
 
     /// Get the appropriate config based on user's subscription and email
     @MainActor static func config(for store: HealthStore) -> Config {
-        if store.userProfile.email.lowercased() == "kiran.shashi47.sk@gmail.com" {
+        if store.userProfile.isCEO {
             return .ceo
         }
         switch store.subscription {

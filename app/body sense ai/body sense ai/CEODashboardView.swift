@@ -4,7 +4,7 @@
 //
 //  CEO-only business intelligence dashboard with daily metrics,
 //  revenue tracking, user analytics, and operational overview.
-//  Visible only to kiran.shashi47.sk@gmail.com
+//  Visible only to users who activated CEO mode via secret code (Keychain-backed).
 //
 
 import SwiftUI

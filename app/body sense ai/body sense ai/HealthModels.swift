@@ -1785,9 +1785,11 @@ struct UserProfile: Codable {
     var dataExportRequestedAt      : Date?  = nil
     var accountDeletionRequestedAt : Date?  = nil
 
-    // ── CEO check ──
+    // ── CEO check (Keychain-based, no email) ──
+    /// CEO access is granted via a secret activation code stored in Keychain.
+    /// NOT based on email — cannot be spoofed by editing profile.
     var isCEO: Bool {
-        email.lowercased() == "kiran.shashi47.sk@gmail.com"
+        CEOAccessManager.isActivated
     }
 }
 

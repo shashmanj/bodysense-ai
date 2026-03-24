@@ -21,6 +21,20 @@ struct DoctorApprovalView: View {
     }
 
     var body: some View {
+        Group {
+        if !CEOAccessManager.isActivated {
+            // Hard gate — CEO access required even if view is navigated to directly
+            VStack(spacing: 16) {
+                Image(systemName: "lock.shield.fill")
+                    .font(.system(size: 64)).foregroundColor(.secondary)
+                Text("CEO Access Required")
+                    .font(.title3).fontWeight(.semibold)
+                Text("Only the CEO can review and approve doctor applications.")
+                    .font(.subheadline).foregroundColor(.secondary)
+                    .multilineTextAlignment(.center).padding(.horizontal, 40)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
         List {
             if pending.isEmpty && reviewed.isEmpty {
                 emptyState
@@ -65,6 +79,8 @@ struct DoctorApprovalView: View {
         }
         .listStyle(.insetGrouped)
         .navigationTitle("Doctor Approvals")
+        } // end else (CEO gate)
+        } // end Group
     }
 
     var emptyState: some View {

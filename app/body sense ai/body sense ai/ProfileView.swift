@@ -41,6 +41,7 @@ struct PatientProfileView: View {
     @State private var showDoctorApproval = false
     @State private var showAPIKeys        = false
     @State private var showLaunchChecklist = false
+    @State private var showCEOCodeEntry   = false
     @AppStorage("biometricLockEnabled") private var biometricLockEnabled = false
     @AppStorage("darkModeEnabled") private var darkModeEnabled = false
     @State private var pickerItem         : PhotosPickerItem? = nil
@@ -576,10 +577,17 @@ struct PatientProfileView: View {
                 Spacer()
             }
             .padding()
+            .onLongPressGesture(minimumDuration: 3) {
+                // Hidden CEO activation — 3-second long press on version text
+                showCEOCodeEntry = true
+            }
         }
         .background(Color(.systemBackground))
         .cornerRadius(16).shadow(color: .black.opacity(0.05), radius: 6)
         .padding(.horizontal)
+        .sheet(isPresented: $showCEOCodeEntry) {
+            CEOActivationSheet()
+        }
     }
 
     func statCell(_ value: String, label: String) -> some View {
@@ -1762,6 +1770,116 @@ struct DoctorApplicationStatusView: View {
             if let d = date {
                 Text(d.formatted(date: .abbreviated, time: .shortened))
                     .font(.caption).foregroundColor(.secondary)
+            }
+        }
+    }
+}
+
+// MARK: - CEO Activation Sheet (Hidden, Secret Code Entry)
+
+struct CEOActivationSheet: View {
+    @Environment(\.dismiss) var dismiss
+    @State private var code = ""
+    @State private var result: CEOActivationResult = .idle
+    @State private var attempts = 0
+
+    enum CEOActivationResult {
+        case idle, success, failed, locked
+    }
+
+    var isAlreadyActive: Bool { CEOAccessManager.isActivated }
+
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 24) {
+                Spacer()
+
+                if isAlreadyActive {
+                    // Already activated — show deactivate option
+                    Image(systemName: "checkmark.shield.fill")
+                        .font(.system(size: 64)).foregroundColor(.brandGreen)
+                    Text("CEO Access Active").font(.title2).fontWeight(.bold)
+                    Text("Administrative features are enabled on this device.")
+                        .font(.subheadline).foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+
+                    Button {
+                        CEOAccessManager.deactivate()
+                        dismiss()
+                    } label: {
+                        Text("Deactivate CEO Access")
+                            .font(.headline).frame(maxWidth: .infinity).padding(.vertical, 14)
+                            .background(Color.brandCoral.opacity(0.12))
+                            .foregroundColor(.brandCoral).cornerRadius(14)
+                    }
+                    .padding(.horizontal, 32)
+
+                } else if result == .locked {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 64)).foregroundColor(.brandCoral)
+                    Text("Too Many Attempts").font(.title2).fontWeight(.bold)
+                    Text("Access locked. Please try again later.")
+                        .font(.subheadline).foregroundColor(.secondary)
+
+                } else {
+                    Image(systemName: "shield.lefthalf.filled")
+                        .font(.system(size: 64)).foregroundColor(.brandPurple)
+                    Text("Administrator Access").font(.title2).fontWeight(.bold)
+                    Text("Enter the activation code to enable CEO features.")
+                        .font(.subheadline).foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+
+                    SecureField("Activation Code", text: $code)
+                        .textInputAutocapitalization(.characters)
+                        .font(.system(.body, design: .monospaced))
+                        .padding()
+                        .background(Color(.tertiarySystemBackground))
+                        .cornerRadius(12)
+                        .padding(.horizontal, 32)
+
+                    if result == .failed {
+                        Text("Invalid code. \(3 - attempts) attempts remaining.")
+                            .font(.caption).foregroundColor(.brandCoral)
+                    }
+
+                    Button {
+                        if CEOAccessManager.activate(code: code) {
+                            result = .success
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { dismiss() }
+                        } else {
+                            attempts += 1
+                            if attempts >= 3 {
+                                result = .locked
+                            } else {
+                                result = .failed
+                                code = ""
+                            }
+                        }
+                    } label: {
+                        Text("Activate")
+                            .font(.headline).frame(maxWidth: .infinity).padding(.vertical, 14)
+                            .background(code.count >= 4 ? Color.brandTeal : Color(.systemGray4))
+                            .foregroundColor(.white).cornerRadius(14)
+                    }
+                    .disabled(code.count < 4)
+                    .padding(.horizontal, 32)
+
+                    if result == .success {
+                        HStack(spacing: 8) {
+                            Image(systemName: "checkmark.circle.fill").foregroundColor(.brandGreen)
+                            Text("CEO access activated").foregroundColor(.brandGreen).fontWeight(.medium)
+                        }
+                    }
+                }
+
+                Spacer()
+            }
+            .navigationTitle("Access Control")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                }
             }
         }
     }

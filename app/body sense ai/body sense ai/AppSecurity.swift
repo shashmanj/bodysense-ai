@@ -318,3 +318,74 @@ struct CEODailySummary {
         center.add(request)
     }
 }
+
+// MARK: - CEO Access Manager (Secret Code, No Email)
+
+import CryptoKit
+
+/// Manages CEO-level access using a secret activation code.
+/// The actual code is NEVER stored in the binary — only its SHA-256 hash.
+/// Once activated, the flag is stored in Keychain (hardware-encrypted).
+///
+/// How it works:
+/// 1. CEO long-presses on the version number in Profile → code entry appears
+/// 2. CEO enters the secret 6-character code
+/// 3. Code is hashed with SHA-256 and compared to the stored hash
+/// 4. If match → CEO flag written to Keychain → full CEO access granted
+/// 5. CEO can deactivate from the same hidden menu
+///
+/// Security properties:
+/// - Code never stored in plaintext (only hash in binary)
+/// - Even decompiling the app reveals only the hash, not the code
+/// - Keychain is hardware-encrypted, tied to this device
+/// - Cannot be spoofed by editing UserDefaults or email
+enum CEOAccessManager {
+
+    private static let keychainKey = "com.bodysenseai.ceo.activated"
+
+    /// SHA-256 hash of the secret CEO activation code.
+    /// To change the code: hash your new code with SHA-256 and replace this string.
+    /// Generate with: echo -n "YOUR_NEW_CODE" | shasum -a 256
+    private static let activationCodeHash = "03795745ffbd9026bde41e991f91df7ebdee9a94268574601775325c864b6b30"
+
+    /// Check if CEO mode is currently activated on this device.
+    static var isActivated: Bool {
+        guard let data = try? KeychainService.load(key: keychainKey),
+              let stored = String(data: data, encoding: .utf8) else {
+            return false
+        }
+        return stored == "active"
+    }
+
+    /// Attempt to activate CEO mode with the given code.
+    /// Returns true if the code is correct and activation succeeded.
+    @discardableResult
+    static func activate(code: String) -> Bool {
+        let trimmed = code.trimmingCharacters(in: .whitespaces)
+        guard hashCode(trimmed) == activationCodeHash else { return false }
+
+        // Store activation in Keychain
+        if let data = "active".data(using: .utf8) {
+            try? KeychainService.save(key: keychainKey, data: data)
+        }
+        return true
+    }
+
+    /// Deactivate CEO mode on this device.
+    static func deactivate() {
+        try? KeychainService.delete(key: keychainKey)
+    }
+
+    /// Hash a code string with SHA-256.
+    private static func hashCode(_ code: String) -> String {
+        let data = Data(code.utf8)
+        let hash = SHA256.hash(data: data)
+        return hash.compactMap { String(format: "%02x", $0) }.joined()
+    }
+
+    /// Generate the hash for a new code (for developer use only — call from debug console).
+    /// Usage: print(CEOAccessManager.generateHash("YOUR_NEW_CODE"))
+    static func generateHash(_ code: String) -> String {
+        hashCode(code)
+    }
+}
