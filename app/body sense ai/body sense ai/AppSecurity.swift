@@ -361,7 +361,7 @@ enum CEOAccessManager {
     /// Returns true if the code is correct and activation succeeded.
     @discardableResult
     static func activate(code: String) -> Bool {
-        let trimmed = code.trimmingCharacters(in: .whitespaces)
+        let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines)
         guard hashCode(trimmed) == activationCodeHash else { return false }
 
         // Store activation in Keychain

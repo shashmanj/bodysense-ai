@@ -42,6 +42,7 @@ struct PatientProfileView: View {
     @State private var showAPIKeys        = false
     @State private var showLaunchChecklist = false
     @State private var showCEOCodeEntry   = false
+    @State private var ceoTapCount        = 0
     @AppStorage("biometricLockEnabled") private var biometricLockEnabled = false
     @AppStorage("darkModeEnabled") private var darkModeEnabled = false
     @State private var pickerItem         : PhotosPickerItem? = nil
@@ -571,16 +572,26 @@ struct PatientProfileView: View {
                 .padding()
             }
             Divider().padding(.leading, 52)
-            HStack {
-                Image(systemName: "info.circle").foregroundColor(.secondary).frame(width: 24)
-                Text("Version 1.0 · BodySense AI").font(.subheadline).foregroundColor(.secondary)
-                Spacer()
+            Button {
+                // Hidden CEO activation — tap version text 5 times rapidly
+                ceoTapCount += 1
+                if ceoTapCount >= 5 {
+                    ceoTapCount = 0
+                    showCEOCodeEntry = true
+                }
+                // Reset counter after 3 seconds of no taps
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                    ceoTapCount = 0
+                }
+            } label: {
+                HStack {
+                    Image(systemName: "info.circle").foregroundColor(.secondary).frame(width: 24)
+                    Text("Version 1.0 · BodySense AI").font(.subheadline).foregroundColor(.secondary)
+                    Spacer()
+                }
+                .padding()
             }
-            .padding()
-            .onLongPressGesture(minimumDuration: 3) {
-                // Hidden CEO activation — 3-second long press on version text
-                showCEOCodeEntry = true
-            }
+            .buttonStyle(.plain)
         }
         .background(Color(.systemBackground))
         .cornerRadius(16).shadow(color: .black.opacity(0.05), radius: 6)
@@ -1829,8 +1840,10 @@ struct CEOActivationSheet: View {
                         .font(.subheadline).foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
 
-                    SecureField("Activation Code", text: $code)
+                    TextField("Activation Code", text: $code)
                         .textInputAutocapitalization(.characters)
+                        .autocorrectionDisabled()
+                        .textContentType(.oneTimeCode)
                         .font(.system(.body, design: .monospaced))
                         .padding()
                         .background(Color(.tertiarySystemBackground))
