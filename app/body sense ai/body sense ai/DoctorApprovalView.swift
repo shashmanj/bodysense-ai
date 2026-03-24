@@ -13,11 +13,11 @@ struct DoctorApprovalView: View {
     @Environment(HealthStore.self) var store
 
     var pending: [DoctorRegistrationRequest] {
-        store.doctorRequests.filter { $0.status == "Pending" }
+        store.doctorRequests.filter { $0.status == .pending }
     }
 
     var reviewed: [DoctorRegistrationRequest] {
-        store.doctorRequests.filter { $0.status != "Pending" }
+        store.doctorRequests.filter { $0.status != .pending }
     }
 
     var body: some View {
@@ -107,17 +107,17 @@ struct DoctorRequestRow: View {
 
     var statusColor: Color {
         switch request.status {
-        case "Approved": return .brandGreen
-        case "Rejected": return .brandCoral
-        default:         return .brandAmber
+        case .approved: return .brandGreen
+        case .rejected: return .brandCoral
+        case .pending:  return .brandAmber
         }
     }
 
     var statusIcon: String {
         switch request.status {
-        case "Approved": return "checkmark.circle.fill"
-        case "Rejected": return "xmark.circle.fill"
-        default:         return "clock.fill"
+        case .approved: return "checkmark.circle.fill"
+        case .rejected: return "xmark.circle.fill"
+        case .pending:  return "clock.fill"
         }
     }
 
@@ -171,7 +171,7 @@ struct DoctorRequestDetailView: View {
     @State private var showApproveConfirm = false
     @State private var showRejectConfirm = false
 
-    var isPending: Bool { request.status == "Pending" }
+    var isPending: Bool { request.status == .pending }
 
     var body: some View {
         List {
@@ -218,9 +218,9 @@ struct DoctorRequestDetailView: View {
                 HStack {
                     Text("Current Status")
                     Spacer()
-                    Text(request.status)
+                    Text(request.status.rawValue)
                         .font(.subheadline).fontWeight(.semibold)
-                        .foregroundColor(request.status == "Approved" ? .brandGreen : request.status == "Rejected" ? .brandCoral : .brandAmber)
+                        .foregroundColor(request.status == .approved ? .brandGreen : request.status == .rejected ? .brandCoral : .brandAmber)
                 }
                 HStack {
                     Text("Submitted")

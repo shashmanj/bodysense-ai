@@ -1656,23 +1656,19 @@ struct DoctorApplicationStatusView: View {
     @Environment(\.dismiss) var dismiss
 
     var status: String { store.doctorApplicationStatus }
+    var verificationStatus: VerificationStatus { store.doctorProfile?.verificationStatus ?? .pending }
     var dp: DoctorProfile? { store.doctorProfile }
 
     var statusColor: Color {
-        switch status {
-        case "Verified": return .brandGreen
-        case "Under Review": return .blue
-        case "Rejected": return .brandCoral
-        default: return .brandAmber
-        }
+        verificationStatus.color
     }
 
     var statusIcon: String {
-        switch status {
-        case "Verified": return "checkmark.seal.fill"
-        case "Under Review": return "clock.fill"
-        case "Rejected": return "xmark.circle.fill"
-        default: return "hourglass"
+        switch verificationStatus {
+        case .verified:    return "checkmark.seal.fill"
+        case .underReview: return "clock.fill"
+        case .rejected:    return "xmark.circle.fill"
+        case .pending:     return "hourglass"
         }
     }
 
@@ -1713,13 +1709,13 @@ struct DoctorApplicationStatusView: View {
 
                         if let req = store.doctorRequests.first(where: { $0.email.lowercased() == store.userProfile.email.lowercased() }) {
                             timelineRow("Submitted", date: req.submittedAt, isActive: true)
-                            if req.status == "Approved" || status == "Under Review" {
-                                timelineRow("Under Review", date: req.reviewedAt, isActive: status == "Under Review")
+                            if req.status == .approved || verificationStatus == .underReview {
+                                timelineRow("Under Review", date: req.reviewedAt, isActive: verificationStatus == .underReview)
                             }
-                            if req.status == "Approved" {
+                            if req.status == .approved {
                                 timelineRow("Approved", date: req.reviewedAt, isActive: true)
                             }
-                            if req.status == "Rejected" {
+                            if req.status == .rejected {
                                 timelineRow("Rejected", date: req.reviewedAt, isActive: true)
                                 if !req.reviewNotes.isEmpty {
                                     Text("Reason: \(req.reviewNotes)")

@@ -134,18 +134,18 @@ struct DoctorHomeView: View {
 
     @ViewBuilder
     var verificationBanner: some View {
-        let status = profile?.verificationStatus ?? "Pending"
-        if status != "Verified" {
+        let status = profile?.verificationStatus ?? .pending
+        if status != .verified {
             HStack(spacing: 12) {
-                Image(systemName: status == "Rejected" ? "xmark.circle.fill" :
-                                  status == "Under Review" ? "clock.fill" : "exclamationmark.triangle.fill")
-                    .foregroundColor(status == "Rejected" ? .brandCoral :
-                                     status == "Under Review" ? .brandAmber : .brandCoral)
+                Image(systemName: status == .rejected ? "xmark.circle.fill" :
+                                  status == .underReview ? "clock.fill" : "exclamationmark.triangle.fill")
+                    .foregroundColor(status == .rejected ? .brandCoral :
+                                     status == .underReview ? .brandAmber : .brandCoral)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(status == "Rejected" ? "Registration Rejected" :
-                         status == "Under Review" ? "Under Review" : "Verification Pending")
+                    Text(status == .rejected ? "Registration Rejected" :
+                         status == .underReview ? "Under Review" : "Verification Pending")
                         .font(.subheadline).fontWeight(.semibold)
-                    Text(status == "Rejected"
+                    Text(status == .rejected
                          ? "Your registration was not approved. Please contact support@bodysenseai.co.uk."
                          : "Complete your profile and credentials to start receiving patient bookings.")
                         .font(.caption).foregroundColor(.secondary)
@@ -153,7 +153,7 @@ struct DoctorHomeView: View {
                 Spacer()
             }
             .padding()
-            .background((status == "Under Review" ? Color.brandAmber : Color.brandCoral).opacity(0.1))
+            .background((status == .underReview ? Color.brandAmber : Color.brandCoral).opacity(0.1))
             .cornerRadius(14)
             .padding(.horizontal)
         }
@@ -558,7 +558,7 @@ struct DoctorFullProfileView: View {
                     Image(systemName: profile?.isVerified == true ? "checkmark.seal.fill" : "clock.badge.exclamationmark.fill")
                         .font(.title3)
                         .foregroundColor(profile?.isVerified == true ? .brandGreen : .brandAmber)
-                    Text(profile?.verificationStatus ?? "Pending").font(.caption2).foregroundColor(.white.opacity(0.8))
+                    Text((profile?.verificationStatus ?? .pending).rawValue).font(.caption2).foregroundColor(.white.opacity(0.8))
                 }
             }
             .padding().padding(.bottom, 12)

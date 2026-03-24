@@ -262,7 +262,7 @@ struct CEODashboardView: View {
     }
 
     var rejectedDoctors: Int {
-        store.doctorRequests.filter { $0.status == "Rejected" }.count
+        store.doctorRequests.filter { $0.status == .rejected }.count
     }
 
     var upcomingAppointments: Int {

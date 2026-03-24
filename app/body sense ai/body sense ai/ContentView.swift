@@ -903,6 +903,10 @@ struct DoctorRegistrationView: View {
                                     docRegField("Email", prompt: "doctor@example.com", text: $email, icon: "envelope.fill")
                                         .textInputAutocapitalization(.never)
                                         .keyboardType(.emailAddress)
+                                    if !email.isEmpty && !InputValidator.isValidEmail(email) {
+                                        Text("Enter a valid email address")
+                                            .font(.caption).foregroundColor(.red).padding(.leading, 4)
+                                    }
                                     HStack {
                                         Label("Age", systemImage: "calendar").font(.subheadline).foregroundColor(.secondary)
                                         Spacer()
@@ -930,8 +934,8 @@ struct DoctorRegistrationView: View {
                                 }
 
                                 docRegCTA("Continue") { withAnimation(.easeInOut(duration: 0.25)) { page = 1 } }
-                                    .disabled(fullName.trimmingCharacters(in: .whitespaces).isEmpty || !email.contains("@"))
-                                    .opacity(fullName.trimmingCharacters(in: .whitespaces).isEmpty || !email.contains("@") ? 0.4 : 1)
+                                    .disabled(fullName.trimmingCharacters(in: .whitespaces).isEmpty || !InputValidator.isValidEmail(email))
+                                    .opacity(fullName.trimmingCharacters(in: .whitespaces).isEmpty || !InputValidator.isValidEmail(email) ? 0.4 : 1)
                             }
                             .padding(16).padding(.bottom, 24)
                         }
@@ -993,6 +997,10 @@ struct DoctorRegistrationView: View {
                                 docRegSection("GMC Details") {
                                     docRegField("GMC Reference Number", prompt: "1234567", text: $gmcNumber, icon: "number")
                                         .keyboardType(.numberPad)
+                                    if !gmcNumber.isEmpty && !InputValidator.isValidGMC(gmcNumber) {
+                                        Text("GMC must be exactly 7 digits, cannot start with 0")
+                                            .font(.caption).foregroundColor(.red).padding(.leading, 4)
+                                    }
                                     VStack(alignment: .leading, spacing: 6) {
                                         Text("Registration Status").font(.caption).foregroundColor(.secondary)
                                         Picker("Status", selection: $gmcStatus) {
@@ -1009,8 +1017,8 @@ struct DoctorRegistrationView: View {
                                 }
 
                                 docRegCTA("Continue") { withAnimation(.easeInOut(duration: 0.25)) { page = 3 } }
-                                    .disabled(gmcNumber.trimmingCharacters(in: .whitespaces).isEmpty)
-                                    .opacity(gmcNumber.trimmingCharacters(in: .whitespaces).isEmpty ? 0.4 : 1)
+                                    .disabled(!InputValidator.isValidGMC(gmcNumber))
+                                    .opacity(!InputValidator.isValidGMC(gmcNumber) ? 0.4 : 1)
                             }
                             .padding(16).padding(.bottom, 24)
                         }
@@ -1173,9 +1181,15 @@ struct DoctorRegistrationView: View {
     }
 
     func completeDocReg() {
+        guard InputValidator.isValidEmail(email) else { return }
+        guard !fullName.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+
+        let cleanName = fullName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanEmail = email.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+
         var profile = store.userProfile
-        profile.name        = fullName.isEmpty ? "Doctor" : fullName
-        profile.email       = email.lowercased().trimmingCharacters(in: .whitespaces)
+        if !cleanName.isEmpty { profile.name = cleanName }
+        if !cleanEmail.isEmpty { profile.email = cleanEmail }
         profile.age         = age
         profile.gender      = gender
         profile.country     = country
@@ -1204,7 +1218,7 @@ struct DoctorRegistrationView: View {
         dp.inPersonFee          = Double(inPersonFee) ?? 75
         dp.consultationFeeGBP   = Double(videoFee) ?? 50
         dp.introduction         = intro
-        dp.verificationStatus   = "Under Review"
+        dp.verificationStatus   = .underReview
         dp.postcode             = postcode.uppercased()
         dp.country              = country
         dp.timeZoneIdentifier   = TimeZone.current.identifier
@@ -1215,8 +1229,8 @@ struct DoctorRegistrationView: View {
 
         // Submit registration request for CEO approval
         let request = DoctorRegistrationRequest(
-            name: fullName,
-            email: email.lowercased().trimmingCharacters(in: .whitespaces),
+            name: cleanName.isEmpty ? "Doctor" : cleanName,
+            email: cleanEmail,
             specialty: specialty,
             hospital: hospital,
             city: city,

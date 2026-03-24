@@ -67,6 +67,38 @@ extension Color {
     }
 }
 
+// MARK: - Input Validation
+
+enum InputValidator {
+    static func isValidGMC(_ number: String) -> Bool {
+        let trimmed = number.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count == 7 else { return false }
+        guard let first = trimmed.first, first.isNumber, first != "0" else { return false }
+        return trimmed.allSatisfy { $0.isNumber }
+    }
+
+    static func isValidEmail(_ email: String) -> Bool {
+        let pattern = #"^[A-Z0-9a-z._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$"#
+        return email.range(of: pattern, options: .regularExpression) != nil
+    }
+
+    static func isValidGlucose(_ mgdl: Double) -> Bool { (20...600).contains(mgdl) }
+    static func isValidBP(systolic: Int, diastolic: Int) -> Bool {
+        (60...300).contains(systolic) && (30...200).contains(diastolic) && systolic > diastolic
+    }
+    static func isValidHeartRate(_ bpm: Int) -> Bool { (20...300).contains(bpm) }
+    static func isValidHRV(_ ms: Double) -> Bool { (1...500).contains(ms) }
+    static func isValidBodyTemp(_ celsius: Double) -> Bool { (30...45).contains(celsius) }
+    static func isValidGroupName(_ name: String) -> Bool {
+        let t = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.count >= 3 && t.count <= 50
+    }
+    static func isValidPostContent(_ content: String) -> Bool {
+        let t = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.count >= 1 && t.count <= 2000
+    }
+}
+
 // MARK: - Glucose
 
 struct GlucoseReading: Codable, Identifiable, Equatable {
@@ -888,6 +920,9 @@ struct CommunityPost: Codable, Identifiable, Equatable {
     var tag         : String = ""
     var activityData: SharedActivityData? = nil
     var isOwnPost   : Bool = false
+    var reportCount : Int = 0
+    var reportedBy  : [String] = []
+    var isHidden    : Bool = false
 }
 
 struct SharedActivityData: Codable, Equatable {
@@ -947,6 +982,43 @@ struct Doctor: Codable, Identifiable, Equatable {
     }
 }
 
+// MARK: - Status Enums (Type-safe, replaces hardcoded strings)
+
+enum VerificationStatus: String, Codable, CaseIterable {
+    case pending     = "Pending"
+    case underReview = "Under Review"
+    case verified    = "Verified"
+    case rejected    = "Rejected"
+
+    var color: Color {
+        switch self {
+        case .pending:     return .brandAmber
+        case .underReview: return .blue
+        case .verified:    return .brandGreen
+        case .rejected:    return .brandCoral
+        }
+    }
+
+    // Safe decode — fallback to .pending if unknown value
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let rawValue = try container.decode(String.self)
+        self = VerificationStatus(rawValue: rawValue) ?? .pending
+    }
+}
+
+enum RequestStatus: String, Codable, CaseIterable {
+    case pending  = "Pending"
+    case approved = "Approved"
+    case rejected = "Rejected"
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let rawValue = try container.decode(String.self)
+        self = RequestStatus(rawValue: rawValue) ?? .pending
+    }
+}
+
 // MARK: - Doctor Profile (for doctor accounts)
 
 struct DoctorProfile: Codable {
@@ -995,7 +1067,7 @@ struct DoctorProfile: Codable {
 
     // ── Status ─────────────────────────────────────────────────────────────
     var isVerified           : Bool    = false
-    var verificationStatus   : String  = "Pending" // "Pending", "Under Review", "Verified", "Rejected"
+    var verificationStatus   : VerificationStatus = .pending
     var payoutAccountId      : String  = ""    // Payment account for payouts
 
     /// Fee for a given appointment type
@@ -1910,7 +1982,7 @@ struct DoctorRegistrationRequest: Codable, Identifiable, Equatable {
     var inPersonFee     : Double
     var introduction    : String
     var submittedAt     : Date   = Date()
-    var status          : String = "Pending"  // "Pending", "Approved", "Rejected"
+    var status          : RequestStatus = .pending
     var reviewedAt      : Date?  = nil
     var reviewNotes     : String = ""
 }
@@ -2023,12 +2095,12 @@ class HealthStore {
     /// This gates access to Becky AI, patient data, and the doctor dashboard.
     var isDoctorApproved: Bool {
         guard isDoctor, let dp = doctorProfile else { return false }
-        return dp.isVerified && dp.verificationStatus == "Verified"
+        return dp.isVerified && dp.verificationStatus == .verified
     }
 
     /// The doctor's current application status for display purposes.
     var doctorApplicationStatus: String {
-        doctorProfile?.verificationStatus ?? "None"
+        doctorProfile?.verificationStatus.rawValue ?? "None"
     }
 
     /// Sync the doctor's profile to the public doctors list so patients can find and book them.
@@ -2106,7 +2178,7 @@ class HealthStore {
 
     /// Pending doctor requests awaiting CEO review
     var pendingDoctorRequests: [DoctorRegistrationRequest] {
-        doctorRequests.filter { $0.status == "Pending" }
+        doctorRequests.filter { $0.status == .pending }
     }
 
     /// Submit a new doctor registration request for CEO approval
@@ -2118,7 +2190,7 @@ class HealthStore {
     /// CEO approves a doctor → adds to verified doctors list + updates their profile
     func approveDoctor(_ request: DoctorRegistrationRequest) {
         guard let idx = doctorRequests.firstIndex(where: { $0.id == request.id }) else { return }
-        doctorRequests[idx].status = "Approved"
+        doctorRequests[idx].status = .approved
         doctorRequests[idx].reviewedAt = Date()
 
         // ── Update the doctor's own profile so they see "Verified" ──
@@ -2127,7 +2199,7 @@ class HealthStore {
         if userProfile.email.lowercased() == request.email.lowercased(),
            userProfile.doctorProfile != nil {
             userProfile.doctorProfile?.isVerified = true
-            userProfile.doctorProfile?.verificationStatus = "Verified"
+            userProfile.doctorProfile?.verificationStatus = .verified
         }
 
         // ── Create / update a Doctor entry visible to patients ──
@@ -2168,13 +2240,13 @@ class HealthStore {
     /// CEO rejects a doctor registration
     func rejectDoctor(_ request: DoctorRegistrationRequest) {
         guard let idx = doctorRequests.firstIndex(where: { $0.id == request.id }) else { return }
-        doctorRequests[idx].status = "Rejected"
+        doctorRequests[idx].status = .rejected
         doctorRequests[idx].reviewedAt = Date()
 
         // Update the doctor's own profile if they're the current user
         if userProfile.email.lowercased() == request.email.lowercased(),
            userProfile.doctorProfile != nil {
-            userProfile.doctorProfile?.verificationStatus = "Rejected"
+            userProfile.doctorProfile?.verificationStatus = .rejected
         }
         save()
     }
@@ -2617,8 +2689,7 @@ class HealthStore {
             if let encrypted = try? EncryptedStore.encrypt(jsonData) {
                 defaults.set(encrypted, forKey: key)
             } else {
-                // Fallback: save plain if encryption fails (should not happen)
-                defaults.set(jsonData, forKey: key)
+                print("⚠️ SECURITY: Encryption failed for \(key) — data NOT saved")
             }
         }
         enc(glucoseReadings,   key: "glucoseReadings")

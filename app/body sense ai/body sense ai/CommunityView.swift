@@ -548,6 +548,7 @@ struct GroupCard: View {
 // MARK: - Post Card
 
 struct PostCard: View {
+    @Environment(HealthStore.self) var store
     @State var post: CommunityPost
     let groupName: String
 
@@ -573,16 +574,21 @@ struct PostCard: View {
                     }
                 }
 
-                Text(post.content).font(.subheadline)
+                if post.isHidden {
+                    Text("This post has been hidden")
+                        .font(.subheadline).foregroundColor(.secondary).italic()
+                } else {
+                    Text(post.content).font(.subheadline)
 
-                // Activity data pills
-                if let activity = post.activityData {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ActivityPill(icon: "figure.walk", value: "\(activity.steps)", label: "steps", color: .brandGreen)
-                            ActivityPill(icon: "map", value: String(format: "%.1f km", activity.distance), label: "", color: .brandTeal)
-                            ActivityPill(icon: "flame.fill", value: "\(activity.calories)", label: "cal", color: .brandCoral)
-                            ActivityPill(icon: "timer", value: "\(activity.activeMinutes)", label: "min", color: .brandPurple)
+                    // Activity data pills
+                    if let activity = post.activityData {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ActivityPill(icon: "figure.walk", value: "\(activity.steps)", label: "steps", color: .brandGreen)
+                                ActivityPill(icon: "map", value: String(format: "%.1f km", activity.distance), label: "", color: .brandTeal)
+                                ActivityPill(icon: "flame.fill", value: "\(activity.calories)", label: "cal", color: .brandCoral)
+                                ActivityPill(icon: "timer", value: "\(activity.activeMinutes)", label: "min", color: .brandPurple)
+                            }
                         }
                     }
                 }
@@ -599,6 +605,29 @@ struct PostCard: View {
                         .font(.caption).foregroundColor(.secondary)
                     Spacer()
                     Image(systemName: "square.and.arrow.up").font(.caption).foregroundColor(.secondary)
+                }
+            }
+        }
+        .contextMenu {
+            if !post.isOwnPost && !post.isHidden {
+                Button(role: .destructive) {
+                    let alias = store.userProfile.anonymousAlias
+                    if !post.reportedBy.contains(alias) {
+                        post.reportCount += 1
+                        post.reportedBy.append(alias)
+                        if post.reportCount >= 3 {
+                            post.isHidden = true
+                        }
+                        // Persist to store
+                        for gi in store.communityGroups.indices {
+                            if let pi = store.communityGroups[gi].posts.firstIndex(where: { $0.id == post.id }) {
+                                store.communityGroups[gi].posts[pi] = post
+                            }
+                        }
+                        store.save()
+                    }
+                } label: {
+                    Label("Report Post", systemImage: "exclamationmark.triangle")
                 }
             }
         }
@@ -670,6 +699,10 @@ struct NewPostSheet: View {
                 Section("Your post") {
                     TextEditor(text: $text)
                         .frame(minHeight: 120)
+                        .onChange(of: text) { if text.count > 2000 { text = String(text.prefix(2000)) } }
+                    Text("\(text.count)/2000")
+                        .font(.caption2).foregroundColor(text.count >= 2000 ? .red : .secondary)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                 }
                 Section {
                     Toggle("Share today's activity data", isOn: $shareActivity)
@@ -793,6 +826,9 @@ struct CreateGroupSheet: View {
             Form {
                 Section("Group details") {
                     TextField("Group name", text: $name)
+                    Text("\(name.count)/50")
+                        .font(.caption2).foregroundColor(name.count > 50 ? .red : .secondary)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                     TextField("Description", text: $description, axis: .vertical)
                         .lineLimit(3...6)
                     Picker("Category", selection: $category) {
@@ -863,7 +899,7 @@ struct CreateGroupSheet: View {
                         store.save()
                         dismiss()
                     }
-                    .disabled(name.isEmpty)
+                    .disabled(!InputValidator.isValidGroupName(name))
                 }
             }
         }
