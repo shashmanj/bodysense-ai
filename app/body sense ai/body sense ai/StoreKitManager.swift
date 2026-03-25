@@ -57,8 +57,8 @@ final class StoreKitManager {
 
     // MARK: - Transaction Listener
 
-    /// Transaction listener — nonisolated(unsafe) so deinit can cancel it.
-    private nonisolated(unsafe) var transactionListener: Task<Void, Error>?
+    /// Transaction listener task — nonisolated(unsafe) needed for deinit access.
+    @preconcurrency private nonisolated(unsafe) var transactionListener: Task<Void, Error>?
 
     // MARK: - Init
 

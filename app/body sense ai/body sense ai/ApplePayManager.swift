@@ -206,7 +206,8 @@ extension ApplePayManager: PKPaymentAuthorizationControllerDelegate {
         // Determine payment method
         let method = payment.token.paymentMethod.displayName ?? "Apple Pay"
 
-        Task { @MainActor in
+        Task { @MainActor [weak self] in
+            guard let self else { return }
             // Store the result for didFinish
             self.authorizationCompletion = completion
 
@@ -220,7 +221,8 @@ extension ApplePayManager: PKPaymentAuthorizationControllerDelegate {
 
     nonisolated func paymentAuthorizationControllerDidFinish(_ controller: PKPaymentAuthorizationController) {
         controller.dismiss {
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
                 self.isProcessing = false
 
                 // If paymentCompletion hasn't been called yet, user cancelled

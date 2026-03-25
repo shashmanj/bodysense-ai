@@ -8,7 +8,7 @@
 //
 
 import SwiftUI
-import UserNotifications
+@preconcurrency import UserNotifications
 import HealthKit
 
 @main

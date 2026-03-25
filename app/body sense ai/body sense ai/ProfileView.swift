@@ -1468,8 +1468,15 @@ struct EditProfileSheet: View {
     }
 
     func saveProfile() {
+        // Validate name — must have at least 2 chars and contain a letter
+        guard InputValidator.isValidName(name) else { return }
+        // Validate email if provided
+        let cleanEmail = email.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        if !cleanEmail.isEmpty && !InputValidator.isValidEmail(cleanEmail) { return }
+
         var p = store.userProfile
-        p.name = name; p.email = email.lowercased().trimmingCharacters(in: .whitespaces)
+        p.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        p.email = cleanEmail
         p.age = age; p.gender = gender
         p.city = city; p.country = country; p.postcode = postcode.uppercased()
         // Convert from displayed unit back to kg/cm for storage

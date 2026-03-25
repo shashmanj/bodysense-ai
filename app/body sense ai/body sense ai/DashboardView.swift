@@ -117,16 +117,20 @@ struct DashboardView: View {
     var guidanceCard: some View {
         BSCard {
             VStack(alignment: .leading, spacing: 10) {
-                if let g = store.dailyGuidance {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("\(timeOfDayGreeting)\(userName)").font(.headline)
-                            Text("Your daily health brief").font(.caption).foregroundColor(.secondary)
-                        }
-                        Spacer()
-                        Image(systemName: "brain.head.profile")
-                            .font(.title2).foregroundColor(.brandPurple)
+                // Always show a proper greeting
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(timeOfDayGreeting)\(userName)")
+                            .font(.title3).fontWeight(.bold)
+                        Text(hasMinimumData ? "Here's your health summary" : "Let's get started with your health journey")
+                            .font(.subheadline).foregroundColor(.secondary)
                     }
+                    Spacer()
+                    Image(systemName: "sparkles")
+                        .font(.title2).foregroundColor(.brandPurple)
+                }
+
+                if hasMinimumData, let g = store.dailyGuidance {
                     Text(g.insight).font(.subheadline).foregroundColor(.secondary)
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Today's actions").font(.caption.bold()).foregroundColor(.brandPurple)
@@ -140,14 +144,9 @@ struct DashboardView: View {
                     .padding(10).background(Color.brandPurple.opacity(0.06)).cornerRadius(10)
                     Text(g.quote).font(.caption.italic()).foregroundColor(.secondary)
                 } else {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("\(timeOfDayGreeting)\(userName)").font(.headline)
-                            Text("Let's check on your health today").font(.caption).foregroundColor(.secondary)
-                        }
-                        Spacer()
-                        Image(systemName: "sparkles").font(.title2).foregroundColor(.brandPurple)
-                    }
+                    // No data yet — show a welcoming prompt
+                    Text("Start by logging your first health reading below, or sync from Apple Health in Settings.")
+                        .font(.subheadline).foregroundColor(.secondary)
                 }
             }
         }
