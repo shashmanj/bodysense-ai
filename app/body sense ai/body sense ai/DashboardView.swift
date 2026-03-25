@@ -452,7 +452,7 @@ struct DashboardView: View {
                     let s = store.glucoseStatus(g.value)
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("\(Int(g.value)) mg/dL").font(.title2.bold()).foregroundColor(s.color)
+                            Text(HealthStore.glucoseDisplayUK(g.value)).font(.title2.bold()).foregroundColor(s.color)
                             Text(g.context.rawValue + " · " + g.date.shortTime).font(.caption).foregroundColor(.secondary)
                         }
                         Spacer()
@@ -462,19 +462,19 @@ struct DashboardView: View {
                     }
                     if store.glucoseReadings.count > 2 {
                         Chart(store.glucoseReadings.sorted { $0.date < $1.date }.suffix(7)) { r in
-                            LineMark(x: .value("D", r.date, unit: .day), y: .value("mg/dL", r.value))
+                            LineMark(x: .value("D", r.date, unit: .day), y: .value("mmol/L", r.value / 18.0))
                                 .foregroundStyle(Color.brandPurple).interpolationMethod(.catmullRom)
-                            AreaMark(x: .value("D", r.date, unit: .day), y: .value("mg/dL", r.value))
+                            AreaMark(x: .value("D", r.date, unit: .day), y: .value("mmol/L", r.value / 18.0))
                                 .foregroundStyle(Color.brandPurple.opacity(0.1))
-                            RuleMark(y: .value("Min", store.userProfile.targetGlucoseMin))
+                            RuleMark(y: .value("Min", store.userProfile.targetGlucoseMin / 18.0))
                                 .foregroundStyle(Color.brandGreen.opacity(0.5)).lineStyle(StrokeStyle(dash: [4]))
-                            RuleMark(y: .value("Max", store.userProfile.targetGlucoseMax))
+                            RuleMark(y: .value("Max", store.userProfile.targetGlucoseMax / 18.0))
                                 .foregroundStyle(Color.brandCoral.opacity(0.5)).lineStyle(StrokeStyle(dash: [4]))
                         }
                         .frame(height: 70).chartXAxis(.hidden).chartYAxis(.hidden)
                     }
                     HStack {
-                        Text("Target: \(Int(store.userProfile.targetGlucoseMin))–\(Int(store.userProfile.targetGlucoseMax)) mg/dL")
+                        Text("Target: \(HealthStore.glucoseMmol(store.userProfile.targetGlucoseMin))–\(HealthStore.glucoseMmol(store.userProfile.targetGlucoseMax)) mmol/L")
                             .font(.caption).foregroundColor(.secondary)
                         Spacer()
                         let readings14 = store.glucoseReadings.prefix(14)
@@ -732,17 +732,17 @@ enum PersonalisedInsightEngine {
         if let g = store.glucoseReadings.max(by: { $0.date < $1.date }) {
             let val = Int(g.value)
             if val > Int(store.userProfile.targetGlucoseMax) {
-                tips.append("Your latest glucose is \(val) mg/dL — above your \(Int(p.targetGlucoseMax)) target. A 15-min walk after meals can lower post-meal spikes by 20–30 mg/dL.")
+                tips.append("Your latest glucose is \(HealthStore.glucoseDisplayUK(g.value)) — above your \(HealthStore.glucoseMmol(p.targetGlucoseMax)) mmol/L target. A 15-min walk after meals can lower post-meal spikes by 1.1–1.7 mmol/L.")
             } else if val < Int(store.userProfile.targetGlucoseMin) {
-                tips.append("Glucose at \(val) mg/dL is below your \(Int(p.targetGlucoseMin)) target. Consider a small snack with protein and complex carbs to stabilise.")
+                tips.append("Glucose at \(HealthStore.glucoseDisplayUK(g.value)) is below your \(HealthStore.glucoseMmol(p.targetGlucoseMin)) mmol/L target. Consider a small snack with protein and complex carbs to stabilise.")
             } else {
-                tips.append("Glucose at \(val) mg/dL — nicely within your \(Int(p.targetGlucoseMin))–\(Int(p.targetGlucoseMax)) target range. Keep up the great work!")
+                tips.append("Glucose at \(HealthStore.glucoseDisplayUK(g.value)) — nicely within your \(HealthStore.glucoseMmol(p.targetGlucoseMin))–\(HealthStore.glucoseMmol(p.targetGlucoseMax)) mmol/L target range. Keep up the great work!")
             }
             // Trend analysis
             let recent7 = store.glucoseReadings.filter { $0.date > cal.date(byAdding: .day, value: -7, to: Date())! }
             if recent7.count >= 3 {
                 let avg = recent7.map { $0.value }.reduce(0, +) / Double(recent7.count)
-                tips.append("Your 7-day glucose average is \(Int(avg)) mg/dL across \(recent7.count) readings. \(avg > p.targetGlucoseMax ? "Consider reducing refined carbs and increasing fibre." : "Excellent metabolic control!")")
+                tips.append("Your 7-day glucose average is \(HealthStore.glucoseMmol(avg)) mmol/L across \(recent7.count) readings. \(avg > p.targetGlucoseMax ? "Consider reducing refined carbs and increasing fibre." : "Excellent metabolic control!")")
             }
         }
 

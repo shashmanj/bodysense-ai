@@ -129,11 +129,11 @@ class MealPlanEngine {
             if !recentGlucose.isEmpty {
                 let avg = recentGlucose.map { $0.value }.reduce(0, +) / Double(recentGlucose.count)
                 if avg > 180 {
-                    ctx += "GLUCOSE ALERT: Avg glucose HIGH (\(Int(avg)) mg/dL). Prioritise very low-GI meals. Avoid: white rice, white bread, potatoes, sugary foods.\n"
+                    ctx += "GLUCOSE ALERT: Avg glucose HIGH (\(HealthStore.glucoseDisplayUK(avg))). Prioritise very low-GI meals. Avoid: white rice, white bread, potatoes, sugary foods.\n"
                 } else if avg > 140 {
-                    ctx += "Glucose slightly above target (\(Int(avg)) mg/dL). Prefer low-GI foods, pair carbs with protein/fat.\n"
+                    ctx += "Glucose slightly above target (\(HealthStore.glucoseDisplayUK(avg))). Prefer low-GI foods, pair carbs with protein/fat.\n"
                 } else {
-                    ctx += "Glucose well-controlled (\(Int(avg)) mg/dL). Maintain current eating patterns.\n"
+                    ctx += "Glucose well-controlled (\(HealthStore.glucoseDisplayUK(avg))). Maintain current eating patterns.\n"
                 }
             }
         }

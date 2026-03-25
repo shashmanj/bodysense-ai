@@ -774,7 +774,8 @@ struct PatientOnboardingView: View {
 
     func completePatientOnboarding() {
         var profile = store.userProfile
-        profile.name          = name.isEmpty ? "Friend" : name
+        let cleanedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        profile.name          = InputValidator.isValidName(cleanedName) ? cleanedName : "Friend"
         profile.email         = email.lowercased().trimmingCharacters(in: .whitespaces)
         profile.age           = age
         profile.gender        = gender
@@ -928,14 +929,14 @@ struct DoctorRegistrationView: View {
                                 }
 
                                 // Validation message
-                                if fullName.isEmpty || email.isEmpty {
-                                    Label("Name and email are required", systemImage: "exclamationmark.circle")
+                                if !InputValidator.isValidName(fullName) || !InputValidator.isValidEmail(email) {
+                                    Label("Valid name (2+ letters) and email are required", systemImage: "exclamationmark.circle")
                                         .font(.caption).foregroundColor(.brandAmber)
                                 }
 
                                 docRegCTA("Continue") { withAnimation(.easeInOut(duration: 0.25)) { page = 1 } }
-                                    .disabled(fullName.trimmingCharacters(in: .whitespaces).isEmpty || !InputValidator.isValidEmail(email))
-                                    .opacity(fullName.trimmingCharacters(in: .whitespaces).isEmpty || !InputValidator.isValidEmail(email) ? 0.4 : 1)
+                                    .disabled(!InputValidator.isValidName(fullName) || !InputValidator.isValidEmail(email))
+                                    .opacity(!InputValidator.isValidName(fullName) || !InputValidator.isValidEmail(email) ? 0.4 : 1)
                             }
                             .padding(16).padding(.bottom, 24)
                         }
@@ -1182,7 +1183,10 @@ struct DoctorRegistrationView: View {
 
     func completeDocReg() {
         guard InputValidator.isValidEmail(email) else { return }
-        guard !fullName.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        guard InputValidator.isValidName(fullName) else { return }
+        guard !specialty.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        guard !hospital.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        guard InputValidator.isValidGMC(gmcNumber) else { return }
 
         let cleanName = fullName.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanEmail = email.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)

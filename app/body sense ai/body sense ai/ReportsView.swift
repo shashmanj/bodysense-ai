@@ -92,11 +92,11 @@ struct ReportsView: View {
             Text("Glucose Summary · Last \(range) days")
                 .font(.headline).padding(.bottom, 2)
             HStack(spacing: 0) {
-                summaryCol("Avg", "\(Int(avg))", "mg/dL", .brandPurple)
+                summaryCol("Avg", HealthStore.glucoseMmol(avg), "mmol/L", .brandPurple)
                 Divider().frame(height: 50)
-                summaryCol("High", "\(Int(high))", "mg/dL", .brandCoral)
+                summaryCol("High", HealthStore.glucoseMmol(high), "mmol/L", .brandCoral)
                 Divider().frame(height: 50)
-                summaryCol("Low",  "\(Int(low))",  "mg/dL", .brandTeal)
+                summaryCol("Low",  HealthStore.glucoseMmol(low),  "mmol/L", .brandTeal)
                 Divider().frame(height: 50)
                 summaryCol("In Range", "\(pct)%", "\(inRange)/\(vals.count)", .brandGreen)
             }
@@ -128,35 +128,35 @@ struct ReportsView: View {
                 Text("No data for this period").foregroundColor(.secondary).frame(maxWidth: .infinity)
             } else {
                 Chart {
-                    RuleMark(y: .value("Min", store.userProfile.targetGlucoseMin))
+                    RuleMark(y: .value("Min", store.userProfile.targetGlucoseMin / 18.0))
                         .foregroundStyle(Color.brandGreen.opacity(0.5))
                         .lineStyle(StrokeStyle(lineWidth: 1, dash: [4]))
-                    RuleMark(y: .value("Max", store.userProfile.targetGlucoseMax))
+                    RuleMark(y: .value("Max", store.userProfile.targetGlucoseMax / 18.0))
                         .foregroundStyle(Color.brandCoral.opacity(0.5))
                         .lineStyle(StrokeStyle(lineWidth: 1, dash: [4]))
                     ForEach(filteredGlucose) { r in
                         LineMark(
                             x: .value("Date", r.date),
-                            y: .value("mg/dL", r.value)
+                            y: .value("mmol/L", r.value / 18.0)
                         )
                         .foregroundStyle(Color.brandPurple)
                         .interpolationMethod(.catmullRom)
                         AreaMark(
                             x: .value("Date", r.date),
-                            y: .value("mg/dL", r.value)
+                            y: .value("mmol/L", r.value / 18.0)
                         )
                         .foregroundStyle(Color.brandPurple.opacity(0.1))
                         .interpolationMethod(.catmullRom)
                         PointMark(
                             x: .value("Date", r.date),
-                            y: .value("mg/dL", r.value)
+                            y: .value("mmol/L", r.value / 18.0)
                         )
                         .foregroundStyle(store.glucoseStatus(r.value).color)
                         .symbolSize(30)
                     }
                 }
                 .frame(height: 200)
-                .chartYScale(domain: 50...300)
+                .chartYScale(domain: 2.8...16.7)
             }
         }
         .padding()

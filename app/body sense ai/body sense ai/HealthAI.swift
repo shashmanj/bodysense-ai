@@ -81,7 +81,7 @@ class HealthAIEngine {
         if !p.diabetesType.isEmpty { conditions.append(p.diabetesType) }
         if p.hasHypertension { conditions.append("Hypertension") }
         ctx += "Conditions: \(conditions.isEmpty ? "None recorded" : conditions.joined(separator: ", "))\n"
-        ctx += "Targets — Glucose: \(Int(p.targetGlucoseMin))-\(Int(p.targetGlucoseMax)) mg/dL, BP: <\(p.targetSystolic)/\(p.targetDiastolic), Steps: \(p.targetSteps)/day, Sleep: \(String(format: "%.1f", p.targetSleep))hrs\n"
+        ctx += "Targets — Glucose: \(HealthStore.glucoseMmol(p.targetGlucoseMin))-\(HealthStore.glucoseMmol(p.targetGlucoseMax)) mmol/L, BP: <\(p.targetSystolic)/\(p.targetDiastolic), Steps: \(p.targetSteps)/day, Sleep: \(String(format: "%.1f", p.targetSleep))hrs\n"
         if !p.selectedGoals.isEmpty { ctx += "Health goals: \(p.selectedGoals.joined(separator: ", "))\n" }
 
         // Medications with adherence + database-enriched context
@@ -544,7 +544,7 @@ class HealthAIEngine {
         var parts: [String] = ["Hello \(name)! 👋 I'm your BodySense AI — a comprehensive medical assistant."]
         if let g = store.latestGlucose {
             let s = store.glucoseStatus(g.value)
-            parts.append("Your latest glucose is **\(Int(g.value)) mg/dL** — \(s.label).")
+            parts.append("Your latest glucose is **\(HealthStore.glucoseDisplayUK(g.value))** — \(s.label).")
         }
         if let b = store.latestBP {
             parts.append("Blood pressure: \(b.systolic)/\(b.diastolic) mmHg (\(b.category.rawValue)).")
@@ -582,10 +582,10 @@ class HealthAIEngine {
             No glucose readings yet, \(name). Log one in **Track → Vitals**.
 
             **Understanding blood glucose:**
-            • **Normal (fasting):** 70–99 mg/dL (3.9–5.5 mmol/L)
-            • **Pre-diabetes (fasting):** 100–125 mg/dL (5.6–6.9 mmol/L)
-            • **Diabetes (fasting):** ≥126 mg/dL (≥7.0 mmol/L)
-            • **2 hours after eating (normal):** <140 mg/dL (<7.8 mmol/L)
+            • **Normal (fasting):** 3.9–5.5 mmol/L
+            • **Pre-diabetes (fasting):** 5.6–6.9 mmol/L
+            • **Diabetes (fasting):** ≥7.0 mmol/L
+            • **2 hours after eating (normal):** <7.8 mmol/L
 
             **What raises glucose:** carbohydrates, stress, illness, poor sleep, inactivity
             **What lowers glucose:** exercise, medication, fiber-rich foods, hydration
@@ -603,15 +603,15 @@ class HealthAIEngine {
         let pct = sorted.prefix(14).count > 0 ? Int(Double(inRange14) / Double(min(sorted.count, 14)) * 100) : 0
 
         var reply = "🩸 **Your Glucose, \(name)**\n\n"
-        reply += "• Latest: **\(Int(latest.value)) mg/dL** — \(status.label) \(statusEmoji(status.label))\n"
-        reply += "• Target range: \(Int(store.userProfile.targetGlucoseMin))–\(Int(store.userProfile.targetGlucoseMax)) mg/dL\n"
-        reply += "• 7-day average: **\(Int(avg7)) mg/dL**\n"
+        reply += "• Latest: **\(HealthStore.glucoseDisplayUK(latest.value))** — \(status.label) \(statusEmoji(status.label))\n"
+        reply += "• Target range: \(HealthStore.glucoseMmol(store.userProfile.targetGlucoseMin))–\(HealthStore.glucoseMmol(store.userProfile.targetGlucoseMax)) mmol/L\n"
+        reply += "• 7-day average: **\(HealthStore.glucoseMmol(avg7)) mmol/L**\n"
         reply += "• Time in range (14 days): **\(pct)%**\n\n"
 
         if latest.value > 250 {
             reply += "🔴 **Very high glucose.** Check for ketones (Type 1). Drink water, take your medication if due. If you feel sick, dizzy, or are vomiting — seek urgent medical care.\n\n"
         } else if latest.value > store.userProfile.targetGlucoseMax {
-            reply += "🟡 **Above target.** Avoid starchy and sugary foods right now. A 10–15 min walk can bring it down by 20–40 mg/dL. Check again in 1–2 hours.\n\n"
+            reply += "🟡 **Above target.** Avoid starchy and sugary foods right now. A 10–15 min walk can bring it down by 1.1–2.2 mmol/L. Check again in 1–2 hours.\n\n"
         } else if latest.value < 54 {
             reply += "🚨 **Severe hypo!** Take 15g fast carbs NOW (3–4 glucose tablets, 150ml juice). Sit down. Call someone if alone. Re-check in 15 min.\n\n"
         } else if latest.value < 70 {
@@ -654,7 +654,7 @@ class HealthAIEngine {
 
         var reply = "🧪 **Estimated HbA1c for \(name)**\n\n"
         reply += "Based on your last \(recent.count) glucose readings:\n"
-        reply += "• Average glucose: **\(Int(avg)) mg/dL**\n"
+        reply += "• Average glucose: **\(HealthStore.glucoseMmol(avg)) mmol/L**\n"
         reply += "• Estimated HbA1c: **\(String(format: "%.1f", hba1c))%**\n\n"
 
         if hba1c < 5.7 {
@@ -756,7 +756,7 @@ class HealthAIEngine {
         reply += "**Protecting your heart:**\n"
         reply += "• Don't smoke — smoking doubles heart disease risk\n"
         reply += "• Keep BP below 130/80 mmHg\n"
-        reply += "• Keep LDL cholesterol below 70 mg/dL (if high risk)\n"
+        reply += "• Keep LDL cholesterol below 1.8 mmol/L (if high risk)\n"
         reply += "• Keep blood glucose controlled (diabetes damages heart vessels)\n"
         reply += "• Exercise 150 min/week — heart is a muscle; train it\n"
         reply += "• Maintain healthy weight (BMI 18.5–24.9)\n"
@@ -772,7 +772,7 @@ class HealthAIEngine {
         Cholesterol is a fatty substance in your blood. Too much damages arteries and raises heart attack risk.
 
         **Ideal levels:**
-        • Total cholesterol: below 5.0 mmol/L (190 mg/dL)
+        • Total cholesterol: below 5.0 mmol/L
         • LDL ("bad"): below 3.0 mmol/L — below 1.8 if high risk
         • HDL ("good"): above 1.0 (men) / 1.2 (women) mmol/L
         • Triglycerides: below 1.7 mmol/L
@@ -935,7 +935,7 @@ class HealthAIEngine {
         let specificFoodInfo = getSpecificFoodInfo(for: mealHint)
         if let info = specificFoodInfo {
             var reply = "\(info.emoji) **\(info.name)** — \(name)\n\n"
-            reply += "_Current glucose: \(Int(g)) mg/dL (\(status.label))_\n\n"
+            reply += "_Current glucose: \(HealthStore.glucoseDisplayUK(g)) (\(status.label))_\n\n"
             reply += info.details
             // Add BMI-personalised context
             let bmi = store.userProfile.height > 0 ? store.userProfile.weight / pow(store.userProfile.height / 100, 2) : 0
@@ -948,7 +948,7 @@ class HealthAIEngine {
 
         // ── General food guide ──
         var reply = "🍽️ **Food Guide for \(name)**\n\n"
-        reply += "_Current glucose: \(Int(g)) mg/dL (\(status.label))_\n\n"
+        reply += "_Current glucose: \(HealthStore.glucoseDisplayUK(g)) (\(status.label))_\n\n"
 
         if g > 180 {
             reply += "Your glucose is elevated — choose **very low-GI** options:\n"
@@ -1287,7 +1287,7 @@ class HealthAIEngine {
         reply += "• Reduce sitting time — stand/move every 30 min\n\n"
 
         reply += "**Best exercises for metabolic health:**\n"
-        reply += "🚶 **Walking** — post-meal (15–30 min) drops glucose by 20–40 mg/dL\n"
+        reply += "🚶 **Walking** — post-meal (15–30 min) drops glucose by 1.1–2.2 mmol/L\n"
         reply += "🏊 **Swimming** — great for joints, heart, BP, and glucose\n"
         reply += "🚴 **Cycling** — low impact, builds endurance\n"
         reply += "💪 **Resistance training** — builds muscle, improves insulin sensitivity for 24–48 hours\n"
@@ -1333,7 +1333,7 @@ class HealthAIEngine {
         reply += "• Keep room cool: 18–20°C is optimal\n"
         reply += "• Avoid caffeine after 2 PM (half-life is 5–7 hours)\n"
         reply += "• No alcohol as a sleep aid — it fragments deep sleep\n"
-        reply += "• Check glucose before bed — keep it 100–140 mg/dL to avoid hypos or highs waking you\n"
+        reply += "• Check glucose before bed — keep it 5.6–7.8 mmol/L to avoid hypos or highs waking you\n"
         reply += "• 4-7-8 breathing technique: inhale 4s, hold 7s, exhale 8s\n\n"
 
         reply += "**When to see a doctor:**\n"
@@ -2089,7 +2089,7 @@ class HealthAIEngine {
         reply += "🩸 **Glucose**\n"
         if let g = glucose {
             let s = store.glucoseStatus(g.value)
-            reply += "Latest: **\(Int(g.value)) mg/dL** (\(s.label)) | In range 14d: **\(pct)%**\n\n"
+            reply += "Latest: **\(HealthStore.glucoseDisplayUK(g.value))** (\(s.label)) | In range 14d: **\(pct)%**\n\n"
         } else { reply += "No readings yet\n\n" }
 
         reply += "❤️ **Blood Pressure**\n"
@@ -2113,7 +2113,7 @@ class HealthAIEngine {
     private func tipsReply(name: String) -> ChatMessage {
         let tips = [
             "🌅 Check glucose every morning before eating — this 'fasting' reading reveals your overnight control.",
-            "🦶 Walk 10–15 minutes after meals — this single habit lowers post-meal glucose by 20–40 mg/dL.",
+            "🦶 Walk 10–15 minutes after meals — this single habit lowers post-meal glucose by 1.1–2.2 mmol/L.",
             "🧂 Reduce sodium by 500 mg/day — this alone can lower systolic BP by 2–5 mmHg.",
             "💊 Take medications at the same time daily — consistent timing is the most important factor in their effectiveness.",
             "😴 7–9 hours of sleep improves insulin sensitivity and reduces appetite hormones — prioritise it.",
@@ -2183,8 +2183,8 @@ class HealthAIEngine {
         **Go to A&E / call 999 for:**
         • Chest pain, jaw pain, or left arm pain
         • Sudden weakness, facial droop, or speech difficulty → stroke
-        • Glucose below 50 mg/dL with symptoms
-        • Glucose above 400 mg/dL (or 350 + feeling very unwell)
+        • Glucose below 2.8 mmol/L with symptoms
+        • Glucose above 22.2 mmol/L (or 19.4 + feeling very unwell)
         • Difficulty breathing
         • Severe allergic reaction (face swelling, throat closing)
         • Any loss of consciousness

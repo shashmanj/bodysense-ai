@@ -50,9 +50,9 @@ enum HealthDataExporter {
         // ── Glucose Readings ──
         if !store.glucoseReadings.isEmpty {
             csv += "=== GLUCOSE READINGS ===\n"
-            csv += "Date,Value (mg/dL),Context,Notes\n"
+            csv += "Date,Value (mmol/L),Context,Notes\n"
             for r in store.glucoseReadings.sorted(by: { $0.date > $1.date }) {
-                csv += "\"\(formatDate(r.date))\",\(r.value),\"\(r.context.rawValue)\",\"\(escape(r.notes))\"\n"
+                csv += "\"\(formatDate(r.date))\",\(HealthStore.glucoseMmol(r.value)),\"\(r.context.rawValue)\",\"\(escape(r.notes))\"\n"
             }
             csv += "\n"
         }
@@ -402,9 +402,9 @@ enum HealthDataExporter {
                 let inTarget = glu.filter { $0.value >= 70 && $0.value <= 180 }
                 let targetPct = Int(Double(inTarget.count) / Double(glu.count) * 100)
                 drawKVRow("Readings:", "\(glu.count)")
-                drawKVRow("Average:", "\(Int(avg)) mg/dL")
-                drawKVRow("Range:", "\(Int(minG)) – \(Int(maxG)) mg/dL")
-                drawKVRow("Time in Target:", "\(targetPct)% (70-180 mg/dL)")
+                drawKVRow("Average:", HealthStore.glucoseDisplayUK(avg))
+                drawKVRow("Range:", "\(HealthStore.glucoseMmol(minG)) – \(HealthStore.glucoseMmol(maxG)) mmol/L")
+                drawKVRow("Time in Target:", "\(targetPct)% (3.9-10.0 mmol/L)")
 
                 // Trend: compare first vs second half
                 let midDate = cal.date(byAdding: .day, value: -15, to: Date())!
@@ -414,7 +414,7 @@ enum HealthDataExporter {
                     let firstAvg = firstHalf.map { $0.value }.reduce(0, +) / Double(firstHalf.count)
                     let secondAvg = secondHalf.map { $0.value }.reduce(0, +) / Double(secondHalf.count)
                     let trend = secondAvg < firstAvg ? "Improving" : (secondAvg > firstAvg + 10 ? "Worsening" : "Stable")
-                    drawKVRow("Trend:", "\(trend) (\(Int(firstAvg)) → \(Int(secondAvg)) mg/dL)")
+                    drawKVRow("Trend:", "\(trend) (\(HealthStore.glucoseMmol(firstAvg)) → \(HealthStore.glucoseMmol(secondAvg)) mmol/L)")
                 }
                 yPos += 8
             }

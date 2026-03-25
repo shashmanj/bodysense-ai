@@ -93,8 +93,8 @@ struct GlucoseListView: View {
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
-                Text("\(Int(r.value))").font(.title2.bold()).foregroundColor(status.color)
-                Text("mg/dL").font(.caption2).foregroundColor(.secondary)
+                Text(HealthStore.glucoseMmol(r.value)).font(.title2.bold()).foregroundColor(status.color)
+                Text("mmol/L").font(.caption2).foregroundColor(.secondary)
             }
         }
         .padding()
@@ -177,8 +177,8 @@ struct AddGlucoseSheet: View {
             Form {
                 Section("Reading") {
                     HStack {
-                        TextField("e.g. 120", text: $valueText).keyboardType(.decimalPad)
-                        Text("mg/dL").foregroundColor(.secondary)
+                        TextField("e.g. 6.7", text: $valueText).keyboardType(.decimalPad)
+                        Text("mmol/L").foregroundColor(.secondary)
                     }
                     DatePicker("Date & Time", selection: $date)
                 }
@@ -211,7 +211,8 @@ struct AddGlucoseSheet: View {
 
     func save() {
         guard let v = Double(valueText) else { return }
-        store.glucoseReadings.append(GlucoseReading(value: v, date: date, context: context, notes: notes))
+        let mgdl = v * 18.0 // Convert mmol/L input to mg/dL for internal storage
+        store.glucoseReadings.append(GlucoseReading(value: mgdl, date: date, context: context, notes: notes))
         store.save()
         dismiss()
     }

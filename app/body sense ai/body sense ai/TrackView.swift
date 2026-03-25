@@ -108,9 +108,9 @@ struct VitalsSection: View {
                     // Mini chart
                     if store.glucoseReadings.count > 3 {
                         Chart(store.glucoseReadings.sorted { $0.date < $1.date }.suffix(7)) { r in
-                            LineMark(x: .value("Date", r.date, unit: .day), y: .value("mg/dL", r.value))
+                            LineMark(x: .value("Date", r.date, unit: .day), y: .value("mmol/L", r.value / 18.0))
                                 .foregroundStyle(Color.brandPurple)
-                            AreaMark(x: .value("Date", r.date, unit: .day), y: .value("mg/dL", r.value))
+                            AreaMark(x: .value("Date", r.date, unit: .day), y: .value("mmol/L", r.value / 18.0))
                                 .foregroundStyle(Color.brandPurple.opacity(0.15))
                         }
                         .frame(height: 55)

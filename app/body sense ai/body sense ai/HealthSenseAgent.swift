@@ -287,14 +287,28 @@ class HealthSenseAgent {
             scores[domain, default: 0] += 1.5
         }
 
-        // Signal 3: Boost from user's health conditions
+        // Signal 2.5: Direct agent request detection — highest priority
+        let agentRequests: [(String, HealthDomain)] = [
+            ("fitness coach", .fitness), ("exercise coach", .fitness), ("coach alex", .fitness),
+            ("nutritionist", .nutrition), ("maya", .nutrition), ("diet advice", .nutrition),
+            ("chef kai", .chef), ("recipe", .chef), ("cook", .chef),
+            ("luna", .sleep), ("sleep coach", .sleep),
+            ("zen", .mentalWellness), ("mindfulness", .mentalWellness),
+            ("cara", .personalCare), ("skincare", .personalCare),
+            ("dr sage", .medical), ("doctor", .medical)
+        ]
+        for (phrase, domain) in agentRequests where text.contains(phrase) {
+            scores[domain, default: 0] += 10.0  // Direct request = strongest signal
+        }
+
+        // Signal 3: Boost from user's health conditions (reduced — don't let conditions dominate)
         let profile = store.userProfile
         if !profile.diabetesType.isEmpty {
-            scores[.medical, default: 0] += 2.0
-            scores[.nutrition, default: 0] += 1.0
+            scores[.medical, default: 0] += 1.0  // Reduced from 2.0 — don't let conditions dominate
+            scores[.nutrition, default: 0] += 0.5
         }
         if profile.hasHypertension {
-            scores[.medical, default: 0] += 1.5
+            scores[.medical, default: 0] += 0.75
         }
         if profile.selectedGoals.contains("Lose weight") || profile.selectedGoals.contains("Build muscle") {
             scores[.fitness, default: 0] += 1.5
@@ -610,7 +624,7 @@ class HealthSenseAgent {
         if p.hasHypertension { conditions.append("Hypertension") }
         ctx += "Conditions: \(conditions.isEmpty ? "None" : conditions.joined(separator: ", "))\n"
         ctx += "Goals: \(p.selectedGoals.isEmpty ? "Not set" : p.selectedGoals.joined(separator: ", "))\n"
-        ctx += "Targets: Glucose \(Int(p.targetGlucoseMin))-\(Int(p.targetGlucoseMax)) mg/dL, BP <\(p.targetSystolic)/\(p.targetDiastolic), Steps \(p.targetSteps)/day, Sleep \(String(format: "%.1f", p.targetSleep))hrs\n"
+        ctx += "Targets: Glucose \(HealthStore.glucoseMmol(p.targetGlucoseMin))-\(HealthStore.glucoseMmol(p.targetGlucoseMax)) mmol/L, BP <\(p.targetSystolic)/\(p.targetDiastolic), Steps \(p.targetSteps)/day, Sleep \(String(format: "%.1f", p.targetSleep))hrs\n"
 
         // Medications
         let activeMeds = store.medications.filter { $0.isActive }
@@ -626,7 +640,7 @@ class HealthSenseAgent {
             let avg = recentGlucose.map { $0.value }.reduce(0, +) / Double(recentGlucose.count)
             let inRange = recentGlucose.filter { $0.value >= p.targetGlucoseMin && $0.value <= p.targetGlucoseMax }.count
             let pct = Int(Double(inRange) / Double(recentGlucose.count) * 100)
-            ctx += "Glucose 7d: avg \(Int(avg)) mg/dL, \(pct)% in range\n"
+            ctx += "Glucose 7d: avg \(HealthStore.glucoseMmol(avg)) mmol/L, \(pct)% in range\n"
         }
 
         // Recent BP
@@ -1035,7 +1049,7 @@ class HealthSenseAgent {
             // Show relevant vitals
             var hasVitals = false
             if let g = store.glucoseReadings.sorted(by: { $0.date > $1.date }).first {
-                response += "**Your latest glucose:** \(Int(g.value)) mg/dL"
+                response += "**Your latest glucose:** \(HealthStore.glucoseDisplayUK(g.value))"
                 if g.value > 180 { response += " (elevated)" }
                 else if g.value < 70 { response += " (low)" }
                 else { response += " (normal)" }
@@ -1304,7 +1318,7 @@ class HealthSenseAgent {
 
             // Show latest vitals
             if let g = store.glucoseReadings.sorted(by: { $0.date > $1.date }).first {
-                response += "• Latest glucose: \(Int(g.value)) mg/dL\n"
+                response += "• Latest glucose: \(HealthStore.glucoseDisplayUK(g.value))\n"
             }
             if let b = store.bpReadings.sorted(by: { $0.date > $1.date }).first {
                 response += "• Latest BP: \(b.systolic)/\(b.diastolic) mmHg\n"
@@ -1429,7 +1443,7 @@ enum CorrelationEngine {
                 let avgPoor = glucoseAfterPoorSleep.map { $0.value }.reduce(0, +) / Double(glucoseAfterPoorSleep.count)
                 let avgGood = glucoseAfterGoodSleep.map { $0.value }.reduce(0, +) / Double(glucoseAfterGoodSleep.count)
                 if avgPoor > avgGood + 10 {
-                    patterns.append("SLEEP-GLUCOSE: Glucose averages \(Int(avgPoor)) mg/dL on poor sleep nights vs \(Int(avgGood)) mg/dL on good sleep nights. Poor sleep appears to raise glucose by ~\(Int(avgPoor - avgGood)) mg/dL.")
+                    patterns.append("SLEEP-GLUCOSE: Glucose averages \(HealthStore.glucoseMmol(avgPoor)) mmol/L on poor sleep nights vs \(HealthStore.glucoseMmol(avgGood)) mmol/L on good sleep nights. Poor sleep appears to raise glucose by ~\(HealthStore.glucoseMmol(avgPoor - avgGood)) mmol/L.")
                 }
             }
         }
@@ -1463,7 +1477,7 @@ enum CorrelationEngine {
                 let avgActive = glucoseActive.map { $0.value }.reduce(0, +) / Double(glucoseActive.count)
                 let avgSedentary = glucoseSedentary.map { $0.value }.reduce(0, +) / Double(glucoseSedentary.count)
                 if avgSedentary > avgActive + 8 {
-                    patterns.append("ACTIVITY-GLUCOSE: Glucose averages \(Int(avgActive)) mg/dL on active days vs \(Int(avgSedentary)) mg/dL on sedentary days. Walking appears to lower glucose by ~\(Int(avgSedentary - avgActive)) mg/dL.")
+                    patterns.append("ACTIVITY-GLUCOSE: Glucose averages \(HealthStore.glucoseMmol(avgActive)) mmol/L on active days vs \(HealthStore.glucoseMmol(avgSedentary)) mmol/L on sedentary days. Walking appears to lower glucose by ~\(HealthStore.glucoseMmol(avgSedentary - avgActive)) mmol/L.")
                 }
             }
         }
@@ -1517,7 +1531,7 @@ enum CorrelationEngine {
             Key research findings to reference when relevant:
             • NICE NG28: Type 2 diabetes — HbA1c target <48 mmol/mol (6.5%) for most adults
             • NICE NG136: Hypertension — target <140/90 (clinic) or <135/85 (home monitoring)
-            • ADA Standards 2024: Time in range (70-180 mg/dL) >70% reduces complications
+            • ADA Standards 2024: Time in range (3.9-10.0 mmol/L) >70% reduces complications
             • UKPDS: Each 1% reduction in HbA1c reduces microvascular complications by 37%
             • SPRINT trial: Intensive BP control (<120 systolic) reduces cardiovascular events by 25%
             • Metformin remains first-line for T2D; GLP-1 agonists show cardiovascular benefit
@@ -1555,7 +1569,7 @@ enum CorrelationEngine {
         case .mentalWellness:
             return """
             Key research findings:
-            • Chronic stress raises cortisol, increasing glucose by 20-40 mg/dL
+            • Chronic stress raises cortisol, increasing glucose by 1.1-2.2 mmol/L
             • Mindfulness-based stress reduction (MBSR) reduces HbA1c by 0.5% (meta-analysis)
             • Depression doubles the risk of T2D; screening recommended (PHQ-9)
             • 10 min daily meditation reduces anxiety scores by 30% (JAMA Internal Medicine)

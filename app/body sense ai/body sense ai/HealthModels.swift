@@ -82,6 +82,13 @@ enum InputValidator {
         return email.range(of: pattern, options: .regularExpression) != nil
     }
 
+    static func isValidName(_ name: String) -> Bool {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 2 else { return false }
+        // Must contain at least one letter (not just numbers/symbols)
+        return trimmed.contains(where: { $0.isLetter })
+    }
+
     static func isValidGlucose(_ mgdl: Double) -> Bool { (20...600).contains(mgdl) }
     static func isValidBP(systolic: Int, diastolic: Int) -> Bool {
         (60...300).contains(systolic) && (30...200).contains(diastolic) && systolic > diastolic
@@ -682,7 +689,7 @@ enum GoalType: String, Codable, CaseIterable {
     var defaultUnit: String {
         switch self {
         case .steps: return "steps"; case .sleep: return "hrs"
-        case .weight: return "kg"; case .glucose: return "mg/dL"
+        case .weight: return "kg"; case .glucose: return "mmol/L"
         case .bloodPressure: return "mmHg"; case .hrv: return "ms"
         case .water: return "L"; case .exercise: return "min"
         case .medication: return "%"
@@ -2482,10 +2489,10 @@ class HealthStore {
             let minG = glu.map { $0.value }.min() ?? 0
             let maxG = glu.map { $0.value }.max() ?? 0
             lines.append("── GLUCOSE (\(glu.count) readings) ──")
-            lines.append("  Average: \(Int(avg)) mg/dL")
-            lines.append("  Range: \(Int(minG)) – \(Int(maxG)) mg/dL")
+            lines.append("  Average: \(HealthStore.glucoseDisplayUK(avg))")
+            lines.append("  Range: \(HealthStore.glucoseMmol(minG)) – \(HealthStore.glucoseMmol(maxG)) mmol/L")
             for r in glu.sorted(by: { $0.date > $1.date }).prefix(10) {
-                lines.append("  • \(r.date.formatted(date: .abbreviated, time: .shortened)): \(Int(r.value)) mg/dL (\(r.context.rawValue))")
+                lines.append("  • \(r.date.formatted(date: .abbreviated, time: .shortened)): \(HealthStore.glucoseDisplayUK(r.value)) (\(r.context.rawValue))")
             }
             lines.append("")
         }
@@ -2852,6 +2859,30 @@ class HealthStore {
         supportTickets    = dec([SupportTicketRecord].self, key: "supportTickets")  ?? []
         chatHistories     = dec([ChatHistoryRecord].self,   key: "chatHistories")   ?? []
         totalXP           = defaults.integer(forKey: "totalXP")
+
+        // Migration: clear stale seed data from old versions
+        let dataVersion = defaults.integer(forKey: "healthstore_data_version")
+        if dataVersion < 2 {
+            // Version 2: seed data removed — clear old fake data for existing users
+            glucoseReadings.removeAll()
+            bpReadings.removeAll()
+            heartRateReadings.removeAll()
+            hrvReadings.removeAll()
+            sleepEntries.removeAll()
+            stressReadings.removeAll()
+            bodyTempReadings.removeAll()
+            stepEntries.removeAll()
+            waterEntries.removeAll()
+            medications.removeAll()
+            symptomLogs.removeAll()
+            healthAlerts.removeAll()
+            appointments.removeAll()
+            prescriptions.removeAll()
+            wearableDevices.removeAll()
+            doctors.removeAll()
+            defaults.set(2, forKey: "healthstore_data_version")
+            save()
+        }
 
         if products.isEmpty       { seedProducts() }     // always ensure products are present
     }
