@@ -116,7 +116,9 @@ final class AuthService {
                 try KeychainService.saveString(email, forKey: Keys.userEmail)
             }
         } catch {
+            #if DEBUG
             print("⚠️ AuthService: Failed to save credentials to Keychain: \(error)")
+            #endif
         }
 
         // Update state
@@ -141,7 +143,9 @@ final class AuthService {
         }
 
         errorMessage = error.localizedDescription
+        #if DEBUG
         print("❌ AuthService: Sign in with Apple failed: \(error)")
+        #endif
     }
 
     // MARK: - Sign Out
@@ -217,7 +221,9 @@ final class AuthService {
                 break
             }
         } catch {
+            #if DEBUG
             print("⚠️ AuthService: Credential state check failed: \(error)")
+            #endif
         }
     }
 
@@ -233,7 +239,9 @@ final class AuthService {
             // Restore per-user agent memory scope
             AgentMemoryStore.shared.setUser(userIdentifier)
         } catch {
+            #if DEBUG
             print("⚠️ AuthService: Failed to load stored credentials: \(error)")
+            #endif
         }
     }
 }

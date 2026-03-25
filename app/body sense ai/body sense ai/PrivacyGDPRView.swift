@@ -350,6 +350,9 @@ struct PrivacySettingsView: View {
         // Reset profile
         store.userProfile = UserProfile()
 
+        // Clear AI agent memory
+        AgentMemoryStore.shared.clearAllMemory()
+
         // Clear Keychain
         KeychainManager.shared.deleteAll()
 

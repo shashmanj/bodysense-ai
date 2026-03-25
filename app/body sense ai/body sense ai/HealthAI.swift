@@ -277,6 +277,11 @@ class HealthAIEngine {
     func respond(to input: String) async -> ChatMessage {
         isTyping = true
 
+        // ── Emergency detection — prepend banner but still answer the query ─────
+        let emergencyKeywords = ["chest pain", "heart attack", "can't breathe", "cannot breathe",
+            "stroke", "seizure", "unconscious", "999", "911", "ambulance", "dying", "suicide", "self harm"]
+        let isEmergency = emergencyKeywords.contains(where: { input.lowercased().contains($0) })
+
         // ── HealthSense Agent — adaptive, learning AI (primary path) ─────
         // The agent handles EVERYTHING: API calls, intelligent fallback, learning.
         // It NEVER falls through to the dumb rule-based system.
@@ -314,9 +319,13 @@ class HealthAIEngine {
                     userMessage: input
                 )
 
-                conversationHistory.append((role: "assistant", content: reply))
+                var finalReply = reply
+                if isEmergency {
+                    finalReply = "\u{26A0}\u{FE0F} **If this is a medical emergency, call 999 (UK) or 911 (US) immediately.**\n\nWhile waiting for help: stay calm, follow the operator's instructions, and do not move the person unless they are in danger.\n\n---\n\n" + reply
+                }
+                conversationHistory.append((role: "assistant", content: finalReply))
                 isTyping = false
-                return ChatMessage(content: reply, isUser: false)
+                return ChatMessage(content: finalReply, isUser: false)
             } catch {
                 print("⚠️ Claude API error: \(error.localizedDescription)")
             }
@@ -327,7 +336,14 @@ class HealthAIEngine {
         try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
         isTyping = false
         let text = input.lowercased()
-        return buildReply(for: text, raw: input)
+        var ruleMessage = buildReply(for: text, raw: input)
+        if isEmergency {
+            ruleMessage = ChatMessage(
+                content: "\u{26A0}\u{FE0F} **If this is a medical emergency, call 999 (UK) or 911 (US) immediately.**\n\nWhile waiting for help: stay calm, follow the operator's instructions, and do not move the person unless they are in danger.\n\n---\n\n" + ruleMessage.content,
+                isUser: false
+            )
+        }
+        return ruleMessage
     }
 
     // ── Feedback passthrough to agent ─────────────────────────────────────

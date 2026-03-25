@@ -165,7 +165,9 @@ final class CloudSyncService {
             isSyncing = false
             syncError = error.localizedDescription
             syncProgress = nil
+            #if DEBUG
             print("❌ CloudSync: Upload failed: \(error)")
+            #endif
         }
     }
 
@@ -229,7 +231,9 @@ final class CloudSyncService {
             isSyncing = false
             syncError = error.localizedDescription
             syncProgress = nil
+            #if DEBUG
             print("❌ CloudSync: Download failed: \(error)")
+            #endif
         }
     }
 
@@ -241,7 +245,9 @@ final class CloudSyncService {
         do {
             try await database.deleteRecordZone(withID: healthZone.zoneID)
         } catch {
+            #if DEBUG
             print("❌ CloudSync: Failed to delete cloud data: \(error)")
+            #endif
         }
     }
 
@@ -309,7 +315,9 @@ final class CloudSyncService {
         case "medicalRecords":
             if let v = try? decoder.decode([MedicalRecord].self, from: data) { store.medicalRecords = v }
         default:
+            #if DEBUG
             print("⚠️ CloudSync: Unknown category '\(category)'")
+            #endif
         }
     }
 

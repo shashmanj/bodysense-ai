@@ -43,6 +43,9 @@ struct CommunityView: View {
                     .padding(.bottom, 100) // space for tab bar
                 }
                 .background(Color.brandBg)
+                .refreshable {
+                    store.save()
+                }
             }
             .navigationTitle("Community")
             .navigationBarTitleDisplayMode(.large)

@@ -2429,16 +2429,36 @@ class HealthStore {
         if todayCals > 0 && todayCals >= Int(Double(goal) * 0.8) && todayCals <= Int(Double(goal) * 1.2) {
             score += 5
         }
+        // ── Critical safety override ──
+        // Cap score if ANY vital is in danger zone — prevents misleading "Good" with dangerous readings
+        if let g = latestGlucose, g.value > 250 || g.value < 54 { score = min(score, 40) }  // >13.9 or <3.0 mmol/L
+        if let bp = latestBP, bp.systolic > 180 || bp.diastolic > 120 { score = min(score, 40) }  // Hypertensive crisis
+        if let hr = latestHR, hr.value < 40 || hr.value > 150 { score = min(score, 40) }  // Dangerous HR
+
         return min(100, max(0, score))
     }
 
+    // MARK: UK Glucose Display (mmol/L)
+
+    /// Convert mg/dL (stored via HealthKit) to mmol/L (UK display standard per NHS/NICE)
+    static func glucoseMmol(_ mgdl: Double) -> String {
+        String(format: "%.1f", mgdl / 18.0)
+    }
+
+    /// Format glucose for UK display: "5.5 mmol/L"
+    static func glucoseDisplayUK(_ mgdl: Double) -> String {
+        "\(String(format: "%.1f", mgdl / 18.0)) mmol/L"
+    }
+
     func glucoseStatus(_ v: Double) -> (label: String, color: Color) {
+        // v is in mg/dL internally. Thresholds per NHS/NICE:
+        // <3.9 mmol/L = Low, 3.9-5.5 = Normal, 5.6-7.8 = Good, 7.8-10.0 = High, >10.0 = Very High
         switch v {
-        case ..<70:    return ("Low",      .brandCoral)
-        case 70..<100: return ("Normal",   .brandGreen)
-        case 100..<140:return ("Good",     .brandTeal)
-        case 140..<180:return ("High",     .brandAmber)
-        default:       return ("Very High",.brandCoral)
+        case ..<70:    return ("Low",      .brandCoral)    // <3.9 mmol/L
+        case 70..<100: return ("Normal",   .brandGreen)    // 3.9-5.5 mmol/L
+        case 100..<140:return ("Good",     .brandTeal)     // 5.6-7.8 mmol/L
+        case 140..<180:return ("High",     .brandAmber)    // 7.8-10.0 mmol/L
+        default:       return ("Very High",.brandCoral)    // >10.0 mmol/L
         }
     }
 

@@ -212,6 +212,11 @@ class HealthSenseAgent {
     func respond(to input: String, conversationHistory: [(role: String, content: String)]) async -> (response: String, domain: HealthDomain, chips: [String]) {
         isThinking = true
 
+        // 0. Emergency detection — prepend banner but still answer the query
+        let emergencyKeywords = ["chest pain", "heart attack", "can't breathe", "cannot breathe",
+            "stroke", "seizure", "unconscious", "999", "911", "ambulance", "dying", "suicide", "self harm"]
+        let isEmergency = emergencyKeywords.contains(where: { input.lowercased().contains($0) })
+
         // 1. Classify intent & pick domain
         let domain = classifyDomain(input)
         currentDomain = domain
@@ -234,17 +239,27 @@ class HealthSenseAgent {
             // 4. Learn from this interaction
             await learnFromInteraction(query: input, response: reply, domain: domain)
 
-            // 5. Generate contextual chips
-            let chips = generateSmartChips(for: domain, query: input, response: reply)
+            // 5. Prepend emergency banner if needed (still returns full AI answer)
+            var finalReply = reply
+            if isEmergency {
+                finalReply = "\u{26A0}\u{FE0F} **If this is a medical emergency, call 999 (UK) or 911 (US) immediately.**\n\nWhile waiting for help: stay calm, follow the operator's instructions, and do not move the person unless they are in danger.\n\n---\n\n" + reply
+            }
 
-            return (reply, domain, chips)
+            // 6. Generate contextual chips
+            let chips = generateSmartChips(for: domain, query: input, response: finalReply)
+
+            return (finalReply, domain, chips)
         } catch {
             print("⚠️ HealthSenseAgent API error: \(error.localizedDescription)")
             isThinking = false
 
             // Intelligent fallback — synthesise from memory + health data
             let fallback = synthesiseFallbackResponse(for: input, domain: domain)
-            return (fallback.response, domain, fallback.chips)
+            var fallbackReply = fallback.response
+            if isEmergency {
+                fallbackReply = "\u{26A0}\u{FE0F} **If this is a medical emergency, call 999 (UK) or 911 (US) immediately.**\n\nWhile waiting for help: stay calm, follow the operator's instructions, and do not move the person unless they are in danger.\n\n---\n\n" + fallbackReply
+            }
+            return (fallbackReply, domain, fallback.chips)
         }
     }
 

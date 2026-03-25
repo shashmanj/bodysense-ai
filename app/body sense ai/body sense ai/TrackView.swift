@@ -67,6 +67,9 @@ struct TrackView: View {
                     .padding(.bottom, 24)
                 }
                 .background(Color.brandBg)
+                .refreshable {
+                    store.save()
+                }
             }
             .navigationTitle("Track")
             .navigationBarTitleDisplayMode(.large)
@@ -92,7 +95,7 @@ struct VitalsSection: View {
                     let s = store.glucoseStatus(g.value)
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("\(Int(g.value)) mg/dL")
+                            Text(HealthStore.glucoseDisplayUK(g.value))
                                 .font(.title2.bold())
                                 .foregroundColor(s.color)
                             Text(g.context.rawValue)

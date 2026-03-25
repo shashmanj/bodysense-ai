@@ -33,12 +33,28 @@ struct ReportsView: View {
                     .padding(.horizontal)
 
                     if segment == 0 {
-                        glucoseSummaryCard
-                        glucoseChartCard
-                        glucoseDistributionCard
+                        if filteredGlucose.isEmpty {
+                            emptyReportState(
+                                icon: "drop.fill",
+                                title: "No Glucose Data Yet",
+                                message: "Log your glucose readings in Track to see trends, averages, and time-in-range reports here."
+                            )
+                        } else {
+                            glucoseSummaryCard
+                            glucoseChartCard
+                            glucoseDistributionCard
+                        }
                     } else {
-                        bpSummaryCard
-                        bpChartCard
+                        if filteredBP.isEmpty {
+                            emptyReportState(
+                                icon: "heart.fill",
+                                title: "No Blood Pressure Data Yet",
+                                message: "Log your blood pressure readings in Track to see trends and averages here."
+                            )
+                        } else {
+                            bpSummaryCard
+                            bpChartCard
+                        }
                     }
 
                     medicationAdherenceCard
@@ -276,6 +292,24 @@ struct ReportsView: View {
         .cornerRadius(20)
         .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
         .padding(.horizontal)
+    }
+
+    // ── Empty State ──
+    func emptyReportState(icon: String, title: String, message: String) -> some View {
+        VStack(spacing: 16) {
+            Image(systemName: icon)
+                .font(.system(size: 48))
+                .foregroundColor(.secondary)
+            Text(title)
+                .font(.title3)
+                .fontWeight(.semibold)
+            Text(message)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding(.vertical, 60)
+        .frame(maxWidth: .infinity)
     }
 
     // ── Helpers ──

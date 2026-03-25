@@ -49,7 +49,9 @@ enum EncryptedStore {
         } catch {
             // If Keychain save fails, the key is still usable for this session.
             // On next launch a new key will be created, but old data won't decrypt.
+            #if DEBUG
             print("⚠️ EncryptedStore: Failed to save key to Keychain: \(error)")
+            #endif
         }
 
         return newKey

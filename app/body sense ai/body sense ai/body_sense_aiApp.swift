@@ -182,14 +182,18 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
     ) {
         let token = deviceToken.map { String(format: "%02.2hhx", $0) }.joined()
+        #if DEBUG
         print("APNs device token: \(token)")
+        #endif
     }
 
     func application(
         _ application: UIApplication,
         didFailToRegisterForRemoteNotificationsWithError error: Error
     ) {
+        #if DEBUG
         print("Failed to register for remote notifications: \(error)")
+        #endif
     }
 
     // MARK: - Daily Reminder Helper

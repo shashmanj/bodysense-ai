@@ -135,7 +135,9 @@ class HealthKitManager {
             try await hkStore.requestAuthorization(toShare: [], read: readTypes)
             await MainActor.run { isAuthorized = true }
         } catch {
+            #if DEBUG
             print("⚕️ HealthKit auth error: \(error.localizedDescription)")
+            #endif
         }
     }
 
@@ -528,11 +530,13 @@ class HealthKitManager {
         lastSyncTime = Date()
         store.save()
 
+        #if DEBUG
         print("⚕️ HealthKit sync complete: \(s) steps, \(String(format: "%.2f", d))km, \(c) kcal, " +
               "HR: \(h.map { "\($0)" } ?? "–"), HRV: \(hv.map { String(format: "%.0f", $0) } ?? "–")ms, " +
               "SpO2: \(sp.map { String(format: "%.0f%%", $0) } ?? "–"), Glucose: \(glu.map { String(format: "%.0f", $0) } ?? "–"), " +
               "BP: \(bpVal.map { "\($0.systolic)/\($0.diastolic)" } ?? "–"), Temp: \(bt.map { String(format: "%.1f°C", $0) } ?? "–"), " +
               "Weight: \(wt.map { String(format: "%.1fkg", $0) } ?? "–")")
+        #endif
     }
 
     // MARK: - Generic Fetch Helpers

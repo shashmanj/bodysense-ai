@@ -22,8 +22,13 @@ struct DashboardView: View {
             ScrollView {
                 VStack(spacing: 16) {
                     guidanceCard
-                    healthScoreCard
-                    TipsCardView()     // AI Health Insights — prominent position, user-swipeable + auto-rotates
+                    if hasMinimumData {
+                        healthScoreCard
+                        TipsCardView()     // AI Health Insights — prominent position, user-swipeable + auto-rotates
+                    } else {
+                        gettingToKnowYouCard
+                        healthScoreCardCollecting
+                    }
                     if !store.unreadAlerts.isEmpty { alertsCard }
                     quickStatsRow
                     calorieNutritionCard
@@ -81,6 +86,33 @@ struct DashboardView: View {
         return ", \(name.components(separatedBy: " ").first ?? name)"
     }
 
+    // MARK: - Data-First Gate
+    private var hasMinimumData: Bool {
+        let cal = Calendar.current
+        let threeDaysAgo = cal.date(byAdding: .day, value: -3, to: Date())!
+        let hasGlucose = store.glucoseReadings.contains { $0.date >= threeDaysAgo }
+        let hasBP = store.bpReadings.contains { $0.date >= threeDaysAgo }
+        let hasSleep = store.sleepEntries.contains { $0.date >= threeDaysAgo }
+        return [hasGlucose, hasBP, hasSleep].filter { $0 }.count >= 2
+    }
+
+    private var hasRecentGlucose: Bool {
+        let cutoff = Calendar.current.date(byAdding: .day, value: -3, to: Date())!
+        return store.glucoseReadings.contains { $0.date >= cutoff }
+    }
+    private var hasRecentBP: Bool {
+        let cutoff = Calendar.current.date(byAdding: .day, value: -3, to: Date())!
+        return store.bpReadings.contains { $0.date >= cutoff }
+    }
+    private var hasRecentSleep: Bool {
+        let cutoff = Calendar.current.date(byAdding: .day, value: -3, to: Date())!
+        return store.sleepEntries.contains { $0.date >= cutoff }
+    }
+    private var hasRecentSteps: Bool {
+        let cutoff = Calendar.current.date(byAdding: .day, value: -3, to: Date())!
+        return store.stepEntries.contains { $0.date >= cutoff }
+    }
+
     // MARK: - Guidance Card
     var guidanceCard: some View {
         BSCard {
@@ -119,6 +151,71 @@ struct DashboardView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Getting to Know You (Data-First)
+    private var gettingToKnowYouCard: some View {
+        BSCard {
+            VStack(spacing: 14) {
+                Image(systemName: "chart.line.uptrend.xyaxis.circle")
+                    .font(.system(size: 48))
+                    .foregroundColor(.brandTeal)
+
+                Text("Getting to Know You")
+                    .font(.title3.bold())
+
+                Text("Log your health data for 3+ days and I'll start finding patterns \u{2014} like how sleep affects your glucose, or how stress impacts your blood pressure.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+
+                VStack(alignment: .leading, spacing: 10) {
+                    dataProgressRow(label: "Glucose", icon: "drop.fill", color: .brandTeal, done: hasRecentGlucose)
+                    dataProgressRow(label: "Blood Pressure", icon: "heart.fill", color: .brandCoral, done: hasRecentBP)
+                    dataProgressRow(label: "Sleep", icon: "moon.fill", color: .brandPurple, done: hasRecentSleep)
+                    dataProgressRow(label: "Steps", icon: "figure.walk", color: .brandGreen, done: hasRecentSteps)
+                }
+                .padding(.top, 4)
+            }
+            .padding(.vertical, 4)
+        }
+    }
+
+    private func dataProgressRow(label: String, icon: String, color: Color, done: Bool) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .foregroundColor(done ? color : Color(.tertiaryLabel))
+                .frame(width: 24)
+            Text(label)
+                .font(.subheadline)
+                .foregroundColor(done ? .primary : .secondary)
+            Spacer()
+            Image(systemName: done ? "checkmark.circle.fill" : "circle")
+                .foregroundColor(done ? .brandGreen : Color(.tertiaryLabel))
+        }
+    }
+
+    // MARK: - Health Score (Collecting State)
+    private var healthScoreCardCollecting: some View {
+        BSCard {
+            HStack(spacing: 20) {
+                ZStack {
+                    Circle().stroke(Color.brandPurple.opacity(0.15), lineWidth: 10)
+                    VStack(spacing: 0) {
+                        Text("\u{2014}").font(.title.bold()).foregroundColor(.brandPurple)
+                        Text("Health\nScore").font(.caption2).foregroundColor(.secondary).multilineTextAlignment(.center)
+                    }
+                }
+                .frame(width: 90, height: 90)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Collecting data").font(.headline).foregroundColor(.secondary)
+                    Text("Your health score will appear once you've logged enough data across glucose, blood pressure, and sleep.")
+                        .font(.caption).foregroundColor(.secondary)
+                }
+            }
+        }
+        .accessibilityLabel("Health Score not yet available, collecting data")
     }
 
     // MARK: - Health Score

@@ -215,7 +215,9 @@ enum HealthDataExporter {
             try csv.write(to: fileURL, atomically: true, encoding: .utf8)
             return fileURL
         } catch {
+            #if DEBUG
             print("HealthDataExporter: Failed to write CSV: \(error)")
+            #endif
             return nil
         }
     }
@@ -663,7 +665,9 @@ enum HealthDataExporter {
             try data.write(to: fileURL)
             return fileURL
         } catch {
+            #if DEBUG
             print("HealthDataExporter: Failed to write PDF: \(error)")
+            #endif
             return nil
         }
     }

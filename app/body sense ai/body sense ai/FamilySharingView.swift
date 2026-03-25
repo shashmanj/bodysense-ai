@@ -56,16 +56,18 @@ struct FamilySharingView: View {
                     .padding(.horizontal)
 
                     // Invite button (disabled — coming soon)
-                    Button { } label: {
+                    VStack(spacing: 8) {
                         Label("Invite Family Member", systemImage: "person.badge.plus")
                             .font(.headline)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 16)
-                            .background(Color.brandPurple.opacity(0.15))
-                            .foregroundColor(.brandPurple)
+                            .background(Color(.tertiarySystemBackground))
+                            .foregroundColor(.secondary)
                             .cornerRadius(16)
+                        Text("Coming Soon")
+                            .font(.caption).fontWeight(.semibold)
+                            .foregroundColor(.secondary)
                     }
-                    .disabled(true)
                     .padding(.horizontal)
 
                     Text("Be the first to know when Family Sharing launches. We'll notify you automatically.")

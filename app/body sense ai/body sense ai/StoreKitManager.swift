@@ -91,7 +91,9 @@ final class StoreKitManager {
         } catch {
             errorMessage = "Failed to load products: \(error.localizedDescription)"
             isLoading = false
+            #if DEBUG
             print("❌ StoreKit: Failed to load products: \(error)")
+            #endif
         }
     }
 
@@ -135,7 +137,9 @@ final class StoreKitManager {
         } catch {
             isPurchasing = false
             errorMessage = "Purchase failed: \(error.localizedDescription)"
+            #if DEBUG
             print("❌ StoreKit: Purchase failed: \(error)")
+            #endif
             return false
         }
     }
