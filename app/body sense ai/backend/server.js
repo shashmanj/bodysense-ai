@@ -55,7 +55,8 @@ try {
     const admin = require("firebase-admin");
     admin.initializeApp({
       credential: admin.credential.applicationDefault(),
-      projectId: process.env.FIREBASE_PROJECT_ID
+      projectId: process.env.FIREBASE_PROJECT_ID,
+      storageBucket: process.env.FIREBASE_STORAGE_BUCKET || `${process.env.FIREBASE_PROJECT_ID}.firebasestorage.app`
     });
     db = admin.firestore();
     console.log("Firebase connected:", process.env.FIREBASE_PROJECT_ID);
@@ -64,11 +65,16 @@ try {
   console.log("Firebase not configured — running Stripe-only mode");
 }
 
-// ── CEO Auth Middleware ──────────────────────────────────────────────────
+// ── CEO Auth Middleware (SHA-256 secret code, NOT email-based) ────────────
+const crypto = require("crypto");
+const CEO_CODE_HASH = "03795745ffbd9026bde41e991f91df7ebdee9a94268574601775325c864b6b30";
+
 function requireCEO(req, res, next) {
-  const email = req.headers["x-ceo-email"] || req.body?.ceoEmail;
-  if (email !== "kiran.shashi47.sk@gmail.com") {
-    return res.status(403).json({ error: "Unauthorized — CEO access only" });
+  const code = req.headers["x-ceo-code"] || req.body?.ceoCode;
+  if (!code) return res.status(403).json({ error: "CEO access code required" });
+  const hash = crypto.createHash("sha256").update(code).digest("hex");
+  if (hash !== CEO_CODE_HASH) {
+    return res.status(403).json({ error: "Unauthorized — invalid CEO code" });
   }
   next();
 }
@@ -530,6 +536,158 @@ app.post("/ai/chat", aiLimiter, async (req, res) => {
   }
 });
 
+// ── GMC Live Verification ──────────────────────────────────────────────
+app.post("/verify-gmc", async (req, res) => {
+  try {
+    const { gmcNumber } = req.body;
+    if (!gmcNumber) return res.status(400).json({ error: "GMC number required" });
+
+    // Validate format: exactly 7 digits, first digit 1-9
+    if (!/^[1-9]\d{6}$/.test(gmcNumber)) {
+      return res.status(400).json({ error: "Invalid GMC format. Must be exactly 7 digits, first digit 1-9." });
+    }
+
+    // Live lookup against GMC register
+    const gmcRes = await fetch(`https://www.gmc-uk.org/api/gmc/print/doctor?no=${gmcNumber}`, {
+      headers: { "Accept": "application/json", "User-Agent": "BodySenseAI/1.0" }
+    });
+
+    if (!gmcRes.ok) {
+      return res.json({
+        valid: false,
+        error: "GMC number not found on the register. Please check and try again."
+      });
+    }
+
+    const data = await gmcRes.json();
+
+    // Parse GMC response — extract key fields
+    const result = {
+      valid: true,
+      gmcNumber,
+      registeredName: data.doctorName || data.name || "",
+      registrationType: data.registrationType || data.regType || "",
+      licenceToPractise: !!(data.licenceToPractise || data.hasLicence),
+      registrationDate: data.registrationDate || data.regDate || "",
+      conditions: data.conditions || [],
+      undertakings: data.undertakings || []
+    };
+
+    // Block if no licence to practise
+    if (!result.licenceToPractise) {
+      result.error = "Your GMC record shows no current licence to practise. You must hold a valid licence to practise in the UK before applying.";
+    }
+
+    res.json(result);
+
+  } catch (err) {
+    console.error("GMC verification error:", err.message);
+    // Fallback: accept the number but flag as unverified
+    res.json({
+      valid: false,
+      error: "Unable to verify GMC number at this time. The GMC register may be temporarily unavailable. Please try again later.",
+      gmcNumber: req.body.gmcNumber
+    });
+  }
+});
+
+// ── Doctor Document Upload ──────────────────────────────────────────────
+const multer = require("multer");
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 } // 10MB max
+});
+
+app.post("/upload-doctor-document", upload.single("document"), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+
+    const { userId, documentType } = req.body;
+    if (!userId || !documentType) {
+      return res.status(400).json({ error: "userId and documentType are required" });
+    }
+
+    const validTypes = ["photoId", "dbsCertificate", "indemnityInsurance", "qualificationCertificate", "additional"];
+    if (!validTypes.includes(documentType)) {
+      return res.status(400).json({ error: `Invalid documentType. Must be one of: ${validTypes.join(", ")}` });
+    }
+
+    // Save to Firebase Storage if available
+    const admin = require("firebase-admin");
+    if (admin.apps.length > 0) {
+      const bucket = admin.storage().bucket();
+      const fileName = `doctor-applications/${userId}/documents/${documentType}/${Date.now()}_${req.file.originalname}`;
+      const file = bucket.file(fileName);
+
+      await file.save(req.file.buffer, {
+        metadata: { contentType: req.file.mimetype },
+        public: false
+      });
+
+      // Get signed URL (valid 7 days)
+      const [url] = await file.getSignedUrl({
+        action: "read",
+        expires: Date.now() + 7 * 24 * 60 * 60 * 1000
+      });
+
+      // Also store reference in Firestore
+      if (db) {
+        await db.collection("doctorApplications").doc(userId).set({
+          [`documents.${documentType}`]: {
+            storagePath: fileName,
+            fileName: req.file.originalname,
+            fileSize: req.file.size,
+            mimeType: req.file.mimetype,
+            uploadedAt: admin.firestore.FieldValue.serverTimestamp(),
+            url
+          }
+        }, { merge: true });
+      }
+
+      res.json({
+        success: true,
+        storagePath: fileName,
+        fileName: req.file.originalname,
+        fileSize: req.file.size,
+        url
+      });
+    } else {
+      // No Firebase — store locally (development fallback)
+      const fs = require("fs");
+      const path = require("path");
+      const dir = path.join(__dirname, "uploads", userId, documentType);
+      fs.mkdirSync(dir, { recursive: true });
+      const filePath = path.join(dir, req.file.originalname);
+      fs.writeFileSync(filePath, req.file.buffer);
+
+      res.json({
+        success: true,
+        storagePath: filePath,
+        fileName: req.file.originalname,
+        fileSize: req.file.size,
+        mode: "local"
+      });
+    }
+  } catch (err) {
+    console.error("Document upload error:", err.message);
+    res.status(500).json({ error: "Upload failed: " + err.message });
+  }
+});
+
+// ── Get Doctor Documents (for CEO review) ───────────────────────────────
+app.get("/doctor-documents/:userId", requireCEO, async (req, res) => {
+  try {
+    if (!db) return res.json({ documents: {}, mode: "local" });
+
+    const doc = await db.collection("doctorApplications").doc(req.params.userId).get();
+    if (!doc.exists) return res.status(404).json({ error: "Application not found" });
+
+    res.json({ documents: doc.data()?.documents || {} });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Start ─────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`\nBodySense AI backend listening on port ${PORT}`);
@@ -548,5 +706,8 @@ app.listen(PORT, () => {
   console.log(`    POST /gdpr/export`);
   console.log(`    DELETE /gdpr/delete`);
   console.log(`    POST /ai/chat (AI proxy → Anthropic)`);
+  console.log(`    POST /verify-gmc (GMC live lookup)`);
+  console.log(`    POST /upload-doctor-document (document upload)`);
+  console.log(`    GET  /doctor-documents/:userId (CEO review)`);
   console.log(`  AI: ${process.env.ANTHROPIC_API_KEY ? "Configured" : "Not configured (set ANTHROPIC_API_KEY)"}\n`);
 });
