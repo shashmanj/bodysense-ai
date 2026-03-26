@@ -324,6 +324,10 @@ struct WelcomeScreen: View {
     let onRegisterPatient: () -> Void
     let onRegisterDoctor: () -> Void
 
+    @State private var showPhoneSheet = false
+    @State private var showEmailSheet = false
+    @State private var authError: String?
+
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: 0) {
@@ -357,7 +361,7 @@ struct WelcomeScreen: View {
                     .accessibilityLabel("Visit BodySense AI website")
                     .accessibilityHint("Opens bodysenseai.co.uk in your browser")
                 }
-                .padding(.bottom, 44)
+                .padding(.bottom, 36)
 
                 // ── Sign In label ────────────────────────────────────────────
                 Text("Sign In")
@@ -367,16 +371,55 @@ struct WelcomeScreen: View {
                     .padding(.horizontal, 28)
                     .padding(.bottom, 10)
 
-                // ── Sign in with Apple (the only real auth method) ──
+                // ── Sign in with Apple (primary) ──
                 SignInWithAppleButton(
-                    onSuccess: {
-                        onSignIn()
-                    }
+                    onSuccess: { onSignIn() }
                 )
                 .padding(.horizontal, 28)
-                .padding(.bottom, 16)
-                .accessibilityLabel("Sign in with Apple")
-                .accessibilityHint("Create or sign into your BodySense AI account")
+                .padding(.bottom, 10)
+
+                // ── Sign in with Google ──
+                socialBtn(
+                    icon: "g.circle.fill", label: "Sign in with Google",
+                    bg: .white, fg: Color(.darkGray), iconTint: .red
+                ) {
+                    Task {
+                        do {
+                            try await FirebaseAuthManager.shared.signInWithGoogle()
+                            onSignIn()
+                        } catch {
+                            authError = error.localizedDescription
+                        }
+                    }
+                }
+
+                // ── Sign in with Phone ──
+                socialBtn(
+                    icon: "phone.fill", label: "Sign in with Phone",
+                    bg: Color.brandTeal, fg: .white, iconTint: .white
+                ) {
+                    showPhoneSheet = true
+                }
+
+                // ── Sign in with Email ──
+                socialBtn(
+                    icon: "envelope.fill", label: "Sign in with Email",
+                    bg: Color.white.opacity(0.15), fg: .white, iconTint: .white,
+                    outlined: true
+                ) {
+                    showEmailSheet = true
+                }
+
+                // ── Or divider ──
+                HStack {
+                    Rectangle().fill(Color.white.opacity(0.25)).frame(height: 1)
+                    Text("or")
+                        .font(.caption).foregroundColor(.white.opacity(0.55))
+                        .padding(.horizontal, 10).fixedSize()
+                    Rectangle().fill(Color.white.opacity(0.25)).frame(height: 1)
+                }
+                .padding(.horizontal, 28)
+                .padding(.vertical, 16)
 
                 // ── Create New Account ──
                 Button(action: onRegisterPatient) {
@@ -390,8 +433,6 @@ struct WelcomeScreen: View {
                         .shadow(color: .black.opacity(0.12), radius: 6, y: 3)
                 }
                 .padding(.horizontal, 28)
-                .accessibilityLabel("Create new account")
-                .accessibilityHint("Register a new patient account with BodySense AI")
 
                 // ── Doctor divider ────────────────────────────────────────────
                 HStack {
@@ -402,7 +443,7 @@ struct WelcomeScreen: View {
                     Rectangle().fill(Color.white.opacity(0.25)).frame(height: 1)
                 }
                 .padding(.horizontal, 28)
-                .padding(.vertical, 24)
+                .padding(.vertical, 20)
 
                 // ── Doctor Sign In ────────────────────────────────────────────
                 Button(action: onSignIn) {
@@ -420,8 +461,6 @@ struct WelcomeScreen: View {
                         .stroke(Color.brandTeal.opacity(0.45), lineWidth: 1.5))
                 }
                 .padding(.horizontal, 28)
-                .accessibilityLabel("Sign in as a doctor")
-                .accessibilityHint("Sign into your doctor account")
 
                 // ── Register as Doctor ────────────────────────────────────────
                 Button(action: onRegisterDoctor) {
@@ -434,9 +473,21 @@ struct WelcomeScreen: View {
                 }
                 .padding(.top, 14)
                 .padding(.bottom, 50)
-                .accessibilityLabel("Register as a verified doctor")
-                .accessibilityHint("Create a new verified doctor account")
             }
+        }
+        .sheet(isPresented: $showPhoneSheet) {
+            PhoneSignInSheet(onDone: onSignIn)
+        }
+        .sheet(isPresented: $showEmailSheet) {
+            EmailSignInSheet(onDone: onSignIn)
+        }
+        .alert("Sign In Error", isPresented: .init(
+            get: { authError != nil },
+            set: { if !$0 { authError = nil } }
+        )) {
+            Button("OK") { authError = nil }
+        } message: {
+            Text(authError ?? "")
         }
     }
 
@@ -464,8 +515,307 @@ struct WelcomeScreen: View {
         }
         .padding(.horizontal, 28)
         .padding(.bottom, 10)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(label)
+    }
+}
+
+// MARK: - Phone Sign In Sheet
+
+struct PhoneSignInSheet: View {
+    let onDone: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var phoneNumber = ""
+    @State private var otpCode = ""
+    @State private var selectedCountry = CountryCode.uk
+    @State private var isLoading = false
+    @State private var errorMessage: String?
+    @State private var step: PhoneStep = .enterNumber
+
+    enum PhoneStep { case enterNumber, enterOTP }
+
+    struct CountryCode: Identifiable, Hashable {
+        let id: String
+        let name: String
+        let dial: String
+        let flag: String
+
+        static let uk = CountryCode(id: "GB", name: "United Kingdom", dial: "+44", flag: "🇬🇧")
+        static let india = CountryCode(id: "IN", name: "India", dial: "+91", flag: "🇮🇳")
+        static let us = CountryCode(id: "US", name: "United States", dial: "+1", flag: "🇺🇸")
+
+        static let all: [CountryCode] = [
+            uk, india, us,
+            CountryCode(id: "AE", name: "UAE", dial: "+971", flag: "🇦🇪"),
+            CountryCode(id: "AU", name: "Australia", dial: "+61", flag: "🇦🇺"),
+            CountryCode(id: "CA", name: "Canada", dial: "+1", flag: "🇨🇦"),
+            CountryCode(id: "DE", name: "Germany", dial: "+49", flag: "🇩🇪"),
+            CountryCode(id: "FR", name: "France", dial: "+33", flag: "🇫🇷"),
+            CountryCode(id: "NG", name: "Nigeria", dial: "+234", flag: "🇳🇬"),
+            CountryCode(id: "PK", name: "Pakistan", dial: "+92", flag: "🇵🇰"),
+            CountryCode(id: "PH", name: "Philippines", dial: "+63", flag: "🇵🇭"),
+            CountryCode(id: "SG", name: "Singapore", dial: "+65", flag: "🇸🇬"),
+            CountryCode(id: "ZA", name: "South Africa", dial: "+27", flag: "🇿🇦"),
+        ]
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 24) {
+                if step == .enterNumber {
+                    // Country picker + phone number
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Country").font(.subheadline).foregroundColor(.secondary)
+                        Picker("Country", selection: $selectedCountry) {
+                            ForEach(CountryCode.all) { country in
+                                Text("\(country.flag) \(country.name) (\(country.dial))").tag(country)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Phone Number").font(.subheadline).foregroundColor(.secondary)
+                        HStack {
+                            Text(selectedCountry.dial)
+                                .font(.headline)
+                                .foregroundColor(.secondary)
+                                .frame(width: 60)
+                            TextField("7700 900000", text: $phoneNumber)
+                                .keyboardType(.phonePad)
+                                .font(.title3)
+                        }
+                        .padding()
+                        .background(Color(.tertiarySystemBackground))
+                        .cornerRadius(14)
+                    }
+
+                    Button {
+                        Task { await sendOTP() }
+                    } label: {
+                        Group {
+                            if isLoading {
+                                ProgressView()
+                            } else {
+                                Text("Send Verification Code")
+                            }
+                        }
+                        .font(.headline).foregroundColor(.white)
+                        .frame(maxWidth: .infinity).frame(height: 54)
+                        .background(phoneNumber.count >= 6 ? Color.brandPurple : Color.gray)
+                        .cornerRadius(14)
+                    }
+                    .disabled(phoneNumber.count < 6 || isLoading)
+
+                } else {
+                    // OTP entry
+                    VStack(spacing: 8) {
+                        Text("Enter the 6-digit code sent to")
+                            .font(.subheadline).foregroundColor(.secondary)
+                        Text("\(selectedCountry.dial) \(phoneNumber)")
+                            .font(.headline)
+                    }
+
+                    TextField("000000", text: $otpCode)
+                        .keyboardType(.numberPad)
+                        .font(.system(size: 32, weight: .bold, design: .monospaced))
+                        .multilineTextAlignment(.center)
+                        .padding()
+                        .background(Color(.tertiarySystemBackground))
+                        .cornerRadius(14)
+
+                    Button {
+                        Task { await verifyOTP() }
+                    } label: {
+                        Group {
+                            if isLoading {
+                                ProgressView()
+                            } else {
+                                Text("Verify & Sign In")
+                            }
+                        }
+                        .font(.headline).foregroundColor(.white)
+                        .frame(maxWidth: .infinity).frame(height: 54)
+                        .background(otpCode.count == 6 ? Color.brandPurple : Color.gray)
+                        .cornerRadius(14)
+                    }
+                    .disabled(otpCode.count != 6 || isLoading)
+
+                    Button("Resend Code") {
+                        Task { await sendOTP() }
+                    }
+                    .font(.subheadline).foregroundColor(.brandPurple)
+                }
+
+                if let error = errorMessage {
+                    Text(error)
+                        .font(.caption).foregroundColor(.red)
+                        .multilineTextAlignment(.center)
+                }
+
+                Spacer()
+            }
+            .padding(24)
+            .navigationTitle("Phone Sign In")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func sendOTP() async {
+        isLoading = true
+        errorMessage = nil
+        let fullNumber = selectedCountry.dial + phoneNumber.replacingOccurrences(of: " ", with: "")
+        do {
+            try await FirebaseAuthManager.shared.sendOTP(to: fullNumber)
+            step = .enterOTP
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        isLoading = false
+    }
+
+    private func verifyOTP() async {
+        isLoading = true
+        errorMessage = nil
+        do {
+            try await FirebaseAuthManager.shared.verifyOTP(otpCode)
+            dismiss()
+            onDone()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        isLoading = false
+    }
+}
+
+// MARK: - Email Sign In Sheet
+
+struct EmailSignInSheet: View {
+    let onDone: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var email = ""
+    @State private var password = ""
+    @State private var name = ""
+    @State private var isSignUp = false
+    @State private var isLoading = false
+    @State private var errorMessage: String?
+    @State private var showForgotPassword = false
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 20) {
+                // Toggle sign-in / sign-up
+                Picker("Mode", selection: $isSignUp) {
+                    Text("Sign In").tag(false)
+                    Text("Create Account").tag(true)
+                }
+                .pickerStyle(.segmented)
+
+                if isSignUp {
+                    TextField("Full Name", text: $name)
+                        .textContentType(.name)
+                        .padding()
+                        .background(Color(.tertiarySystemBackground))
+                        .cornerRadius(14)
+                }
+
+                TextField("Email", text: $email)
+                    .textContentType(.emailAddress)
+                    .keyboardType(.emailAddress)
+                    .autocapitalization(.none)
+                    .padding()
+                    .background(Color(.tertiarySystemBackground))
+                    .cornerRadius(14)
+
+                SecureField("Password", text: $password)
+                    .textContentType(isSignUp ? .newPassword : .password)
+                    .padding()
+                    .background(Color(.tertiarySystemBackground))
+                    .cornerRadius(14)
+
+                if !isSignUp {
+                    Button("Forgot password?") {
+                        showForgotPassword = true
+                    }
+                    .font(.caption).foregroundColor(.brandPurple)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+
+                Button {
+                    Task { await authenticate() }
+                } label: {
+                    Group {
+                        if isLoading {
+                            ProgressView()
+                        } else {
+                            Text(isSignUp ? "Create Account" : "Sign In")
+                        }
+                    }
+                    .font(.headline).foregroundColor(.white)
+                    .frame(maxWidth: .infinity).frame(height: 54)
+                    .background(isFormValid ? Color.brandPurple : Color.gray)
+                    .cornerRadius(14)
+                }
+                .disabled(!isFormValid || isLoading)
+
+                if let error = errorMessage {
+                    Text(error)
+                        .font(.caption).foregroundColor(.red)
+                        .multilineTextAlignment(.center)
+                }
+
+                Spacer()
+            }
+            .padding(24)
+            .navigationTitle("Email Sign In")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+            .alert("Reset Password", isPresented: $showForgotPassword) {
+                TextField("Email", text: $email)
+                Button("Send Reset Link") {
+                    Task {
+                        try? await FirebaseAuthManager.shared.sendPasswordReset(to: email)
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Enter your email address and we'll send you a password reset link.")
+            }
+        }
+    }
+
+    private var isFormValid: Bool {
+        let emailOK = email.contains("@") && email.contains(".")
+        let passOK = password.count >= 6
+        if isSignUp {
+            return emailOK && passOK && name.trimmingCharacters(in: .whitespaces).count >= 2
+        }
+        return emailOK && passOK
+    }
+
+    private func authenticate() async {
+        isLoading = true
+        errorMessage = nil
+        do {
+            if isSignUp {
+                try await FirebaseAuthManager.shared.signUpWithEmail(email, password: password, name: name)
+            } else {
+                try await FirebaseAuthManager.shared.signInWithEmail(email, password: password)
+            }
+            dismiss()
+            onDone()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        isLoading = false
     }
 }
 

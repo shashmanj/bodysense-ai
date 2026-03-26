@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>336626428705-5ddhee84pj61rc5o6r1luuv89k171jof.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.336626428705-5ddhee84pj61rc5o6r1luuv89k171jof</string>
+	<key>API_KEY</key>
+	<string>AIzaSyBYM1B34zea34AbsHbyuECS4fXjCjYKTJE</string>
+	<key>GCM_SENDER_ID</key>
+	<string>336626428705</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>com.base693c0fe8f0479560056f69f4.app</string>
+	<key>PROJECT_ID</key>
+	<string>bodysense-ai</string>
+	<key>STORAGE_BUCKET</key>
+	<string>bodysense-ai.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:336626428705:ios:00afda93371ce79798ec60</string>
+</dict>
+</plist>

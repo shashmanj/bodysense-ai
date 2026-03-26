@@ -10,6 +10,8 @@
 import SwiftUI
 @preconcurrency import UserNotifications
 import HealthKit
+import FirebaseCore
+import GoogleSignIn
 
 @main
 struct body_sense_aiApp: App {
@@ -130,6 +132,9 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
 
+        // ── Configure Firebase ──
+        FirebaseAuthManager.configure()
+
         // ── Set notification delegate (permission is requested during onboarding) ──
         let center = UNUserNotificationCenter.current()
         center.delegate = self
@@ -194,6 +199,15 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         #if DEBUG
         print("Failed to register for remote notifications: \(error)")
         #endif
+    }
+
+    // ── Google Sign-In URL handler ──
+    func application(
+        _ app: UIApplication,
+        open url: URL,
+        options: [UIApplication.OpenURLOptionsKey: Any] = [:]
+    ) -> Bool {
+        return GIDSignIn.sharedInstance.handle(url)
     }
 
     // MARK: - Daily Reminder Helper
