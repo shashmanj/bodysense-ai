@@ -7,6 +7,7 @@
 
 import SwiftUI
 import AuthenticationServices
+import FirebaseAuth
 
 // MARK: - ContentView (root)
 
@@ -1159,6 +1160,14 @@ struct DoctorRegistrationView: View {
     // Personal
     @State private var fullName     = ""
     @State private var email        = ""
+    @State private var phoneNumber  = ""
+    @State private var phoneCountryCode = "+44"
+    @State private var phoneOTPCode = ""
+    @State private var isPhoneVerified = false
+    @State private var isEmailVerified = false
+    @State private var isSendingOTP = false
+    @State private var isVerifyingOTP = false
+    @State private var verificationError: String?
     @State private var age          = 30
     @State private var gender       = "Male"
     @State private var country      = "United Kingdom"
@@ -1187,6 +1196,48 @@ struct DoctorRegistrationView: View {
     @State private var inPersonFee  = "75"
     // Bio
     @State private var intro        = ""
+    // Document Upload
+    @State private var photoIDImage: UIImage?
+    @State private var dbsCertImage: UIImage?
+    @State private var insuranceImage: UIImage?
+    @State private var qualificationImage: UIImage?
+    @State private var showDocPicker: DocumentType?
+    @State private var isUploading = false
+    @State private var uploadProgress: [DocumentType: Bool] = [:]
+    // GMC Live Verification
+    @State private var isVerifyingGMC = false
+    @State private var gmcVerificationResult: GMCVerificationResult?
+
+    enum GMCVerificationResult {
+        case verified(name: String)
+        case notFound
+        case error(String)
+    }
+
+    enum DocumentType: String, CaseIterable, Identifiable {
+        case photoId = "Photo ID"
+        case dbsCertificate = "DBS Certificate"
+        case indemnityInsurance = "Indemnity Insurance"
+        case qualification = "Qualification Certificate"
+
+        var id: String { rawValue }
+        var icon: String {
+            switch self {
+            case .photoId: return "person.text.rectangle.fill"
+            case .dbsCertificate: return "checkmark.shield.fill"
+            case .indemnityInsurance: return "doc.text.fill"
+            case .qualification: return "graduationcap.fill"
+            }
+        }
+        var apiKey: String {
+            switch self {
+            case .photoId: return "photoId"
+            case .dbsCertificate: return "dbsCertificate"
+            case .indemnityInsurance: return "indemnityInsurance"
+            case .qualification: return "qualificationCertificate"
+            }
+        }
+    }
 
     let specialties = ["General Practice","Cardiologist","Diabetologist","Endocrinologist",
                        "Nephrologist","Nutritionist","Psychiatrist","Neurologist",
@@ -1195,7 +1246,7 @@ struct DoctorRegistrationView: View {
     let gmcStatuses = ["Full","Provisional","Specialist Register","GP Register"]
     let regulatoryBodies = ["GMC","ECFMG","EPIC","AHPRA","MCC","IMC","HPCSA"]
 
-    private let pageLabels = ["Personal", "Professional", "GMC", "International", "Fees", "Done"]
+    private let pageLabels = ["Personal", "Professional", "GMC", "International", "Fees", "Documents", "Done"]
 
     var body: some View {
         ZStack {
@@ -1211,15 +1262,15 @@ struct DoctorRegistrationView: View {
                                 .font(.body.bold()).foregroundColor(.primary)
                         }
                         VStack(spacing: 2) {
-                            Text(page < 5 ? pageLabels[page] : "Done")
+                            Text(page < 6 ? pageLabels[page] : "Done")
                                 .font(.headline)
-                            Text("Step \(min(page + 1, 5)) of 5")
+                            Text("Step \(min(page + 1, 6)) of 6")
                                 .font(.caption2).foregroundColor(.secondary)
                         }
                         Spacer()
                         // Step indicator dots
                         HStack(spacing: 5) {
-                            ForEach(0..<5, id: \.self) { i in
+                            ForEach(0..<6, id: \.self) { i in
                                 Circle()
                                     .fill(i < page ? Color.brandTeal : i == page ? Color.brandPurple : Color(.systemGray4))
                                     .frame(width: i == page ? 10 : 7, height: i == page ? 10 : 7)
@@ -1233,7 +1284,7 @@ struct DoctorRegistrationView: View {
                         ZStack(alignment: .leading) {
                             Capsule().fill(Color(.systemGray5)).frame(height: 3)
                             Capsule().fill(Color.brandTeal)
-                                .frame(width: g.size.width * (Double(min(page, 4) + 1) / 5.0), height: 3)
+                                .frame(width: g.size.width * (Double(min(page, 5) + 1) / 6.0), height: 3)
                         }
                     }
                     .frame(height: 3)
@@ -1251,13 +1302,122 @@ struct DoctorRegistrationView: View {
                             VStack(spacing: 14) {
                                 docRegSection("Personal Information") {
                                     docRegField("Full Name", prompt: "Dr. Jane Smith", text: $fullName, icon: "person.fill")
-                                    docRegField("Email", prompt: "doctor@example.com", text: $email, icon: "envelope.fill")
-                                        .textInputAutocapitalization(.never)
-                                        .keyboardType(.emailAddress)
-                                    if !email.isEmpty && !InputValidator.isValidEmail(email) {
-                                        Text("Enter a valid email address")
-                                            .font(.caption).foregroundColor(.red).padding(.leading, 4)
+
+                                    // ── Email: Pre-filled from Firebase Auth, verified badge ──
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        HStack {
+                                            docRegField("Email", prompt: "doctor@example.com", text: $email, icon: "envelope.fill")
+                                                .textInputAutocapitalization(.never)
+                                                .keyboardType(.emailAddress)
+                                                .disabled(isEmailVerified)
+                                            if isEmailVerified {
+                                                Image(systemName: "checkmark.seal.fill")
+                                                    .foregroundColor(.brandGreen)
+                                                    .font(.title3)
+                                            }
+                                        }
+                                        if isEmailVerified {
+                                            Text("Verified via sign-in")
+                                                .font(.caption).foregroundColor(.brandGreen)
+                                        } else if !email.isEmpty && !InputValidator.isValidEmail(email) {
+                                            Text("Enter a valid email address")
+                                                .font(.caption).foregroundColor(.red).padding(.leading, 4)
+                                        }
                                     }
+
+                                    // ── Phone: With OTP verification ──
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        HStack(spacing: 8) {
+                                            // Country code picker
+                                            Picker("", selection: $phoneCountryCode) {
+                                                Text("+44 UK").tag("+44")
+                                                Text("+91 IN").tag("+91")
+                                                Text("+1 US").tag("+1")
+                                                Text("+971 AE").tag("+971")
+                                                Text("+61 AU").tag("+61")
+                                                Text("+49 DE").tag("+49")
+                                                Text("+33 FR").tag("+33")
+                                                Text("+81 JP").tag("+81")
+                                                Text("+86 CN").tag("+86")
+                                                Text("+234 NG").tag("+234")
+                                                Text("+27 ZA").tag("+27")
+                                                Text("+55 BR").tag("+55")
+                                                Text("+82 KR").tag("+82")
+                                            }
+                                            .frame(width: 100)
+                                            .disabled(isPhoneVerified)
+
+                                            TextField("Phone number", text: $phoneNumber)
+                                                .keyboardType(.phonePad)
+                                                .padding(10)
+                                                .background(Color(.tertiarySystemBackground))
+                                                .cornerRadius(10)
+                                                .disabled(isPhoneVerified)
+
+                                            if isPhoneVerified {
+                                                Image(systemName: "checkmark.seal.fill")
+                                                    .foregroundColor(.brandGreen)
+                                                    .font(.title3)
+                                            }
+                                        }
+
+                                        if isPhoneVerified {
+                                            Text("Phone verified")
+                                                .font(.caption).foregroundColor(.brandGreen)
+                                        } else if !phoneNumber.isEmpty && phoneNumber.count >= 7 {
+                                            if FirebaseAuthManager.shared.isAwaitingOTP {
+                                                // OTP entry
+                                                HStack(spacing: 8) {
+                                                    TextField("Enter 6-digit code", text: $phoneOTPCode)
+                                                        .keyboardType(.numberPad)
+                                                        .padding(10)
+                                                        .background(Color(.tertiarySystemBackground))
+                                                        .cornerRadius(10)
+                                                        .frame(maxWidth: 180)
+
+                                                    Button {
+                                                        Task { await verifyDoctorPhoneOTP() }
+                                                    } label: {
+                                                        if isVerifyingOTP {
+                                                            ProgressView().tint(.white)
+                                                        } else {
+                                                            Text("Verify")
+                                                        }
+                                                    }
+                                                    .font(.subheadline.bold())
+                                                    .padding(.horizontal, 16).padding(.vertical, 10)
+                                                    .background(phoneOTPCode.count == 6 ? Color.brandTeal : Color(.systemGray4))
+                                                    .foregroundColor(.white)
+                                                    .cornerRadius(10)
+                                                    .disabled(phoneOTPCode.count != 6 || isVerifyingOTP)
+                                                }
+                                            } else {
+                                                // Send OTP button
+                                                Button {
+                                                    Task { await sendDoctorPhoneOTP() }
+                                                } label: {
+                                                    HStack(spacing: 6) {
+                                                        if isSendingOTP {
+                                                            ProgressView().tint(.brandTeal)
+                                                        }
+                                                        Text(isSendingOTP ? "Sending..." : "Verify Phone Number")
+                                                            .font(.caption.bold())
+                                                    }
+                                                    .padding(.vertical, 8).padding(.horizontal, 16)
+                                                    .background(Color.brandTeal.opacity(0.12))
+                                                    .foregroundColor(.brandTeal)
+                                                    .cornerRadius(10)
+                                                }
+                                                .disabled(isSendingOTP)
+                                            }
+                                        }
+
+                                        if let error = verificationError {
+                                            Text(error)
+                                                .font(.caption).foregroundColor(.red)
+                                        }
+                                    }
+
                                     HStack {
                                         Label("Age", systemImage: "calendar").font(.subheadline).foregroundColor(.secondary)
                                         Spacer()
@@ -1279,17 +1439,18 @@ struct DoctorRegistrationView: View {
                                 }
 
                                 // Validation message
-                                if !InputValidator.isValidName(fullName) || !InputValidator.isValidEmail(email) {
-                                    Label("Valid name (2+ letters) and email are required", systemImage: "exclamationmark.circle")
+                                if !canProceedPage0 {
+                                    Label("Name, verified email, and verified phone required", systemImage: "exclamationmark.circle")
                                         .font(.caption).foregroundColor(.brandAmber)
                                 }
 
                                 docRegCTA("Continue") { withAnimation(.easeInOut(duration: 0.25)) { page = 1 } }
-                                    .disabled(!InputValidator.isValidName(fullName) || !InputValidator.isValidEmail(email))
-                                    .opacity(!InputValidator.isValidName(fullName) || !InputValidator.isValidEmail(email) ? 0.4 : 1)
+                                    .disabled(!canProceedPage0)
+                                    .opacity(!canProceedPage0 ? 0.4 : 1)
                             }
                             .padding(16).padding(.bottom, 24)
                         }
+                        .onAppear { prefillFromFirebaseAuth() }
 
                     // ── Page 1: Professional Details ──
                     case 1:
@@ -1352,6 +1513,59 @@ struct DoctorRegistrationView: View {
                                         Text("GMC must be exactly 7 digits, cannot start with 0")
                                             .font(.caption).foregroundColor(.red).padding(.leading, 4)
                                     }
+
+                                    // ── GMC Live Verification Button ──
+                                    Button {
+                                        Task { await verifyGMCLive() }
+                                    } label: {
+                                        HStack(spacing: 8) {
+                                            if isVerifyingGMC {
+                                                ProgressView().tint(.white)
+                                            } else {
+                                                Image(systemName: "checkmark.shield.fill")
+                                            }
+                                            Text(isVerifyingGMC ? "Verifying..." : "Verify with GMC")
+                                                .fontWeight(.semibold)
+                                        }
+                                        .font(.subheadline)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 12)
+                                        .background(InputValidator.isValidGMC(gmcNumber) && !isVerifyingGMC ? Color.brandTeal : Color(.systemGray4))
+                                        .foregroundColor(.white)
+                                        .cornerRadius(12)
+                                    }
+                                    .disabled(!InputValidator.isValidGMC(gmcNumber) || isVerifyingGMC)
+
+                                    // ── GMC Verification Result ──
+                                    if let result = gmcVerificationResult {
+                                        HStack(spacing: 8) {
+                                            switch result {
+                                            case .verified(let name):
+                                                Image(systemName: "checkmark.circle.fill").foregroundColor(.brandGreen)
+                                                VStack(alignment: .leading, spacing: 2) {
+                                                    Text("Verified").font(.caption).fontWeight(.semibold).foregroundColor(.brandGreen)
+                                                    Text(name).font(.caption2).foregroundColor(.secondary)
+                                                }
+                                            case .notFound:
+                                                Image(systemName: "xmark.circle.fill").foregroundColor(.red)
+                                                Text("GMC number not found on the register").font(.caption).foregroundColor(.red)
+                                            case .error(let msg):
+                                                Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.orange)
+                                                Text(msg).font(.caption).foregroundColor(.orange)
+                                            }
+                                            Spacer()
+                                        }
+                                        .padding(10)
+                                        .background({
+                                            switch result {
+                                            case .verified: return Color.brandGreen.opacity(0.08)
+                                            case .notFound: return Color.red.opacity(0.08)
+                                            case .error: return Color.orange.opacity(0.08)
+                                            }
+                                        }())
+                                        .cornerRadius(10)
+                                    }
+
                                     VStack(alignment: .leading, spacing: 6) {
                                         Text("Registration Status").font(.caption).foregroundColor(.secondary)
                                         Picker("Status", selection: $gmcStatus) {
@@ -1436,12 +1650,54 @@ struct DoctorRegistrationView: View {
                                         .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color(.systemGray4), lineWidth: 0.5))
                                 }
 
-                                docRegCTA("Submit for Verification") { completeDocReg() }
+                                docRegCTA("Continue") { withAnimation(.easeInOut(duration: 0.25)) { page = 5 } }
                             }
                             .padding(16).padding(.bottom, 24)
                         }
 
-                    // ── Page 5: Submitted confirmation ──
+                    // ── Page 5: Document Upload ──
+                    case 5:
+                        ScrollView {
+                            VStack(spacing: 14) {
+                                docRegSection("Identity & Credentials") {
+                                    Text("Upload documents to verify your identity and qualifications. Photos of original documents are accepted.")
+                                        .font(.caption).foregroundColor(.secondary)
+                                        .padding(.bottom, 4)
+
+                                    ForEach(DocumentType.allCases) { docType in
+                                        docUploadRow(docType)
+                                    }
+                                }
+
+                                // Upload status
+                                if isUploading {
+                                    HStack(spacing: 10) {
+                                        ProgressView()
+                                        Text("Uploading documents...").font(.caption).foregroundColor(.secondary)
+                                    }
+                                    .padding()
+                                }
+
+                                VStack(spacing: 8) {
+                                    docRegCTA("Submit for Verification") { completeDocReg() }
+                                        .disabled(isUploading)
+
+                                    Button("Skip — upload later") {
+                                        completeDocReg()
+                                    }
+                                    .font(.caption).foregroundColor(.secondary)
+                                    .disabled(isUploading)
+                                }
+                            }
+                            .padding(16).padding(.bottom, 24)
+                        }
+                        .sheet(item: $showDocPicker) { docType in
+                            DocumentImagePicker(docType: docType) { image in
+                                setDocImage(docType, image: image)
+                            }
+                        }
+
+                    // ── Page 6: Submitted confirmation ──
                     default:
                         VStack(spacing: 24) {
                             Spacer()
@@ -1531,6 +1787,57 @@ struct DoctorRegistrationView: View {
         .padding(.top, 4)
     }
 
+    // ── GMC Live Verification via Backend ──
+    func verifyGMCLive() async {
+        guard InputValidator.isValidGMC(gmcNumber) else { return }
+        isVerifyingGMC = true
+        gmcVerificationResult = nil
+        defer { isVerifyingGMC = false }
+
+        do {
+            guard let url = URL(string: "https://body-sense-ai-production.up.railway.app/verify-gmc") else {
+                gmcVerificationResult = .error("Invalid server URL")
+                return
+            }
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.timeoutInterval = 15
+
+            let body: [String: String] = ["gmcNumber": gmcNumber]
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+            let (data, response) = try await URLSession.shared.data(for: request)
+
+            guard let httpResponse = response as? HTTPURLResponse else {
+                gmcVerificationResult = .error("Unexpected server response")
+                return
+            }
+
+            if httpResponse.statusCode == 200 {
+                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let verified = json["verified"] as? Bool {
+                    if verified {
+                        let name = json["doctorName"] as? String ?? "Registered Doctor"
+                        gmcVerificationResult = .verified(name: name)
+                    } else {
+                        gmcVerificationResult = .notFound
+                    }
+                } else {
+                    gmcVerificationResult = .error("Could not parse verification response")
+                }
+            } else if httpResponse.statusCode == 404 {
+                gmcVerificationResult = .notFound
+            } else {
+                gmcVerificationResult = .error("Server error (\(httpResponse.statusCode)). Try again later.")
+            }
+        } catch let error as URLError where error.code == .timedOut {
+            gmcVerificationResult = .error("Request timed out. Check your connection.")
+        } catch {
+            gmcVerificationResult = .error("Network error. Check your connection.")
+        }
+    }
+
     func completeDocReg() {
         guard InputValidator.isValidEmail(email) else { return }
         guard InputValidator.isValidName(fullName) else { return }
@@ -1576,6 +1883,8 @@ struct DoctorRegistrationView: View {
         dp.postcode             = postcode.uppercased()
         dp.country              = country
         dp.timeZoneIdentifier   = TimeZone.current.identifier
+        dp.verifiedEmail        = cleanEmail
+        dp.verifiedPhone        = isPhoneVerified ? (phoneCountryCode + phoneNumber) : ""
 
         profile.doctorProfile = dp
         store.userProfile = profile
@@ -1583,6 +1892,7 @@ struct DoctorRegistrationView: View {
 
         // Submit registration request for CEO approval
         let request = DoctorRegistrationRequest(
+            userId: AuthService.shared.userIdentifier ?? "",
             name: cleanName.isEmpty ? "Doctor" : cleanName,
             email: cleanEmail,
             specialty: specialty,
@@ -1607,8 +1917,323 @@ struct DoctorRegistrationView: View {
         )
         store.submitDoctorRequest(request)
 
-        // Navigate to confirmation page instead of completing
-        withAnimation { page = 5 }
+        // Upload any selected documents in background
+        Task {
+            await uploadDocuments()
+        }
+
+        // Navigate to confirmation page
+        withAnimation { page = 6 }
+    }
+
+    // MARK: - Auth Verification Helpers
+
+    /// Whether Page 0 can proceed — requires valid name, verified email, and verified phone
+    private var canProceedPage0: Bool {
+        InputValidator.isValidName(fullName)
+        && InputValidator.isValidEmail(email)
+        && isEmailVerified
+        && isPhoneVerified
+    }
+
+    /// Pre-fill name, email, and phone from Firebase Auth (already verified via sign-in)
+    private func prefillFromFirebaseAuth() {
+        let auth = FirebaseAuthManager.shared
+        // Email — verified if user signed in via email, Google, or Apple
+        if let authEmail = auth.email, !authEmail.isEmpty {
+            email = authEmail
+            isEmailVerified = true
+        }
+        // Name from Firebase
+        if let authName = auth.displayName, !authName.isEmpty, fullName.isEmpty {
+            fullName = authName
+        }
+        // Phone — verified if user signed in via phone OTP
+        if let authPhone = auth.phoneNumber, !authPhone.isEmpty {
+            // Strip country code for display
+            phoneNumber = authPhone
+            isPhoneVerified = true
+        }
+    }
+
+    /// Send OTP to the doctor's phone number via Firebase Auth
+    private func sendDoctorPhoneOTP() async {
+        let fullNumber = phoneCountryCode + phoneNumber.trimmingCharacters(in: .whitespaces)
+        guard fullNumber.count >= 10 else {
+            verificationError = "Enter a valid phone number"
+            return
+        }
+        isSendingOTP = true
+        verificationError = nil
+        do {
+            try await FirebaseAuthManager.shared.sendOTP(to: fullNumber)
+        } catch {
+            verificationError = error.localizedDescription
+        }
+        isSendingOTP = false
+    }
+
+    /// Verify the OTP code for doctor phone verification
+    /// NOTE: This links the phone to the existing Firebase account, not a new sign-in
+    private func verifyDoctorPhoneOTP() async {
+        guard phoneOTPCode.count == 6 else { return }
+        isVerifyingOTP = true
+        verificationError = nil
+        do {
+            // Link phone credential to existing account (not sign in as new user)
+            guard let verificationID = FirebaseAuthManager.shared.phoneVerificationID else {
+                verificationError = "Verification expired. Please request a new code."
+                isVerifyingOTP = false
+                return
+            }
+            let credential = PhoneAuthProvider.provider().credential(
+                withVerificationID: verificationID,
+                verificationCode: phoneOTPCode
+            )
+            // Link to current user (adds phone to existing account)
+            if let currentUser = FirebaseAuthManager.shared.firebaseUser {
+                try await currentUser.link(with: credential)
+            } else {
+                // Fallback: sign in if no current user
+                try await FirebaseAuthManager.shared.verifyOTP(phoneOTPCode)
+            }
+            isPhoneVerified = true
+            FirebaseAuthManager.shared.isAwaitingOTP = false
+            FirebaseAuthManager.shared.phoneVerificationID = nil
+        } catch {
+            verificationError = error.localizedDescription
+        }
+        isVerifyingOTP = false
+    }
+
+    // MARK: - Document Upload Helpers
+
+    private func docUploadRow(_ docType: DocumentType) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: docType.icon)
+                .font(.title3).foregroundColor(.brandTeal)
+                .frame(width: 36, height: 36)
+                .background(Color.brandTeal.opacity(0.12))
+                .cornerRadius(10)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(docType.rawValue).font(.subheadline).fontWeight(.medium)
+                if imageFor(docType) != nil {
+                    Text("Selected").font(.caption).foregroundColor(.brandGreen)
+                } else {
+                    Text("Tap to upload").font(.caption).foregroundColor(.secondary)
+                }
+            }
+
+            Spacer()
+
+            if uploadProgress[docType] == true {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundColor(.brandGreen)
+            } else if imageFor(docType) != nil {
+                Image(systemName: "photo.fill")
+                    .foregroundColor(.brandTeal)
+            } else {
+                Image(systemName: "plus.circle")
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(10)
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+        .contentShape(Rectangle())
+        .onTapGesture { showDocPicker = docType }
+    }
+
+    private func imageFor(_ docType: DocumentType) -> UIImage? {
+        switch docType {
+        case .photoId: return photoIDImage
+        case .dbsCertificate: return dbsCertImage
+        case .indemnityInsurance: return insuranceImage
+        case .qualification: return qualificationImage
+        }
+    }
+
+    private func setDocImage(_ docType: DocumentType, image: UIImage) {
+        switch docType {
+        case .photoId: photoIDImage = image
+        case .dbsCertificate: dbsCertImage = image
+        case .indemnityInsurance: insuranceImage = image
+        case .qualification: qualificationImage = image
+        }
+    }
+
+    private func uploadDocuments() async {
+        let baseURL = "https://body-sense-ai-production.up.railway.app"
+        let userId = AuthService.shared.userIdentifier ?? UUID().uuidString
+
+        for docType in DocumentType.allCases {
+            guard let image = imageFor(docType),
+                  let data = image.jpegData(compressionQuality: 0.7) else { continue }
+
+            isUploading = true
+
+            var request = URLRequest(url: URL(string: "\(baseURL)/upload-doctor-document")!)
+            request.httpMethod = "POST"
+
+            let boundary = UUID().uuidString
+            request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+
+            var body = Data()
+            // userId field
+            body.append("--\(boundary)\r\n".data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"userId\"\r\n\r\n".data(using: .utf8)!)
+            body.append("\(userId)\r\n".data(using: .utf8)!)
+            // documentType field
+            body.append("--\(boundary)\r\n".data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"documentType\"\r\n\r\n".data(using: .utf8)!)
+            body.append("\(docType.apiKey)\r\n".data(using: .utf8)!)
+            // file
+            body.append("--\(boundary)\r\n".data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"document\"; filename=\"\(docType.apiKey).jpg\"\r\n".data(using: .utf8)!)
+            body.append("Content-Type: image/jpeg\r\n\r\n".data(using: .utf8)!)
+            body.append(data)
+            body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+
+            request.httpBody = body
+
+            do {
+                let (_, response) = try await URLSession.shared.data(for: request)
+                if let http = response as? HTTPURLResponse, http.statusCode == 200 {
+                    await MainActor.run { uploadProgress[docType] = true }
+                }
+            } catch {
+                #if DEBUG
+                print("Document upload failed for \(docType.rawValue): \(error)")
+                #endif
+            }
+        }
+        await MainActor.run { isUploading = false }
+    }
+}
+
+// MARK: - Document Image Picker
+
+import PhotosUI
+
+struct DocumentImagePicker: View {
+    let docType: DoctorRegistrationView.DocumentType
+    let onPicked: (UIImage) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var selectedItem: PhotosPickerItem?
+    @State private var showCamera = false
+    @State private var cameraImage: UIImage?
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 24) {
+                Image(systemName: docType.icon)
+                    .font(.system(size: 48))
+                    .foregroundColor(.brandTeal)
+                    .padding(.top, 32)
+
+                Text("Upload \(docType.rawValue)")
+                    .font(.title3.bold())
+
+                Text("Take a clear photo or choose from your library")
+                    .font(.subheadline).foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+
+                VStack(spacing: 14) {
+                    // Camera option
+                    Button {
+                        showCamera = true
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "camera.fill")
+                                .font(.title3).frame(width: 28)
+                            Text("Take Photo").font(.headline)
+                            Spacer()
+                            Image(systemName: "chevron.right").foregroundColor(.secondary)
+                        }
+                        .padding()
+                        .background(Color(.secondarySystemBackground))
+                        .cornerRadius(14)
+                    }
+                    .foregroundColor(.primary)
+
+                    // Photo library option
+                    PhotosPicker(selection: $selectedItem, matching: .images) {
+                        HStack(spacing: 12) {
+                            Image(systemName: "photo.on.rectangle")
+                                .font(.title3).frame(width: 28)
+                            Text("Choose from Library").font(.headline)
+                            Spacer()
+                            Image(systemName: "chevron.right").foregroundColor(.secondary)
+                        }
+                        .padding()
+                        .background(Color(.secondarySystemBackground))
+                        .cornerRadius(14)
+                    }
+                    .foregroundColor(.primary)
+                }
+                .padding(.horizontal, 24)
+
+                Spacer()
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+            .onChange(of: selectedItem) { _, item in
+                guard let item else { return }
+                Task {
+                    if let data = try? await item.loadTransferable(type: Data.self),
+                       let image = UIImage(data: data) {
+                        onPicked(image)
+                        dismiss()
+                    }
+                }
+            }
+            .fullScreenCover(isPresented: $showCamera) {
+                CameraCapture { image in
+                    if let image {
+                        onPicked(image)
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Camera Capture (UIImagePickerController wrapper)
+
+struct CameraCapture: UIViewControllerRepresentable {
+    let onCapture: (UIImage?) -> Void
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.sourceType = .camera
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+
+    func makeCoordinator() -> Coordinator { Coordinator(onCapture: onCapture) }
+
+    class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let onCapture: (UIImage?) -> Void
+        init(onCapture: @escaping (UIImage?) -> Void) { self.onCapture = onCapture }
+
+        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
+            let image = info[.originalImage] as? UIImage
+            onCapture(image)
+            picker.dismiss(animated: true)
+        }
+
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            onCapture(nil)
+            picker.dismiss(animated: true)
+        }
     }
 }
 

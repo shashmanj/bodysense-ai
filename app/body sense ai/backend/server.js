@@ -38,6 +38,7 @@ const apiLimiter = rateLimit({
 app.use("/create-", apiLimiter);
 app.use("/book-", apiLimiter);
 app.use("/gdpr/", apiLimiter);
+app.use("/ai/", apiLimiter);
 
 // JSON body (except webhooks which need raw)
 app.use((req, res, next) => {
@@ -199,22 +200,75 @@ app.post("/book-appointment", async (req, res) => {
     const { amount = 2500, doctorId, userId, slotISO } = req.body;
     // Default £25.00 consultation fee
 
+    // Generate appointment reference
+    const appointmentId = `appt_${Date.now()}_${Math.random().toString(36).substr(2, 8)}`;
+
+    // transfer_group links this payment to future doctor payout
+    const transferGroup = `tg_${appointmentId}`;
+
     const paymentIntent = await stripe.paymentIntents.create({
       amount:   Math.round(amount),
       currency: "gbp",
       automatic_payment_methods: { enabled: true },
+      transfer_group: transferGroup,
       metadata: {
-        app:         "bodysense_ai",
-        type:        "appointment",
-        doctorId:    doctorId  || "unknown",
-        userId:      userId    || "unknown",
-        slotISO:     slotISO   || new Date().toISOString(),
-        platform:    "ios"
+        app:           "bodysense_ai",
+        type:          "appointment",
+        doctorId:      doctorId  || "unknown",
+        userId:        userId    || "unknown",
+        slotISO:       slotISO   || new Date().toISOString(),
+        appointmentId,
+        platform:      "ios"
       }
     });
 
-    // Generate appointment reference
-    const appointmentId = `appt_${Date.now()}_${Math.random().toString(36).substr(2, 8)}`;
+    // Create payout transaction record in Firestore
+    if (db && doctorId) {
+      const admin = require("firebase-admin");
+      const grossPence = Math.round(amount);
+      const doctorPence = Math.round(grossPence * 0.60);
+      const platformPence = grossPence - doctorPence;
+
+      await db.collection("payoutTransactions").add({
+        doctorId,
+        userId:          userId || "unknown",
+        appointmentId,
+        transferGroup,
+        grossAmount:     grossPence,      // in pence
+        platformFee:     platformPence,    // 40%
+        doctorAmount:    doctorPence,      // 60%
+        status:          "pending",
+        stripePaymentId: paymentIntent.id,
+        createdAt:       admin.firestore.FieldValue.serverTimestamp()
+      });
+
+      // Check if doctor has a Stripe Connected Account — if so, create immediate transfer
+      const doctorPayoutDoc = await db.collection("doctorPayouts").doc(doctorId).get();
+      if (doctorPayoutDoc.exists && doctorPayoutDoc.data().payoutStatus === "active") {
+        const connectedAccountId = doctorPayoutDoc.data().stripeAccountId;
+        try {
+          const transfer = await stripe.transfers.create({
+            amount:         doctorPence,
+            currency:       "gbp",
+            destination:    connectedAccountId,
+            transfer_group: transferGroup,
+            metadata:       { appointmentId, doctorId }
+          });
+          // Update transaction status
+          const txSnap = await db.collection("payoutTransactions")
+            .where("appointmentId", "==", appointmentId).limit(1).get();
+          if (!txSnap.empty) {
+            await txSnap.docs[0].ref.update({
+              status: "transferred",
+              stripeTransferId: transfer.id
+            });
+          }
+        } catch (transferErr) {
+          console.error("Auto-transfer failed:", transferErr.message);
+          // Stays as pending — will be transferred later
+        }
+      }
+    }
 
     res.json({
       clientSecret:  paymentIntent.client_secret,
@@ -241,10 +295,12 @@ app.post("/webhook", express.raw({ type: "application/json" }), (req, res) => {
   }
 
   switch (event.type) {
-    case "payment_intent.succeeded":
-      console.log("✅ Payment succeeded:", event.data.object.id);
-      // TODO: fulfil order, unlock subscription, confirm appointment
+    case "payment_intent.succeeded": {
+      const pi = event.data.object;
+      console.log("✅ Payment succeeded:", pi.id);
+      // If this is an appointment payment, the payout transaction was already created in /book-appointment
       break;
+    }
     case "customer.subscription.created":
       console.log("✅ Subscription created:", event.data.object.id);
       break;
@@ -254,6 +310,51 @@ app.post("/webhook", express.raw({ type: "application/json" }), (req, res) => {
     case "invoice.payment_failed":
       console.log("⚠️  Invoice payment failed:", event.data.object.id);
       break;
+
+    // ── Stripe Connect Events ──
+    case "account.updated": {
+      // Doctor completed/updated Stripe Connect onboarding
+      const account = event.data.object;
+      const doctorId = account.metadata?.doctorId;
+      console.log("🏦 Connect account updated:", account.id, "doctor:", doctorId);
+      if (db && doctorId) {
+        const chargesEnabled = account.charges_enabled;
+        const payoutsEnabled = account.payouts_enabled;
+        let status = "onboarding";
+        if (chargesEnabled && payoutsEnabled) status = "active";
+        else if (account.requirements?.currently_due?.length > 0) status = "restricted";
+        else if (account.requirements?.pending_verification?.length > 0) status = "pendingReview";
+
+        const updateData = { payoutStatus: status, updatedAt: new Date().toISOString() };
+
+        // Extract bank info if available
+        if (account.external_accounts?.data?.length > 0) {
+          const bank = account.external_accounts.data[0];
+          updateData.bankLast4 = bank.last4 || "";
+          updateData.bankName = bank.bank_name || "";
+        }
+
+        await db.collection("doctorPayouts").doc(doctorId).update(updateData);
+
+        // If newly active, trigger pending transfers
+        if (status === "active") {
+          console.log("🎉 Doctor payout account now active, processing pending transfers...");
+          await processPendingTransfers(doctorId, account.id);
+        }
+      }
+      break;
+    }
+    case "transfer.created":
+      console.log("💸 Transfer created:", event.data.object.id);
+      break;
+    case "payout.paid": {
+      console.log("✅ Payout paid to bank:", event.data.object.id);
+      break;
+    }
+    case "payout.failed": {
+      console.log("❌ Payout failed:", event.data.object.id);
+      break;
+    }
     default:
       console.log(`Unhandled event: ${event.type}`);
   }
@@ -688,6 +789,463 @@ app.get("/doctor-documents/:userId", requireCEO, async (req, res) => {
   }
 });
 
+// ── Stripe Connect: Doctor Payout Endpoints ─────────────────────────────
+
+// Helper: Process all pending transfers for a doctor who just onboarded
+async function processPendingTransfers(doctorId, connectedAccountId) {
+  if (!db) return;
+  try {
+    const pendingSnap = await db.collection("payoutTransactions")
+      .where("doctorId", "==", doctorId)
+      .where("status", "==", "pending")
+      .get();
+
+    if (pendingSnap.empty) {
+      console.log(`No pending transfers for doctor ${doctorId}`);
+      return;
+    }
+
+    console.log(`Processing ${pendingSnap.size} pending transfers for doctor ${doctorId}`);
+    for (const doc of pendingSnap.docs) {
+      const tx = doc.data();
+      try {
+        const transfer = await stripe.transfers.create({
+          amount:         tx.doctorAmount,
+          currency:       "gbp",
+          destination:    connectedAccountId,
+          transfer_group: tx.transferGroup,
+          metadata:       { appointmentId: tx.appointmentId, doctorId }
+        });
+        await doc.ref.update({
+          status: "transferred",
+          stripeTransferId: transfer.id,
+          transferredAt: new Date().toISOString()
+        });
+        console.log(`  Transferred £${(tx.doctorAmount / 100).toFixed(2)} → ${transfer.id}`);
+      } catch (err) {
+        console.error(`  Transfer failed for ${doc.id}:`, err.message);
+        await doc.ref.update({ status: "failed", failureReason: err.message });
+      }
+    }
+  } catch (err) {
+    console.error("processPendingTransfers error:", err.message);
+  }
+}
+
+// Create Stripe Connect Express account for a doctor
+app.post("/doctor/create-connect-account", async (req, res) => {
+  try {
+    const { doctorId, email, firstName, lastName } = req.body;
+    if (!doctorId || !email) {
+      return res.status(400).json({ error: "doctorId and email are required" });
+    }
+
+    // Check if account already exists
+    if (db) {
+      const existing = await db.collection("doctorPayouts").doc(doctorId).get();
+      if (existing.exists && existing.data().stripeAccountId) {
+        // Account exists — just create a new onboarding link
+        const accountLink = await stripe.accountLinks.create({
+          account: existing.data().stripeAccountId,
+          refresh_url: "https://body-sense-ai-production.up.railway.app/connect/refresh",
+          return_url: "https://body-sense-ai-production.up.railway.app/connect/complete?doctorId=" + doctorId,
+          type: "account_onboarding"
+        });
+        return res.json({
+          accountId: existing.data().stripeAccountId,
+          onboardingUrl: accountLink.url,
+          isExisting: true
+        });
+      }
+    }
+
+    // Create new Express account
+    const account = await stripe.accounts.create({
+      type: "express",
+      country: "GB",
+      email,
+      capabilities: { transfers: { requested: true } },
+      business_type: "individual",
+      individual: {
+        first_name: firstName || "",
+        last_name: lastName || "",
+        email
+      },
+      metadata: { doctorId, app: "bodysense_ai" },
+      settings: {
+        payouts: {
+          schedule: { interval: "weekly", weekly_anchor: "monday" }
+        }
+      }
+    });
+
+    // Create onboarding link (expires in 5 minutes)
+    const accountLink = await stripe.accountLinks.create({
+      account: account.id,
+      refresh_url: "https://body-sense-ai-production.up.railway.app/connect/refresh",
+      return_url: "https://body-sense-ai-production.up.railway.app/connect/complete?doctorId=" + doctorId,
+      type: "account_onboarding"
+    });
+
+    // Store in Firestore
+    if (db) {
+      const admin = require("firebase-admin");
+      await db.collection("doctorPayouts").doc(doctorId).set({
+        stripeAccountId: account.id,
+        payoutStatus: "onboarding",
+        email,
+        createdAt: admin.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
+    }
+
+    res.json({
+      accountId: account.id,
+      onboardingUrl: accountLink.url,
+      isExisting: false
+    });
+  } catch (err) {
+    console.error("create-connect-account error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Refresh an expired onboarding link
+app.post("/doctor/refresh-onboarding-link", async (req, res) => {
+  try {
+    const { doctorId } = req.body;
+    if (!doctorId) return res.status(400).json({ error: "doctorId required" });
+
+    if (!db) return res.status(500).json({ error: "Firebase not configured" });
+
+    const doc = await db.collection("doctorPayouts").doc(doctorId).get();
+    if (!doc.exists || !doc.data().stripeAccountId) {
+      return res.status(404).json({ error: "No payout account found. Please create one first." });
+    }
+
+    const accountLink = await stripe.accountLinks.create({
+      account: doc.data().stripeAccountId,
+      refresh_url: "https://body-sense-ai-production.up.railway.app/connect/refresh",
+      return_url: "https://body-sense-ai-production.up.railway.app/connect/complete?doctorId=" + doctorId,
+      type: "account_onboarding"
+    });
+
+    res.json({ onboardingUrl: accountLink.url });
+  } catch (err) {
+    console.error("refresh-onboarding-link error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get doctor's payout status, balance, and recent transactions
+app.get("/doctor/payout-status/:doctorId", async (req, res) => {
+  try {
+    const { doctorId } = req.params;
+    if (!db) return res.status(500).json({ error: "Firebase not configured" });
+
+    // Get payout account info
+    const payoutDoc = await db.collection("doctorPayouts").doc(doctorId).get();
+    const payoutData = payoutDoc.exists ? payoutDoc.data() : { payoutStatus: "notSetUp" };
+
+    // Get transactions
+    const txSnap = await db.collection("payoutTransactions")
+      .where("doctorId", "==", doctorId)
+      .orderBy("createdAt", "desc")
+      .limit(50)
+      .get();
+
+    const transactions = txSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+    // Calculate balances (all in pence)
+    let pendingBalance = 0;
+    let transferredBalance = 0;
+    let totalEarnings = 0;
+
+    for (const tx of transactions) {
+      totalEarnings += tx.doctorAmount || 0;
+      if (tx.status === "pending") pendingBalance += tx.doctorAmount || 0;
+      if (tx.status === "transferred" || tx.status === "paid") transferredBalance += tx.doctorAmount || 0;
+    }
+
+    res.json({
+      payoutStatus:       payoutData.payoutStatus || "notSetUp",
+      stripeAccountId:    payoutData.stripeAccountId || null,
+      bankLast4:          payoutData.bankLast4 || "",
+      bankName:           payoutData.bankName || "",
+      pendingBalance,         // in pence
+      transferredBalance,     // in pence
+      totalEarnings,          // in pence
+      transactionCount:   transactions.length,
+      transactions:       transactions.slice(0, 20) // last 20
+    });
+  } catch (err) {
+    console.error("payout-status error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Doctor requests manual payout (min £10 = 1000 pence)
+app.post("/doctor/request-payout", async (req, res) => {
+  try {
+    const { doctorId } = req.body;
+    if (!doctorId) return res.status(400).json({ error: "doctorId required" });
+    if (!db) return res.status(500).json({ error: "Firebase not configured" });
+
+    const payoutDoc = await db.collection("doctorPayouts").doc(doctorId).get();
+    if (!payoutDoc.exists || payoutDoc.data().payoutStatus !== "active") {
+      return res.status(400).json({ error: "Payout account not active. Please complete setup first." });
+    }
+
+    const connectedAccountId = payoutDoc.data().stripeAccountId;
+    await processPendingTransfers(doctorId, connectedAccountId);
+
+    res.json({ success: true, message: "Pending transfers processed" });
+  } catch (err) {
+    console.error("request-payout error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// CEO: View all doctor payouts overview
+app.get("/ceo/payouts", requireCEO, async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ error: "Firebase not configured" });
+
+    // Get all payout accounts
+    const payoutSnap = await db.collection("doctorPayouts").get();
+    const doctors = payoutSnap.docs.map(d => ({ doctorId: d.id, ...d.data() }));
+
+    // Get all transactions
+    const txSnap = await db.collection("payoutTransactions").get();
+    const allTx = txSnap.docs.map(d => d.data());
+
+    // Aggregate
+    let totalPending = 0;
+    let totalTransferred = 0;
+    let totalPlatformRevenue = 0;
+
+    for (const tx of allTx) {
+      totalPlatformRevenue += tx.platformFee || 0;
+      if (tx.status === "pending") totalPending += tx.doctorAmount || 0;
+      if (tx.status === "transferred" || tx.status === "paid") totalTransferred += tx.doctorAmount || 0;
+    }
+
+    const doctorsWithoutPayout = doctors.filter(d => d.payoutStatus !== "active").length;
+    const doctorsActive = doctors.filter(d => d.payoutStatus === "active").length;
+
+    res.json({
+      totalPendingPence:      totalPending,
+      totalTransferredPence:  totalTransferred,
+      totalPlatformRevenuePence: totalPlatformRevenue,
+      doctorsWithoutPayout,
+      doctorsActive,
+      totalDoctors:           doctors.length,
+      transactionCount:       allTx.length,
+      doctors:                doctors.map(d => ({
+        doctorId:     d.doctorId,
+        payoutStatus: d.payoutStatus,
+        bankLast4:    d.bankLast4 || "",
+        bankName:     d.bankName || ""
+      }))
+    });
+  } catch (err) {
+    console.error("ceo/payouts error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// CEO: Trigger pending transfers for all eligible doctors
+app.post("/ceo/trigger-pending-transfers", requireCEO, async (req, res) => {
+  try {
+    if (!db) return res.status(500).json({ error: "Firebase not configured" });
+
+    const activeDoctors = await db.collection("doctorPayouts")
+      .where("payoutStatus", "==", "active").get();
+
+    let processed = 0;
+    for (const doc of activeDoctors.docs) {
+      const data = doc.data();
+      await processPendingTransfers(doc.id, data.stripeAccountId);
+      processed++;
+    }
+
+    res.json({ success: true, doctorsProcessed: processed });
+  } catch (err) {
+    console.error("trigger-pending-transfers error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Stripe Connect return page (doctor redirected here after onboarding)
+app.get("/connect/complete", (req, res) => {
+  const doctorId = req.query.doctorId || "";
+  res.send(`
+    <!DOCTYPE html>
+    <html><head><title>BodySense AI - Payout Setup</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <style>body{font-family:-apple-system,system-ui;text-align:center;padding:60px 20px;background:#f5f5f5}
+    .card{background:#fff;border-radius:16px;padding:40px;max-width:400px;margin:0 auto;box-shadow:0 2px 12px rgba(0,0,0,0.08)}
+    h2{color:#333;margin-bottom:8px}p{color:#666}
+    .btn{display:inline-block;margin-top:20px;padding:14px 32px;background:#00C9A7;color:#fff;border-radius:12px;text-decoration:none;font-weight:600}</style>
+    </head><body><div class="card">
+    <h2>Payout Setup Complete</h2>
+    <p>Your bank account has been connected. You can now receive earnings from consultations.</p>
+    <a class="btn" href="bodysenseai://connect/complete?doctorId=${doctorId}">Return to App</a>
+    </div></body></html>
+  `);
+});
+
+// Stripe Connect refresh page (link expired)
+app.get("/connect/refresh", (req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html><head><title>BodySense AI</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <style>body{font-family:-apple-system,system-ui;text-align:center;padding:60px 20px;background:#f5f5f5}
+    .card{background:#fff;border-radius:16px;padding:40px;max-width:400px;margin:0 auto;box-shadow:0 2px 12px rgba(0,0,0,0.08)}
+    h2{color:#333}p{color:#666}
+    .btn{display:inline-block;margin-top:20px;padding:14px 32px;background:#7C5CFC;color:#fff;border-radius:12px;text-decoration:none;font-weight:600}</style>
+    </head><body><div class="card">
+    <h2>Link Expired</h2>
+    <p>The setup link has expired. Please return to the app and try again.</p>
+    <a class="btn" href="bodysenseai://connect/refresh">Return to App</a>
+    </div></body></html>
+  `);
+});
+
+// ── Layer 6: Anonymised Health Pattern Learning ─────────────────────────
+
+// PII validator — rejects any pattern containing personal identifiers
+function containsPII(obj) {
+  const str = JSON.stringify(obj).toLowerCase();
+  // Check for email patterns
+  if (/[^\s@]+@[^\s@]+\.[^\s@]+/.test(str)) return true;
+  // Check for names (common name patterns — overly strict by design)
+  if (/\b(mr|mrs|ms|dr|prof)\.\s*[a-z]+/i.test(str)) return true;
+  // Check for specific dates with year (e.g. "15 March 2024", "2024-03-15")
+  if (/\d{4}-\d{2}-\d{2}T\d{2}/.test(str)) return false; // ISO dates in createdAt are OK
+  // Check for postcodes/zip codes
+  if (/\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/i.test(str)) return true;
+  // Check for phone numbers
+  if (/\b\d{10,11}\b/.test(str) || /\+\d{10,13}/.test(str)) return true;
+  return false;
+}
+
+// POST /ai/upload-patterns — receives anonymised patterns from iOS clients
+app.post("/ai/upload-patterns", async (req, res) => {
+  try {
+    const { patterns } = req.body;
+
+    if (!patterns || !Array.isArray(patterns) || patterns.length === 0) {
+      return res.status(400).json({ error: "patterns array is required and must not be empty" });
+    }
+
+    if (patterns.length > 100) {
+      return res.status(400).json({ error: "Maximum 100 patterns per upload" });
+    }
+
+    // Validate each pattern and reject if PII detected
+    const validPatterns = [];
+    for (const p of patterns) {
+      if (!p.category || !p.trigger || !p.outcome || typeof p.confidence !== "number") {
+        continue; // skip malformed
+      }
+      if (containsPII(p)) {
+        console.warn("[Layer6] PII detected in pattern — rejected:", p.category);
+        continue;
+      }
+      validPatterns.push({
+        category: String(p.category).substring(0, 100),
+        trigger: String(p.trigger).substring(0, 200),
+        outcome: String(p.outcome).substring(0, 200),
+        confidence: Math.max(0, Math.min(1, p.confidence)),
+        sampleSize: Math.max(1, parseInt(p.sampleSize) || 1),
+        ageGroup: String(p.ageGroup || "unknown").substring(0, 20),
+        conditions: Array.isArray(p.conditions) ? p.conditions.map(c => String(c).substring(0, 50)).slice(0, 10) : [],
+        createdAt: p.createdAt || new Date().toISOString(),
+        uploadedAt: new Date().toISOString()
+      });
+    }
+
+    if (validPatterns.length === 0) {
+      return res.status(400).json({ error: "No valid patterns after PII filtering" });
+    }
+
+    // Store in Firestore if available
+    if (db) {
+      const batch = db.batch();
+      for (const pattern of validPatterns) {
+        // Check if similar pattern exists — merge by incrementing sampleSize
+        const existing = await db.collection("globalPatterns")
+          .where("category", "==", pattern.category)
+          .where("trigger", "==", pattern.trigger)
+          .where("outcome", "==", pattern.outcome)
+          .limit(1)
+          .get();
+
+        if (!existing.empty) {
+          const doc = existing.docs[0];
+          const data = doc.data();
+          batch.update(doc.ref, {
+            sampleSize: (data.sampleSize || 1) + 1,
+            confidence: Math.min(1, ((data.confidence || 0.5) * (data.sampleSize || 1) + pattern.confidence) / ((data.sampleSize || 1) + 1)),
+            updatedAt: new Date().toISOString()
+          });
+        } else {
+          const ref = db.collection("globalPatterns").doc();
+          batch.set(ref, pattern);
+        }
+      }
+      await batch.commit();
+    }
+
+    res.json({ accepted: validPatterns.length, rejected: patterns.length - validPatterns.length });
+  } catch (err) {
+    console.error("upload-patterns error:", err.message);
+    res.status(500).json({ error: "Failed to store patterns" });
+  }
+});
+
+// GET /ai/global-patterns — returns top 50 highest-confidence patterns grouped by category
+app.get("/ai/global-patterns", async (req, res) => {
+  try {
+    if (!db) {
+      return res.json({ patterns: [], message: "Firebase not configured" });
+    }
+
+    const snapshot = await db.collection("globalPatterns")
+      .orderBy("confidence", "desc")
+      .limit(50)
+      .get();
+
+    const patterns = [];
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      patterns.push({
+        category: data.category,
+        trigger: data.trigger,
+        outcome: data.outcome,
+        confidence: data.confidence,
+        sampleSize: data.sampleSize || 1,
+        ageGroup: data.ageGroup || "unknown",
+        conditions: data.conditions || [],
+        createdAt: data.createdAt || data.uploadedAt
+      });
+    });
+
+    // Group by category for organised response
+    const grouped = {};
+    for (const p of patterns) {
+      if (!grouped[p.category]) grouped[p.category] = [];
+      grouped[p.category].push(p);
+    }
+
+    res.json({ patterns, grouped, total: patterns.length });
+  } catch (err) {
+    console.error("global-patterns error:", err.message);
+    res.status(500).json({ error: "Failed to fetch patterns" });
+  }
+});
+
 // ── Start ─────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`\nBodySense AI backend listening on port ${PORT}`);
@@ -706,8 +1264,16 @@ app.listen(PORT, () => {
   console.log(`    POST /gdpr/export`);
   console.log(`    DELETE /gdpr/delete`);
   console.log(`    POST /ai/chat (AI proxy → Anthropic)`);
+  console.log(`    POST /ai/upload-patterns (Layer 6)`);
+  console.log(`    GET  /ai/global-patterns (Layer 6)`);
   console.log(`    POST /verify-gmc (GMC live lookup)`);
   console.log(`    POST /upload-doctor-document (document upload)`);
   console.log(`    GET  /doctor-documents/:userId (CEO review)`);
+  console.log(`    POST /doctor/create-connect-account (Stripe Connect)`);
+  console.log(`    POST /doctor/refresh-onboarding-link`);
+  console.log(`    GET  /doctor/payout-status/:doctorId`);
+  console.log(`    POST /doctor/request-payout`);
+  console.log(`    GET  /ceo/payouts (CEO)`);
+  console.log(`    POST /ceo/trigger-pending-transfers (CEO)`);
   console.log(`  AI: ${process.env.ANTHROPIC_API_KEY ? "Configured" : "Not configured (set ANTHROPIC_API_KEY)"}\n`);
 });

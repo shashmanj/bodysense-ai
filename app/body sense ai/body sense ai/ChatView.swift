@@ -63,6 +63,7 @@ struct ChatView: View {
     @State private var scrollID   = UUID()
     @State private var showAgentStats = false
     @State private var showHistory = false
+    @State private var showUpgradeSheet = false
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -72,6 +73,7 @@ struct ChatView: View {
                 VStack(spacing: 0) {
                     chatHeader
                     agentDomainBadge
+                    AIMessageLimitBanner(store: store)
                     messagesScrollView
                     if ai?.isTyping == true { typingIndicator }
                     inputBar
@@ -87,6 +89,15 @@ struct ChatView: View {
                 ChatHistoryListView { history in
                     loadHistory(history)
                 }
+                .environment(store)
+            }
+            .sheet(isPresented: $showUpgradeSheet) {
+                let nextPlan: SubscriptionPlan = store.subscription == .free ? .pro : .premium
+                UpgradePromptSheet(
+                    requiredPlan: nextPlan,
+                    store: store,
+                    reason: "You have reached your daily limit of \(store.subscription.dailyAIMessageLimit) AI messages. Upgrade to \(nextPlan.badge) for \(nextPlan.dailyAIMessageLimit) messages per day."
+                )
                 .environment(store)
             }
         }
@@ -283,9 +294,17 @@ struct ChatView: View {
     private func send(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+
+        // Enforce AI message limit
+        if store.isAIMessageLimitReached {
+            showUpgradeSheet = true
+            return
+        }
+
         focused = false
         input = ""
         messages.append(ChatMessage(content: trimmed, isUser: true))
+        store.recordAIMessage()
         Task {
             let reply = await ai?.respond(to: trimmed)
             if let r = reply {

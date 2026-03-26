@@ -688,6 +688,7 @@ enum HealthDataExporter {
 // MARK: - Export Button View
 
 /// A reusable "Export Health Data" button with format picker (CSV or PDF Medical Report).
+/// Requires Pro subscription or higher.
 struct ExportHealthDataButton: View {
     let store: HealthStore
     @State private var showFormatPicker = false
@@ -718,6 +719,7 @@ struct ExportHealthDataButton: View {
             }
             .disabled(isExporting)
         }
+        .requiresSubscription(.pro, store: store)
         .confirmationDialog("Export Format", isPresented: $showFormatPicker, titleVisibility: .visible) {
             Button("PDF Medical Report (for doctors)") {
                 exportData(format: .pdf)

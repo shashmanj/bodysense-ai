@@ -276,6 +276,66 @@ struct BodyTempReading: Codable, Identifiable, Equatable {
     var date  : Date
 }
 
+// MARK: - SpO2 (Blood Oxygen)
+
+struct SpO2Reading: Codable, Identifiable, Equatable {
+    var id    = UUID()
+    var value : Double  // percentage (e.g. 98.0)
+    var date  : Date
+}
+
+// MARK: - Respiratory Rate
+
+struct RespiratoryRateReading: Codable, Identifiable, Equatable {
+    var id    = UUID()
+    var value : Double  // breaths per minute
+    var date  : Date
+}
+
+// MARK: - VO2 Max
+
+struct VO2MaxReading: Codable, Identifiable, Equatable {
+    var id    = UUID()
+    var value : Double  // ml/kg·min
+    var date  : Date
+}
+
+// MARK: - Body Measurement
+
+struct BodyMeasurement: Codable, Identifiable, Equatable {
+    var id            = UUID()
+    var date          : Date
+    var bmi           : Double?  // kg/m²
+    var bodyFat       : Double?  // percentage
+    var height        : Double?  // cm
+    var waistCirc     : Double?  // cm
+    var leanBodyMass  : Double?  // kg
+}
+
+// MARK: - Mindful Session
+
+struct MindfulSessionEntry: Codable, Identifiable, Equatable {
+    var id       = UUID()
+    var date     : Date
+    var duration : Double  // minutes
+}
+
+// MARK: - Insulin Delivery
+
+struct InsulinDeliveryReading: Codable, Identifiable, Equatable {
+    var id    = UUID()
+    var value : Double  // international units (IU)
+    var date  : Date
+}
+
+// MARK: - Basal Body Temperature
+
+struct BasalBodyTempReading: Codable, Identifiable, Equatable {
+    var id    = UUID()
+    var value : Double  // Celsius
+    var date  : Date
+}
+
 // MARK: - Steps
 
 struct StepEntry: Codable, Identifiable, Equatable {
@@ -1039,6 +1099,8 @@ struct DoctorProfile: Codable {
     var postcode             : String  = ""
     var country              : String  = "United Kingdom"
     var profilePhotoData     : Data?   = nil   // JPEG photo data
+    var verifiedPhone        : String  = ""    // Firebase-verified phone number
+    var verifiedEmail        : String  = ""    // Firebase-verified email address
 
     // ── UK GMC Credentials ─────────────────────────────────────────────────
     var gmcNumber            : String  = ""    // GMC Reference Number
@@ -1067,6 +1129,16 @@ struct DoctorProfile: Codable {
     var totalRevenue         : Double  = 0     // all paid appointments total
     var platformCommission   : Double  = 0     // 40% platform cut
     var doctorEarnings       : Double  = 0     // 60% to doctor
+    var pendingBalance       : Double  = 0     // earned but not yet transferable (no Connected Account)
+    var transferredBalance   : Double  = 0     // successfully paid out via Stripe Connect
+
+    // ── Payout Account (Stripe Connect) ───────────────────────────────────
+    var payoutAccountId      : String  = ""    // Stripe Connected Account ID (acct_xxx)
+    var payoutStatus         : PayoutStatus = .notSetUp
+    var payoutBankLast4      : String  = ""    // Last 4 digits of bank account
+    var payoutBankName       : String  = ""    // e.g. "Barclays"
+    var lastPayoutDate       : Date?   = nil
+    var nextPayoutDate       : Date?   = nil
 
     // ── Availability ───────────────────────────────────────────────────────
     var availability         : [DayAvailability] = DayAvailability.defaultSchedule
@@ -1075,7 +1147,6 @@ struct DoctorProfile: Codable {
     // ── Status ─────────────────────────────────────────────────────────────
     var isVerified           : Bool    = false
     var verificationStatus   : VerificationStatus = .pending
-    var payoutAccountId      : String  = ""    // Payment account for payouts
 
     /// Fee for a given appointment type
     func fee(for type: AppointmentType) -> Double {
@@ -1100,6 +1171,65 @@ struct DoctorReview: Codable, Identifiable, Equatable {
     var appointmentId: UUID?    = nil
     var isVerified   : Bool     = false  // Verified that patient actually had appointment
     var consultType  : String   = "Video Call"
+}
+
+// MARK: - Payout Status
+
+enum PayoutStatus: String, Codable, CaseIterable {
+    case notSetUp      = "Not Set Up"
+    case onboarding    = "Onboarding"       // Started Stripe Connect, incomplete
+    case pendingReview = "Pending Review"    // Stripe reviewing KYC
+    case active        = "Active"            // Ready to receive payouts
+    case restricted    = "Restricted"        // Stripe needs more info
+    case disabled      = "Disabled"          // Admin disabled payouts
+
+    var icon: String {
+        switch self {
+        case .notSetUp:      return "banknote"
+        case .onboarding:    return "arrow.triangle.2.circlepath"
+        case .pendingReview: return "clock.fill"
+        case .active:        return "checkmark.circle.fill"
+        case .restricted:    return "exclamationmark.triangle.fill"
+        case .disabled:      return "xmark.circle.fill"
+        }
+    }
+
+    var isPayable: Bool { self == .active }
+}
+
+// MARK: - Payout Transaction
+
+struct PayoutTransaction: Codable, Identifiable, Equatable {
+    var id               = UUID()
+    var doctorId         : String           // Doctor's user ID
+    var appointmentId    : UUID?            // Originating appointment
+    var grossAmount      : Double           // Full consultation fee (GBP)
+    var platformFee      : Double           // 40% platform cut
+    var doctorAmount     : Double           // 60% doctor share
+    var status           : PayoutTransactionStatus = .pending
+    var stripeTransferId : String?          // tr_xxx (set when transferred)
+    var createdAt        : Date = Date()
+    var paidAt           : Date?            // When money hit doctor's bank
+
+    /// Create from a completed appointment
+    static func from(appointment: Appointment, doctorUserId: String) -> PayoutTransaction {
+        let gross = appointment.feeGBP
+        return PayoutTransaction(
+            doctorId: doctorUserId,
+            appointmentId: appointment.id,
+            grossAmount: gross,
+            platformFee: gross * 0.40,
+            doctorAmount: gross * 0.60
+        )
+    }
+}
+
+enum PayoutTransactionStatus: String, Codable {
+    case pending     = "Pending"       // Awaiting doctor's Connect account
+    case transferred = "Transferred"   // Sent to doctor's Stripe Connected Account
+    case paid        = "Paid"          // Stripe paid out to bank
+    case failed      = "Failed"
+    case refunded    = "Refunded"
 }
 
 // MARK: - Medical Record
@@ -1267,8 +1397,21 @@ struct Prescription: Codable, Identifiable, Equatable {
 
 // MARK: - Subscription
 
-enum SubscriptionPlan: String, Codable, CaseIterable {
+enum SubscriptionPlan: String, Codable, CaseIterable, Comparable {
     case free = "Free"; case pro = "Pro"; case premium = "Premium"
+
+    // Comparable: free < pro < premium
+    private var sortOrder: Int {
+        switch self { case .free: return 0; case .pro: return 1; case .premium: return 2 }
+    }
+    static func < (lhs: SubscriptionPlan, rhs: SubscriptionPlan) -> Bool {
+        lhs.sortOrder < rhs.sortOrder
+    }
+
+    /// Daily AI message limit per tier
+    var dailyAIMessageLimit: Int {
+        switch self { case .free: return 10; case .pro: return 50; case .premium: return 500 }
+    }
 
     /// Base price in GBP
     var basePriceGBP: Double {
@@ -1397,6 +1540,117 @@ enum RingSize: String, Codable, CaseIterable {
         case .size11: return "11"
         case .size12: return "12"
         case .size13: return "13"
+        }
+    }
+}
+
+// MARK: - Ring BLE Connection
+
+enum RingConnectionState: String, Codable {
+    case disconnected
+    case scanning
+    case connecting
+    case connected
+    case reconnecting
+
+    var label: String {
+        switch self {
+        case .disconnected:  return "Disconnected"
+        case .scanning:      return "Scanning..."
+        case .connecting:    return "Connecting..."
+        case .connected:     return "Connected"
+        case .reconnecting:  return "Reconnecting..."
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .disconnected:  return .secondary
+        case .scanning:      return .brandAmber
+        case .connecting:    return .brandAmber
+        case .connected:     return .brandGreen
+        case .reconnecting:  return .brandAmber
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .disconnected:  return "circle.slash"
+        case .scanning:      return "antenna.radiowaves.left.and.right"
+        case .connecting:    return "arrow.triangle.2.circlepath"
+        case .connected:     return "checkmark.circle.fill"
+        case .reconnecting:  return "arrow.triangle.2.circlepath"
+        }
+    }
+}
+
+struct DiscoveredRing: Identifiable, Equatable {
+    let id: UUID          // CBPeripheral identifier
+    let name: String
+    let rssi: Int         // Signal strength (dBm)
+
+    var signalQuality: String {
+        if rssi > -50       { return "Excellent" }
+        else if rssi > -70  { return "Good" }
+        else if rssi > -85  { return "Fair" }
+        else                { return "Weak" }
+    }
+
+    var signalIcon: String {
+        if rssi > -50       { return "wifi" }
+        else if rssi > -70  { return "wifi" }
+        else if rssi > -85  { return "wifi.exclamationmark" }
+        else                { return "wifi.slash" }
+    }
+
+    var signalColor: Color {
+        if rssi > -50       { return .brandGreen }
+        else if rssi > -70  { return .brandTeal }
+        else if rssi > -85  { return .brandAmber }
+        else                { return .brandCoral }
+    }
+}
+
+struct ConnectedRing: Codable, Equatable {
+    var id: UUID
+    var name: String
+    var firmwareVersion: String
+    var batteryLevel: Int
+    var lastSyncDate: Date?
+    var color: RingColor?
+    var size: RingSize?
+}
+
+enum SleepState: Int, Codable, CaseIterable {
+    case awake = 0
+    case light = 1
+    case deep  = 2
+    case rem   = 3
+
+    var label: String {
+        switch self {
+        case .awake: return "Awake"
+        case .light: return "Light Sleep"
+        case .deep:  return "Deep Sleep"
+        case .rem:   return "REM Sleep"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .awake: return "sun.max.fill"
+        case .light: return "moon.fill"
+        case .deep:  return "moon.zzz.fill"
+        case .rem:   return "brain.head.profile"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .awake: return .brandAmber
+        case .light: return .brandTeal
+        case .deep:  return .brandPurple
+        case .rem:   return .blue
         }
     }
 }
@@ -1860,6 +2114,7 @@ struct UserProfile: Codable {
     var consentAnalytics           : Bool   = false   // Optional
     var consentMarketing           : Bool   = false   // Optional — promotional emails
     var consentDataSharing         : Bool   = false   // Optional — anonymised research
+    var healthDataSharingEnabled   : Bool   = false   // Opt-in for Layer 6 anonymised pattern sharing
     var consentAIProcessing        : Bool   = false   // Optional — on-device AI
     var dataExportRequestedAt      : Date?  = nil
     var accountDeletionRequestedAt : Date?  = nil
@@ -1967,6 +2222,7 @@ enum ActivityLevel: String, CaseIterable, Identifiable {
 
 struct DoctorRegistrationRequest: Codable, Identifiable, Equatable {
     var id              = UUID()
+    var userId          : String = ""   // AuthService.userIdentifier of the registering doctor
     var name            : String
     var email           : String
     var specialty       : String
@@ -2054,6 +2310,15 @@ class HealthStore {
     var medications      : [Medication]      = []
     var cycles           : [CycleEntry]      = []
 
+    // ── Extended vitals & measurements (HealthKit 40+ sync) ─────────────────
+    var spo2Readings            : [SpO2Reading]             = []
+    var respiratoryRateReadings : [RespiratoryRateReading]  = []
+    var vo2MaxReadings          : [VO2MaxReading]           = []
+    var bodyMeasurements        : [BodyMeasurement]         = []
+    var mindfulSessions         : [MindfulSessionEntry]     = []
+    var insulinDeliveries       : [InsulinDeliveryReading]  = []
+    var basalBodyTempReadings   : [BasalBodyTempReading]    = []
+
     // ── AI coaching & goals ───────────────────────────────────────────────────
     var healthAlerts     : [HealthAlert]     = []
     var healthGoals      : [HealthGoal]      = []
@@ -2067,10 +2332,13 @@ class HealthStore {
     var communityGroups  : [CommunityGroup]  = []
     var doctors          : [Doctor]          = []
     var appointments     : [Appointment]     = []
+    var payoutTransactions: [PayoutTransaction] = []
     var prescriptions    : [Prescription]    = []
 
     // ── Shop & subscription ───────────────────────────────────────────────────
     var subscription     : SubscriptionPlan  = .free
+    var dailyAIMessagesUsed : Int            = 0
+    var lastAIMessageDate   : Date?          = nil
     var products         : [Product]         = []
     var cartItems        : [CartItem]        = []
     var orders           : [Order]           = []
@@ -2091,6 +2359,10 @@ class HealthStore {
     // ── Chat history (persistent conversations) ─────────────────────────────
     var chatHistories    : [ChatHistoryRecord] = []
 
+    // ── AI Learning Layer 6 & 7 ───────────────────────────────────────────────
+    var agentCustomPrompts: [String: String] = [:]  // agentType -> CEO custom prompt addition
+    var cachedGlobalPatterns: [AnonymisedHealthPattern] = []  // Downloaded global patterns
+
     // ── Profile ───────────────────────────────────────────────────────────────
     var userProfile      : UserProfile       = UserProfile()
 
@@ -2103,6 +2375,39 @@ class HealthStore {
     var isDoctorApproved: Bool {
         guard isDoctor, let dp = doctorProfile else { return false }
         return dp.isVerified && dp.verificationStatus == .verified
+    }
+
+    // MARK: - AI Message Limits
+
+    /// Remaining AI messages for today based on subscription tier.
+    var aiMessagesRemaining: Int {
+        let limit = subscription.dailyAIMessageLimit
+        let used = aiMessagesUsedToday
+        return max(0, limit - used)
+    }
+
+    /// Messages used today (auto-resets if the date has changed).
+    var aiMessagesUsedToday: Int {
+        guard let lastDate = lastAIMessageDate, Calendar.current.isDateInToday(lastDate) else {
+            return 0
+        }
+        return dailyAIMessagesUsed
+    }
+
+    /// Whether the user has reached their daily AI message limit.
+    var isAIMessageLimitReached: Bool {
+        aiMessagesRemaining <= 0
+    }
+
+    /// Record that the user sent an AI message. Resets the counter if the day changed.
+    func recordAIMessage() {
+        if let lastDate = lastAIMessageDate, Calendar.current.isDateInToday(lastDate) {
+            dailyAIMessagesUsed += 1
+        } else {
+            dailyAIMessagesUsed = 1
+        }
+        lastAIMessageDate = Date()
+        save()
     }
 
     /// The doctor's current application status for display purposes.
@@ -2167,6 +2472,17 @@ class HealthStore {
     var lastSleep     : SleepEntry?       { sleepEntries.max(by:     { $0.date < $1.date }) }
     var latestStress  : StressReading?    { stressReadings.max(by:   { $0.date < $1.date }) }
     var latestTemp    : BodyTempReading?  { bodyTempReadings.max(by: { $0.date < $1.date }) }
+    var latestSpO2    : SpO2Reading?      { spo2Readings.max(by: { $0.date < $1.date }) }
+    var latestRespRate: RespiratoryRateReading? { respiratoryRateReadings.max(by: { $0.date < $1.date }) }
+    var latestVO2Max  : VO2MaxReading?    { vo2MaxReadings.max(by: { $0.date < $1.date }) }
+    var latestMeasurement: BodyMeasurement? { bodyMeasurements.max(by: { $0.date < $1.date }) }
+    var latestInsulin : InsulinDeliveryReading? { insulinDeliveries.max(by: { $0.date < $1.date }) }
+    var latestBasalTemp: BasalBodyTempReading? { basalBodyTempReadings.max(by: { $0.date < $1.date }) }
+
+    var todayMindfulMinutes: Double {
+        let cal = Calendar.current
+        return mindfulSessions.filter { cal.isDateInToday($0.date) }.map { $0.duration }.reduce(0, +)
+    }
 
     var todaySteps: Int {
         let cal = Calendar.current
@@ -2732,6 +3048,13 @@ class HealthStore {
         enc(symptomLogs,       key: "symptomLogs")
         enc(medications,       key: "medications")
         enc(cycles,            key: "cycles")
+        enc(spo2Readings,            key: "spo2Readings")
+        enc(respiratoryRateReadings, key: "respiratoryRateReadings")
+        enc(vo2MaxReadings,          key: "vo2MaxReadings")
+        enc(bodyMeasurements,        key: "bodyMeasurements")
+        enc(mindfulSessions,         key: "mindfulSessions")
+        enc(insulinDeliveries,       key: "insulinDeliveries")
+        enc(basalBodyTempReadings,   key: "basalBodyTempReadings")
         enc(healthAlerts,      key: "healthAlerts")
         enc(healthGoals,       key: "healthGoals")
         enc(healthChallenges,  key: "healthChallenges")
@@ -2752,7 +3075,11 @@ class HealthStore {
         enc(userProfile,       key: "userProfile")
         enc(supportTickets,    key: "supportTickets")
         enc(chatHistories,     key: "chatHistories")
+        enc(agentCustomPrompts, key: "agentCustomPrompts")
+        enc(cachedGlobalPatterns, key: "cachedGlobalPatterns")
         defaults.set(totalXP,  forKey: "totalXP")
+        defaults.set(dailyAIMessagesUsed, forKey: "dailyAIMessagesUsed")
+        enc(lastAIMessageDate, key: "lastAIMessageDate")
     }
 
     // MARK: - Reset (Account Deletion)
@@ -2773,6 +3100,13 @@ class HealthStore {
         symptomLogs = []
         medications = []
         cycles = []
+        spo2Readings = []
+        respiratoryRateReadings = []
+        vo2MaxReadings = []
+        bodyMeasurements = []
+        mindfulSessions = []
+        insulinDeliveries = []
+        basalBodyTempReadings = []
 
         // AI coaching & goals
         healthAlerts = []
@@ -2791,6 +3125,8 @@ class HealthStore {
 
         // Shop & subscription
         subscription = .free
+        dailyAIMessagesUsed = 0
+        lastAIMessageDate = nil
         products = []
         cartItems = []
         orders = []
@@ -2805,6 +3141,10 @@ class HealthStore {
         // Support & chat history
         supportTickets = []
         chatHistories = []
+
+        // AI Learning
+        agentCustomPrompts = [:]
+        cachedGlobalPatterns = []
 
         // Profile
         userProfile = UserProfile()
@@ -2838,6 +3178,13 @@ class HealthStore {
         symptomLogs       = dec([SymptomLog].self,        key: "symptomLogs")       ?? []
         medications       = dec([Medication].self,        key: "medications")       ?? []
         cycles            = dec([CycleEntry].self,        key: "cycles")            ?? []
+        spo2Readings            = dec([SpO2Reading].self,            key: "spo2Readings")            ?? []
+        respiratoryRateReadings = dec([RespiratoryRateReading].self, key: "respiratoryRateReadings") ?? []
+        vo2MaxReadings          = dec([VO2MaxReading].self,          key: "vo2MaxReadings")          ?? []
+        bodyMeasurements        = dec([BodyMeasurement].self,        key: "bodyMeasurements")        ?? []
+        mindfulSessions         = dec([MindfulSessionEntry].self,    key: "mindfulSessions")         ?? []
+        insulinDeliveries       = dec([InsulinDeliveryReading].self, key: "insulinDeliveries")       ?? []
+        basalBodyTempReadings   = dec([BasalBodyTempReading].self,   key: "basalBodyTempReadings")   ?? []
         healthAlerts      = dec([HealthAlert].self,       key: "healthAlerts")      ?? []
         healthGoals       = dec([HealthGoal].self,        key: "healthGoals")       ?? []
         healthChallenges  = dec([HealthChallenge].self,   key: "healthChallenges")  ?? []
@@ -2858,7 +3205,11 @@ class HealthStore {
         userProfile       = dec(UserProfile.self,         key: "userProfile")       ?? UserProfile()
         supportTickets    = dec([SupportTicketRecord].self, key: "supportTickets")  ?? []
         chatHistories     = dec([ChatHistoryRecord].self,   key: "chatHistories")   ?? []
+        agentCustomPrompts = dec([String: String].self,       key: "agentCustomPrompts") ?? [:]
+        cachedGlobalPatterns = dec([AnonymisedHealthPattern].self, key: "cachedGlobalPatterns") ?? []
         totalXP           = defaults.integer(forKey: "totalXP")
+        dailyAIMessagesUsed = defaults.integer(forKey: "dailyAIMessagesUsed")
+        lastAIMessageDate   = dec(Date.self, key: "lastAIMessageDate")
 
         // Migration: clear stale seed data from old versions
         let dataVersion = defaults.integer(forKey: "healthstore_data_version")

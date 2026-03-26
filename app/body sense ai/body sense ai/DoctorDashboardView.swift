@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import SafariServices
 
 // MARK: - Doctor Dashboard Root
 
@@ -355,6 +356,17 @@ struct DoctorEarningsView: View {
     var platformCut: Double  { totalRevenue * 0.40 }
     var doctorCut: Double    { totalRevenue * 0.60 }
 
+    // Payout state
+    @State private var payoutStatus: PayoutStatus = .notSetUp
+    @State private var pendingBalancePence: Int = 0
+    @State private var transferredBalancePence: Int = 0
+    @State private var bankLast4: String = ""
+    @State private var bankName: String = ""
+    @State private var isLoadingPayout = false
+    @State private var showPayoutSetup = false
+    @State private var payoutSetupURL: URL?
+    @State private var payoutError: String?
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -367,14 +379,208 @@ struct DoctorEarningsView: View {
                             ForEach(paidAppts.prefix(10)) { appt in transactionRow(appt) }
                         }
                     }
-                    payoutCard
+                    payoutStatusBanner
+                    balanceCard
                     Spacer(minLength: 32)
                 }
                 .padding(.top)
             }
             .navigationTitle("Earnings")
+            .task { await loadPayoutStatus() }
+            .sheet(isPresented: $showPayoutSetup) {
+                if let url = payoutSetupURL {
+                    SafariViewWrapper(url: url)
+                        .ignoresSafeArea()
+                        .onDisappear { Task { await loadPayoutStatus() } }
+                }
+            }
         }
     }
+
+    // MARK: - Payout Status Banner
+
+    var payoutStatusBanner: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("Payouts", systemImage: "building.columns.fill").font(.headline)
+
+            switch payoutStatus {
+            case .notSetUp:
+                HStack(spacing: 12) {
+                    Image(systemName: "banknote")
+                        .font(.title2).foregroundColor(.brandGreen)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Set up your bank account to receive your earnings")
+                            .font(.subheadline)
+                        Text("Connect via Stripe to get paid directly to your bank.")
+                            .font(.caption).foregroundColor(.secondary)
+                    }
+                }
+
+                Button { Task { await startPayoutSetup() } } label: {
+                    HStack {
+                        if isLoadingPayout { ProgressView().tint(.white) }
+                        Text("Set Up Payouts")
+                            .font(.subheadline).fontWeight(.semibold)
+                    }
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity).frame(height: 54)
+                    .background(Color.brandGreen).cornerRadius(14)
+                }
+                .disabled(isLoadingPayout)
+
+            case .onboarding:
+                HStack(spacing: 12) {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.title2).foregroundColor(.brandAmber)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Complete your bank account setup")
+                            .font(.subheadline)
+                        Text("Your Stripe Connect onboarding is incomplete.")
+                            .font(.caption).foregroundColor(.secondary)
+                    }
+                }
+
+                Button { Task { await continuePayoutSetup() } } label: {
+                    HStack {
+                        if isLoadingPayout { ProgressView().tint(.white) }
+                        Text("Continue Setup")
+                            .font(.subheadline).fontWeight(.semibold)
+                    }
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity).frame(height: 54)
+                    .background(Color.brandAmber).cornerRadius(14)
+                }
+                .disabled(isLoadingPayout)
+
+            case .pendingReview:
+                HStack(spacing: 12) {
+                    Image(systemName: "clock.fill")
+                        .font(.title2).foregroundColor(.brandAmber)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Your bank account is being verified")
+                            .font(.subheadline).fontWeight(.medium)
+                        Text("Stripe is reviewing your details. This usually takes 1-2 business days.")
+                            .font(.caption).foregroundColor(.secondary)
+                    }
+                }
+
+            case .active:
+                HStack(spacing: 12) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.title2).foregroundColor(.brandGreen)
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 8) {
+                            Text("Payouts active")
+                                .font(.caption).fontWeight(.semibold)
+                                .foregroundColor(.brandGreen)
+                                .padding(.horizontal, 10).padding(.vertical, 4)
+                                .background(Color.brandGreen.opacity(0.12))
+                                .cornerRadius(100)
+                        }
+                        if !bankName.isEmpty || !bankLast4.isEmpty {
+                            Text("\(bankName)\(!bankLast4.isEmpty ? " ****\(bankLast4)" : "")")
+                                .font(.caption).foregroundColor(.secondary)
+                        }
+                    }
+                }
+
+            case .restricted:
+                HStack(spacing: 12) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.title2).foregroundColor(.brandAmber)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Action needed on your payout account")
+                            .font(.subheadline).fontWeight(.medium)
+                            .foregroundColor(.brandAmber)
+                        Text("Stripe requires additional information to continue payouts.")
+                            .font(.caption).foregroundColor(.secondary)
+                    }
+                }
+
+                Button { Task { await continuePayoutSetup() } } label: {
+                    Text("Update Details")
+                        .font(.subheadline).fontWeight(.semibold)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity).frame(height: 54)
+                        .background(Color.brandAmber).cornerRadius(14)
+                }
+
+            case .disabled:
+                HStack(spacing: 12) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title2).foregroundColor(.brandCoral)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Payouts disabled")
+                            .font(.subheadline).fontWeight(.medium)
+                            .foregroundColor(.brandCoral)
+                        Text("Please contact support for assistance.")
+                            .font(.caption).foregroundColor(.secondary)
+                    }
+                }
+            }
+
+            if let error = payoutError {
+                Text(error)
+                    .font(.caption).foregroundColor(.brandCoral)
+                    .padding(.top, 4)
+            }
+        }
+        .padding()
+        .background(Color(.secondarySystemBackground))
+        .cornerRadius(16)
+        .shadow(color: .black.opacity(0.06), radius: 8, y: 2)
+        .padding(.horizontal)
+    }
+
+    // MARK: - Balance Card
+
+    var balanceCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Label("Balance", systemImage: "sterlingsign.circle.fill").font(.headline)
+
+            HStack(spacing: 0) {
+                VStack(spacing: 4) {
+                    Text("Pending")
+                        .font(.caption).foregroundColor(.secondary)
+                    Text("£\(String(format: "%.2f", Double(pendingBalancePence) / 100.0))")
+                        .font(.title3).fontWeight(.bold).foregroundColor(.brandAmber)
+                }
+                .frame(maxWidth: .infinity)
+
+                Divider().frame(height: 40)
+
+                VStack(spacing: 4) {
+                    Text("Transferred")
+                        .font(.caption).foregroundColor(.secondary)
+                    Text("£\(String(format: "%.2f", Double(transferredBalancePence) / 100.0))")
+                        .font(.title3).fontWeight(.bold).foregroundColor(.brandGreen)
+                }
+                .frame(maxWidth: .infinity)
+
+                Divider().frame(height: 40)
+
+                VStack(spacing: 4) {
+                    Text("Lifetime")
+                        .font(.caption).foregroundColor(.secondary)
+                    Text("£\(String(format: "%.2f", Double(pendingBalancePence + transferredBalancePence) / 100.0))")
+                        .font(.title3).fontWeight(.bold).foregroundColor(.primary)
+                }
+                .frame(maxWidth: .infinity)
+            }
+
+            if pendingBalancePence > 0 && payoutStatus != .active {
+                Text("Complete payout setup to receive your pending balance.")
+                    .font(.caption2).foregroundColor(.secondary)
+            }
+        }
+        .padding()
+        .background(Color(.secondarySystemBackground))
+        .cornerRadius(16)
+        .shadow(color: .black.opacity(0.06), radius: 8, y: 2)
+        .padding(.horizontal)
+    }
+
+    // MARK: - Earnings Summary Card
 
     var earningsSummaryCard: some View {
         ZStack {
@@ -454,20 +660,107 @@ struct DoctorEarningsView: View {
         .shadow(color: .black.opacity(0.04), radius: 4).padding(.horizontal)
     }
 
-    var payoutCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Label("Payouts", systemImage: "building.columns.fill").font(.headline)
-            Text("Earnings are paid monthly via bank transfer. Ensure your bank details are up-to-date in your profile.")
-                .font(.caption).foregroundColor(.secondary)
-            Button { } label: {
-                Text("Update Bank Details").font(.subheadline).fontWeight(.medium)
-                    .frame(maxWidth: .infinity).padding()
-                    .background(Color.brandPurple.opacity(0.1)).foregroundColor(.brandPurple).cornerRadius(12)
+    // MARK: - Payout Actions
+
+    private func loadPayoutStatus() async {
+        guard let doctorId = store.userProfile.doctorProfile?.payoutAccountId,
+              !doctorId.isEmpty else {
+            // No account — also try fetching by user ID
+            let userId = AuthService.shared.userIdentifier ?? UUID().uuidString
+            do {
+                let response = try await StripeManager.shared.fetchPayoutStatus(doctorId: userId)
+                await MainActor.run {
+                    payoutStatus = PayoutStatus(rawValue: response.payoutStatus) ?? .notSetUp
+                    bankLast4 = response.bankLast4
+                    bankName = response.bankName
+                    pendingBalancePence = response.pendingBalance
+                    transferredBalancePence = response.transferredBalance
+                }
+            } catch {
+                // No payout account yet — keep defaults
+            }
+            return
+        }
+
+        do {
+            let response = try await StripeManager.shared.fetchPayoutStatus(doctorId: doctorId)
+            await MainActor.run {
+                payoutStatus = PayoutStatus(rawValue: response.payoutStatus) ?? .notSetUp
+                bankLast4 = response.bankLast4
+                bankName = response.bankName
+                pendingBalancePence = response.pendingBalance
+                transferredBalancePence = response.transferredBalance
+            }
+        } catch {
+            // Silent — keep current state
+        }
+    }
+
+    private func startPayoutSetup() async {
+        guard let profile = store.userProfile.doctorProfile else { return }
+        isLoadingPayout = true
+        payoutError = nil
+
+        do {
+            let result = try await StripeManager.shared.createConnectAccount(
+                doctorId: AuthService.shared.userIdentifier ?? UUID().uuidString,
+                email: store.userProfile.email,
+                firstName: store.userProfile.name.components(separatedBy: " ").first ?? "",
+                lastName: store.userProfile.name.components(separatedBy: " ").dropFirst().joined(separator: " ")
+            )
+            await MainActor.run {
+                isLoadingPayout = false
+                if let url = URL(string: result.onboardingUrl) {
+                    payoutSetupURL = url
+                    showPayoutSetup = true
+                }
+            }
+        } catch {
+            await MainActor.run {
+                isLoadingPayout = false
+                payoutError = error.localizedDescription
             }
         }
-        .padding().background(Color(.systemBackground)).cornerRadius(16)
-        .shadow(color: .black.opacity(0.06), radius: 8).padding(.horizontal)
     }
+
+    private func continuePayoutSetup() async {
+        isLoadingPayout = true
+        payoutError = nil
+
+        do {
+            let onboardingUrl = try await StripeManager.shared.refreshOnboardingLink(
+                doctorId: AuthService.shared.userIdentifier ?? UUID().uuidString
+            )
+            await MainActor.run {
+                isLoadingPayout = false
+                if let url = URL(string: onboardingUrl) {
+                    payoutSetupURL = url
+                    showPayoutSetup = true
+                }
+            }
+        } catch {
+            await MainActor.run {
+                isLoadingPayout = false
+                payoutError = error.localizedDescription
+            }
+        }
+    }
+}
+
+// MARK: - Safari View Wrapper (SFSafariViewController)
+
+struct SafariViewWrapper: UIViewControllerRepresentable {
+    let url: URL
+
+    func makeUIViewController(context: Context) -> SFSafariViewController {
+        let config = SFSafariViewController.Configuration()
+        config.entersReaderIfAvailable = false
+        let safari = SFSafariViewController(url: url, configuration: config)
+        safari.preferredControlTintColor = UIColor.tintColor
+        return safari
+    }
+
+    func updateUIViewController(_ uiViewController: SFSafariViewController, context: Context) {}
 }
 
 // MARK: - Doctor Full Profile View

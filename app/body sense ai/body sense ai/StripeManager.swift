@@ -126,6 +126,129 @@ class StripeManager {
         return request
     }
 
+    // MARK: - Stripe Connect Base URL
+
+    private let railwayBackendURL = "https://body-sense-ai-production.up.railway.app"
+
+    // MARK: - Stripe Connect — Doctor Payouts
+
+    /// Creates a Stripe Connect account for a doctor and returns the account ID + onboarding URL.
+    func createConnectAccount(
+        doctorId: String,
+        email: String,
+        firstName: String,
+        lastName: String
+    ) async throws -> (accountId: String, onboardingUrl: String) {
+        guard let url = URL(string: "\(railwayBackendURL)/doctor/create-connect-account") else {
+            throw StripeConnectError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "doctorId": doctorId,
+            "email": email,
+            "firstName": firstName,
+            "lastName": lastName
+        ])
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try validateHTTPResponse(response, data: data)
+
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let accountId = json["accountId"] as? String,
+              let onboardingUrl = json["onboardingUrl"] as? String else {
+            throw StripeConnectError.invalidResponse
+        }
+
+        return (accountId: accountId, onboardingUrl: onboardingUrl)
+    }
+
+    /// Refreshes the Stripe Connect onboarding link for a doctor whose link expired.
+    func refreshOnboardingLink(doctorId: String) async throws -> String {
+        guard let url = URL(string: "\(railwayBackendURL)/doctor/refresh-onboarding-link") else {
+            throw StripeConnectError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "doctorId": doctorId
+        ])
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try validateHTTPResponse(response, data: data)
+
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let onboardingUrl = json["onboardingUrl"] as? String else {
+            throw StripeConnectError.invalidResponse
+        }
+
+        return onboardingUrl
+    }
+
+    /// Fetches the payout status, bank details, and transaction history for a doctor.
+    func fetchPayoutStatus(doctorId: String) async throws -> PayoutStatusResponse {
+        guard let url = URL(string: "\(railwayBackendURL)/doctor/payout-status/\(doctorId)") else {
+            throw StripeConnectError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try validateHTTPResponse(response, data: data)
+
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        do {
+            return try decoder.decode(PayoutStatusResponse.self, from: data)
+        } catch {
+            throw StripeConnectError.decodingFailed(error)
+        }
+    }
+
+    /// Requests a manual payout for a doctor's pending balance.
+    func requestPayout(doctorId: String) async throws {
+        guard let url = URL(string: "\(railwayBackendURL)/doctor/request-payout") else {
+            throw StripeConnectError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "doctorId": doctorId
+        ])
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try validateHTTPResponse(response, data: data)
+    }
+
+    // MARK: - HTTP Response Validation
+
+    private func validateHTTPResponse(_ response: URLResponse, data: Data) throws {
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw StripeConnectError.invalidResponse
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            // Attempt to extract server error message
+            var serverMessage: String? = nil
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let message = json["error"] as? String {
+                serverMessage = message
+            }
+            throw StripeConnectError.serverError(
+                statusCode: httpResponse.statusCode,
+                message: serverMessage ?? "Request failed with status \(httpResponse.statusCode)"
+            )
+        }
+    }
+
     // MARK: - Simulate payment (sandbox / no backend mode)
 
     func simulatePayment(amountGBP: Double, method: String) async -> PaymentResult {
@@ -137,6 +260,52 @@ class StripeManager {
         let fakeIntentId = "pi_sandbox_\(UUID().uuidString.prefix(16))"
         return .success(transactionId: fakeIntentId, method: method)
     }
+}
+
+// MARK: - Stripe Connect Error
+
+enum StripeConnectError: LocalizedError {
+    case invalidURL
+    case invalidResponse
+    case decodingFailed(Error)
+    case serverError(statusCode: Int, message: String)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidURL:
+            return "Invalid Stripe Connect endpoint URL."
+        case .invalidResponse:
+            return "Received an invalid response from the server."
+        case .decodingFailed(let underlying):
+            return "Failed to decode server response: \(underlying.localizedDescription)"
+        case .serverError(let statusCode, let message):
+            return "Server error (\(statusCode)): \(message)"
+        }
+    }
+}
+
+// MARK: - Payout Status Response
+
+/// Server response from `GET /doctor/payout-status/:doctorId`.
+/// All monetary amounts are in pence (GBP). Convert to pounds in the UI layer.
+struct PayoutStatusResponse: Codable {
+    let payoutStatus: String
+    let bankLast4: String
+    let bankName: String
+    let pendingBalance: Int
+    let transferredBalance: Int
+    let totalEarnings: Int
+    let transactions: [PayoutTransactionResponse]
+}
+
+/// A single payout transaction record.
+struct PayoutTransactionResponse: Codable, Identifiable {
+    let id: String
+    let amount: Int          // pence
+    let currency: String
+    let status: String
+    let createdAt: String
+    let description: String?
 }
 
 // MARK: - Apple Pay Button (SwiftUI Wrapper)

@@ -234,11 +234,25 @@ struct WellnessSection: View {
                         Text(s.quality.icon).font(.title2)
                         StatusBadge(label: s.quality.rawValue, color: s.quality.color)
                     }.padding(.top, 4)
-                    HStack(spacing: 12) {
-                        SleepStagePill(label: "Deep", value: s.deepSleep, color: .brandPurple)
-                        SleepStagePill(label: "REM",  value: s.remSleep,  color: .brandTeal)
-                        SleepStagePill(label: "Light", value: s.lightSleep, color: Color(hex: "#a29bfe"))
-                    }.padding(.top, 6)
+                    // Advanced sleep analysis — Pro feature
+                    if store.subscription >= .pro {
+                        HStack(spacing: 12) {
+                            SleepStagePill(label: "Deep", value: s.deepSleep, color: .brandPurple)
+                            SleepStagePill(label: "REM",  value: s.remSleep,  color: .brandTeal)
+                            SleepStagePill(label: "Light", value: s.lightSleep, color: Color(hex: "#a29bfe"))
+                        }.padding(.top, 6)
+                    } else {
+                        HStack(spacing: 6) {
+                            Image(systemName: "lock.fill").font(.caption2).foregroundColor(.brandTeal)
+                            Text("Sleep stage analysis").font(.caption).foregroundColor(.secondary)
+                            Spacer()
+                            Text("PRO").font(.caption2).fontWeight(.bold)
+                                .padding(.horizontal, 8).padding(.vertical, 3)
+                                .background(Color.brandTeal.opacity(0.12))
+                                .foregroundColor(.brandTeal)
+                                .cornerRadius(100)
+                        }.padding(.top, 6)
+                    }
                 } else {
                     Text("Log your sleep duration and quality").foregroundColor(.secondary).font(.subheadline)
                 }

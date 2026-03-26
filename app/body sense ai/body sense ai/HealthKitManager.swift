@@ -72,6 +72,9 @@ class HealthKitManager {
             .dietaryIron,
             .dietaryVitaminD,
 
+            // ── Reproductive ──
+            .basalBodyTemperature,
+
             // ── Other Clinical ──
             .bloodAlcoholContent,
             .electrodermalActivity,
@@ -224,15 +227,17 @@ class HealthKitManager {
         await fetchLatestDouble(.bodyTemperature, unit: .degreeCelsius())
     }
 
-    // MARK: - Blood Glucose
+    // MARK: - Blood Glucose (read in mmol/L, convert to mg/dL for internal storage)
 
+    /// Fetches latest blood glucose from HealthKit in mmol/L, returns mg/dL for internal consistency.
     func fetchLatestBloodGlucose() async -> Double? {
-        await fetchLatestDouble(.bloodGlucose, unit: HKUnit(from: "mg/dL"))
+        guard let mmol = await fetchLatestDouble(.bloodGlucose, unit: HKUnit.moleUnit(with: .milli, molarMass: HKUnitMolarMassBloodGlucose).unitDivided(by: .liter())) else { return nil }
+        return mmol * 18.0  // mmol/L → mg/dL for internal storage
     }
 
     func fetchRecentBloodGlucose(days: Int = 7) async -> [(date: Date, value: Double)] {
         guard let type = HKQuantityType.quantityType(forIdentifier: .bloodGlucose) else { return [] }
-        let unit = HKUnit(from: "mg/dL")
+        let unit = HKUnit.moleUnit(with: .milli, molarMass: HKUnitMolarMassBloodGlucose).unitDivided(by: .liter())
         return await withCheckedContinuation { cont in
             let sort = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
             let query = HKSampleQuery(
@@ -242,7 +247,7 @@ class HealthKitManager {
                 sortDescriptors: [sort]
             ) { _, samples, _ in
                 let results = (samples as? [HKQuantitySample])?.map { s in
-                    (date: s.endDate, value: s.quantity.doubleValue(for: unit))
+                    (date: s.endDate, value: s.quantity.doubleValue(for: unit) * 18.0)  // mmol/L → mg/dL
                 } ?? []
                 cont.resume(returning: results)
             }
@@ -292,6 +297,81 @@ class HealthKitManager {
 
     func fetchLatestBMI() async -> Double? {
         await fetchLatestDouble(.bodyMassIndex, unit: .count())
+    }
+
+    func fetchLatestHeight() async -> Double? {
+        await fetchLatestDouble(.height, unit: .meterUnit(with: .centi))
+    }
+
+    func fetchLatestWaistCircumference() async -> Double? {
+        await fetchLatestDouble(.waistCircumference, unit: .meterUnit(with: .centi))
+    }
+
+    func fetchLatestLeanBodyMass() async -> Double? {
+        await fetchLatestDouble(.leanBodyMass, unit: .gramUnit(with: .kilo))
+    }
+
+    // MARK: - Basal Body Temperature
+
+    func fetchLatestBasalBodyTemp() async -> Double? {
+        await fetchLatestDouble(.basalBodyTemperature, unit: .degreeCelsius())
+    }
+
+    // MARK: - Insulin Delivery
+
+    func fetchTodayInsulinDelivery() async -> Double {
+        await fetchCumulativeSumDouble(.insulinDelivery, unit: .internationalUnit())
+    }
+
+    // MARK: - Nutrition (extended)
+
+    func fetchTodayProtein() async -> Double {
+        await fetchCumulativeSumDouble(.dietaryProtein, unit: .gram())
+    }
+
+    func fetchTodayCarbs() async -> Double {
+        await fetchCumulativeSumDouble(.dietaryCarbohydrates, unit: .gram())
+    }
+
+    func fetchTodayFat() async -> Double {
+        await fetchCumulativeSumDouble(.dietaryFatTotal, unit: .gram())
+    }
+
+    func fetchTodayFiber() async -> Double {
+        await fetchCumulativeSumDouble(.dietaryFiber, unit: .gram())
+    }
+
+    func fetchTodaySugar() async -> Double {
+        await fetchCumulativeSumDouble(.dietarySugar, unit: .gram())
+    }
+
+    func fetchTodaySodium() async -> Double {
+        await fetchCumulativeSumDouble(.dietarySodium, unit: .gram())
+    }
+
+    func fetchTodayCaffeine() async -> Double {
+        await fetchCumulativeSumDouble(.dietaryCaffeine, unit: .gram())
+    }
+
+    // MARK: - Mindful Sessions
+
+    func fetchTodayMindfulMinutes() async -> Double {
+        guard let type = HKCategoryType.categoryType(forIdentifier: .mindfulSession) else { return 0 }
+        return await withCheckedContinuation { cont in
+            let sort = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
+            let query = HKSampleQuery(
+                sampleType: type,
+                predicate: todayPredicate,
+                limit: 100,
+                sortDescriptors: [sort]
+            ) { _, samples, _ in
+                let totalSeconds = (samples as? [HKCategorySample])?.reduce(0.0) { sum, s in
+                    sum + s.endDate.timeIntervalSince(s.startDate)
+                } ?? 0
+                cont.resume(returning: totalSeconds / 60.0)
+            }
+            hkStore.execute(query)
+        }
     }
 
     // MARK: - Sleep Analysis
@@ -394,9 +474,9 @@ class HealthKitManager {
         return events.sorted { $0.date > $1.date }
     }
 
-    // MARK: - Comprehensive Sync
+    // MARK: - Comprehensive Sync (40+ Health Data Types)
 
-    /// Full sync — fetch everything and update HealthStore.
+    /// Full sync — fetch everything from HealthKit and update HealthStore.
     @MainActor
     func syncAll(to store: HealthStore) async {
         guard isAuthorized else { return }
@@ -408,6 +488,8 @@ class HealthKitManager {
         async let standMin    = fetchTodayStandMinutes()
         async let flights     = fetchTodayFlightsClimbed()
         async let exerciseMin = fetchTodayExerciseMinutes()
+        async let basalCal    = fetchTodayBasalCalories()
+        async let cyclingDist = fetchTodayCyclingDistance()
 
         // ── Vitals (parallel) ──
         async let hr          = fetchLatestHeartRate()
@@ -423,14 +505,47 @@ class HealthKitManager {
         async let bp          = fetchLatestBloodPressure()
         async let weight      = fetchLatestWeight()
         async let bodyFat     = fetchLatestBodyFat()
+        async let bmi         = fetchLatestBMI()
+        async let heightVal   = fetchLatestHeight()
+        async let waist       = fetchLatestWaistCircumference()
+        async let lean        = fetchLatestLeanBodyMass()
         async let waterHK     = fetchTodayWaterIntake()
 
-        // Await all results
-        let (s, d, c, m, _, ex) = await (steps, distance, calories, standMin, flights, exerciseMin)
-        let (h, _, sp, hv, _, _, bt) = await (hr, restHR, spo2, hrv, vo2, respRate, bodyTemp)
-        let (glu, bpVal, wt, _, wtr) = await (glucose, bp, weight, bodyFat, waterHK)
+        // ── Nutrition (parallel) ──
+        async let dietCal     = fetchTodayDietaryCalories()
+        async let protein     = fetchTodayProtein()
+        async let carbs       = fetchTodayCarbs()
+        async let fat         = fetchTodayFat()
+        async let fiber       = fetchTodayFiber()
+        async let sugar       = fetchTodaySugar()
+        async let sodium      = fetchTodaySodium()
+        async let caffeine    = fetchTodayCaffeine()
+
+        // ── Clinical & Reproductive (parallel) ──
+        async let insulin     = fetchTodayInsulinDelivery()
+        async let basalTemp   = fetchLatestBasalBodyTemp()
+        async let mindful     = fetchTodayMindfulMinutes()
+
+        // Await all activity results
+        let (s, d, c, m, fl, ex) = await (steps, distance, calories, standMin, flights, exerciseMin)
+        let (bCal, cyc) = await (basalCal, cyclingDist)
+
+        // Await all vitals
+        let (h, rhr, sp, hv, v2, rr, bt) = await (hr, restHR, spo2, hrv, vo2, respRate, bodyTemp)
+
+        // Await blood & body
+        let (glu, bpVal, wt, bf, bmiVal) = await (glucose, bp, weight, bodyFat, bmi)
+        let (ht, wc, lbm, wtr) = await (heightVal, waist, lean, waterHK)
+
+        // Await nutrition
+        let (dCal, prot, crb, ft, fib) = await (dietCal, protein, carbs, fat, fiber)
+        let (sug, sod, caf) = await (sugar, sodium, caffeine)
+
+        // Await clinical & reproductive
+        let (ins, bbt, mf) = await (insulin, basalTemp, mindful)
 
         let cal = Calendar.current
+        let now = Date()
 
         // ── Steps/Activity ──
         if let idx = store.stepEntries.firstIndex(where: { cal.isDateInToday($0.date) && $0.source == "healthkit" }) {
@@ -440,7 +555,7 @@ class HealthKitManager {
             store.stepEntries[idx].activeMinutes = ex > 0 ? ex : m
         } else if s > 0 || d > 0 || c > 0 {
             store.stepEntries.append(StepEntry(
-                date: Date(), steps: s, distance: d,
+                date: now, steps: s, distance: d,
                 calories: c, activeMinutes: ex > 0 ? ex : m, source: "healthkit"
             ))
         }
@@ -449,7 +564,7 @@ class HealthKitManager {
         if let heartRate = h {
             let alreadyToday = store.heartRateReadings.contains { cal.isDateInToday($0.date) && $0.context == .rest }
             if !alreadyToday {
-                store.heartRateReadings.insert(HeartRateReading(value: heartRate, date: Date(), context: .rest), at: 0)
+                store.heartRateReadings.insert(HeartRateReading(value: heartRate, date: now, context: .rest), at: 0)
             }
         }
 
@@ -457,7 +572,31 @@ class HealthKitManager {
         if let hrvVal = hv {
             let alreadyToday = store.hrvReadings.contains { cal.isDateInToday($0.date) }
             if !alreadyToday {
-                store.hrvReadings.insert(HRVReading(value: hrvVal, date: Date()), at: 0)
+                store.hrvReadings.insert(HRVReading(value: hrvVal, date: now), at: 0)
+            }
+        }
+
+        // ── SpO2 (Blood Oxygen) ──
+        if let spo2Val = sp, spo2Val > 0 {
+            let alreadyToday = store.spo2Readings.contains { cal.isDateInToday($0.date) }
+            if !alreadyToday {
+                store.spo2Readings.insert(SpO2Reading(value: spo2Val, date: now), at: 0)
+            }
+        }
+
+        // ── Respiratory Rate ──
+        if let rrVal = rr, rrVal > 0 {
+            let alreadyToday = store.respiratoryRateReadings.contains { cal.isDateInToday($0.date) }
+            if !alreadyToday {
+                store.respiratoryRateReadings.insert(RespiratoryRateReading(value: rrVal, date: now), at: 0)
+            }
+        }
+
+        // ── VO2 Max ──
+        if let vo2Val = v2, vo2Val > 0 {
+            let alreadyToday = store.vo2MaxReadings.contains { cal.isDateInToday($0.date) }
+            if !alreadyToday {
+                store.vo2MaxReadings.insert(VO2MaxReading(value: vo2Val, date: now), at: 0)
             }
         }
 
@@ -465,7 +604,7 @@ class HealthKitManager {
         if let gluVal = glu, gluVal > 0 {
             let alreadyToday = store.glucoseReadings.contains { cal.isDateInToday($0.date) }
             if !alreadyToday {
-                store.glucoseReadings.insert(GlucoseReading(value: gluVal, date: Date(), context: .random), at: 0)
+                store.glucoseReadings.insert(GlucoseReading(value: gluVal, date: now, context: .random), at: 0)
             }
         }
 
@@ -475,7 +614,7 @@ class HealthKitManager {
             if !alreadyToday {
                 store.bpReadings.insert(BPReading(
                     systolic: bpReading.systolic, diastolic: bpReading.diastolic,
-                    pulse: h ?? 72, date: Date()
+                    pulse: h ?? 72, date: now
                 ), at: 0)
             }
         }
@@ -484,20 +623,89 @@ class HealthKitManager {
         if let temp = bt, temp > 30 {
             let alreadyToday = store.bodyTempReadings.contains { cal.isDateInToday($0.date) }
             if !alreadyToday {
-                store.bodyTempReadings.insert(BodyTempReading(value: temp, date: Date()), at: 0)
+                store.bodyTempReadings.insert(BodyTempReading(value: temp, date: now), at: 0)
             }
         }
 
-        // ── Weight ──
+        // ── Weight & Height → UserProfile ──
         if let w = wt, w > 0 {
             store.userProfile.weight = w
+        }
+        if let h = ht, h > 0 {
+            store.userProfile.height = h
+        }
+
+        // ── Body Measurements (BMI, body fat, waist, lean body mass) ──
+        let hasMeasurement = (bmiVal != nil || bf != nil || wc != nil || lbm != nil)
+        if hasMeasurement {
+            let alreadyToday = store.bodyMeasurements.contains { cal.isDateInToday($0.date) }
+            if !alreadyToday {
+                let normalizedBF: Double? = {
+                    guard let v = bf else { return nil }
+                    return v > 1 ? v : v * 100  // normalize percentage
+                }()
+                store.bodyMeasurements.insert(BodyMeasurement(
+                    date: now,
+                    bmi: bmiVal,
+                    bodyFat: normalizedBF,
+                    height: ht,
+                    waistCirc: wc,
+                    leanBodyMass: lbm
+                ), at: 0)
+            }
         }
 
         // ── Water Intake from HealthKit ──
         if wtr > 0 {
             let alreadyToday = store.waterEntries.contains { cal.isDateInToday($0.date) }
             if !alreadyToday {
-                store.waterEntries.append(WaterEntry(date: Date(), amount: wtr))
+                store.waterEntries.append(WaterEntry(date: now, amount: wtr))
+            }
+        }
+
+        // ── Nutrition from HealthKit (aggregate into a NutritionLog if any data) ──
+        if dCal > 0 || prot > 0 || crb > 0 || ft > 0 {
+            let alreadyToday = store.nutritionLogs.contains {
+                cal.isDateInToday($0.date) && $0.notes == "Synced from Apple Health"
+            }
+            if !alreadyToday {
+                store.nutritionLogs.append(NutritionLog(
+                    date: now,
+                    mealType: .snack,
+                    calories: dCal,
+                    carbs: crb,
+                    protein: prot,
+                    fat: ft,
+                    fiber: fib,
+                    sugar: sug,
+                    salt: sod * 1000,  // grams → mg, then stored as grams (sodium→salt conversion)
+                    foodName: "HealthKit Daily Total",
+                    notes: "Synced from Apple Health"
+                ))
+            }
+        }
+
+        // ── Insulin Delivery ──
+        if ins > 0 {
+            let alreadyToday = store.insulinDeliveries.contains { cal.isDateInToday($0.date) }
+            if !alreadyToday {
+                store.insulinDeliveries.insert(InsulinDeliveryReading(value: ins, date: now), at: 0)
+            }
+        }
+
+        // ── Basal Body Temperature ──
+        if let bbtVal = bbt, bbtVal > 30 {
+            let alreadyToday = store.basalBodyTempReadings.contains { cal.isDateInToday($0.date) }
+            if !alreadyToday {
+                store.basalBodyTempReadings.insert(BasalBodyTempReading(value: bbtVal, date: now), at: 0)
+            }
+        }
+
+        // ── Mindful Minutes ──
+        if mf > 0 {
+            let alreadyToday = store.mindfulSessions.contains { cal.isDateInToday($0.date) }
+            if !alreadyToday {
+                store.mindfulSessions.insert(MindfulSessionEntry(date: now, duration: mf), at: 0)
             }
         }
 
@@ -524,18 +732,51 @@ class HealthKitManager {
             }
         }
 
-        // ── Cache SpO2 for dashboard ──
+        // ── Cache SpO2 for dashboard (backward compat) ──
         latestSpO2 = sp
 
         lastSyncTime = Date()
         store.save()
 
         #if DEBUG
-        print("⚕️ HealthKit sync complete: \(s) steps, \(String(format: "%.2f", d))km, \(c) kcal, " +
-              "HR: \(h.map { "\($0)" } ?? "–"), HRV: \(hv.map { String(format: "%.0f", $0) } ?? "–")ms, " +
-              "SpO2: \(sp.map { String(format: "%.0f%%", $0) } ?? "–"), Glucose: \(glu.map { String(format: "%.0f", $0) } ?? "–"), " +
-              "BP: \(bpVal.map { "\($0.systolic)/\($0.diastolic)" } ?? "–"), Temp: \(bt.map { String(format: "%.1f°C", $0) } ?? "–"), " +
-              "Weight: \(wt.map { String(format: "%.1fkg", $0) } ?? "–")")
+        let syncedTypes = [
+            s > 0 ? "steps:\(s)" : nil,
+            d > 0 ? String(format: "dist:%.2fkm", d) : nil,
+            c > 0 ? "cal:\(c)" : nil,
+            bCal > 0 ? "basal:\(bCal)" : nil,
+            fl > 0 ? "flights:\(fl)" : nil,
+            ex > 0 ? "exercise:\(ex)min" : nil,
+            m > 0 ? "stand:\(m)min" : nil,
+            cyc > 0 ? String(format: "cycling:%.2fkm", cyc) : nil,
+            h.map { "HR:\($0)" },
+            rhr.map { "restHR:\($0)" },
+            sp.map { String(format: "SpO2:%.0f%%", $0) },
+            hv.map { String(format: "HRV:%.0fms", $0) },
+            v2.map { String(format: "VO2:%.1f", $0) },
+            rr.map { String(format: "resp:%.1f", $0) },
+            bt.map { String(format: "temp:%.1f°C", $0) },
+            glu.map { String(format: "glu:%.0fmg/dL", $0) },
+            bpVal.map { "BP:\($0.systolic)/\($0.diastolic)" },
+            wt.map { String(format: "wt:%.1fkg", $0) },
+            ht.map { String(format: "ht:%.1fcm", $0) },
+            bf.map { String(format: "bf:%.1f%%", $0) },
+            bmiVal.map { String(format: "BMI:%.1f", $0) },
+            wc.map { String(format: "waist:%.1fcm", $0) },
+            lbm.map { String(format: "lean:%.1fkg", $0) },
+            wtr > 0 ? String(format: "water:%.0fml", wtr) : nil,
+            dCal > 0 ? "dietCal:\(dCal)" : nil,
+            prot > 0 ? String(format: "protein:%.1fg", prot) : nil,
+            crb > 0 ? String(format: "carbs:%.1fg", crb) : nil,
+            ft > 0 ? String(format: "fat:%.1fg", ft) : nil,
+            fib > 0 ? String(format: "fiber:%.1fg", fib) : nil,
+            sug > 0 ? String(format: "sugar:%.1fg", sug) : nil,
+            sod > 0 ? String(format: "sodium:%.2fg", sod) : nil,
+            caf > 0 ? String(format: "caffeine:%.1fmg", caf * 1000) : nil,
+            ins > 0 ? String(format: "insulin:%.1fIU", ins) : nil,
+            bbt.map { String(format: "basalTemp:%.1f°C", $0) },
+            mf > 0 ? String(format: "mindful:%.0fmin", mf) : nil
+        ].compactMap { $0 }.joined(separator: ", ")
+        print("⚕️ HealthKit sync complete: \(syncedTypes)")
         #endif
     }
 

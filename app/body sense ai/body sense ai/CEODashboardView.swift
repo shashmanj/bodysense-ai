@@ -15,6 +15,13 @@ struct CEODashboardView: View {
     @Environment(HealthStore.self) var store
     @Environment(\.dismiss) var dismiss
 
+    // Payout overview state
+    @State private var totalPendingDoctorBalancePence: Int = 0
+    @State private var doctorsWithoutPayout: Int = 0
+    @State private var activePayoutAccounts: Int = 0
+    @State private var isProcessingTransfers = false
+    @State private var transferResult: String?
+
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
@@ -22,6 +29,7 @@ struct CEODashboardView: View {
                 dailySnapshot
                 revenueSection
                 doctorMetrics
+                payoutOverview
                 productMetrics
                 operationalAlerts
             }
@@ -35,6 +43,7 @@ struct CEODashboardView: View {
                 Button("Done") { dismiss() }
             }
         }
+        .task { await loadPayoutOverview() }
     }
 
     // MARK: - Header
@@ -128,7 +137,7 @@ struct CEODashboardView: View {
                 Divider().padding(.leading, 48)
                 revenueRow("Consultations", amount: consultationRevenue, icon: "video.fill", color: .brandPurple)
                 Divider().padding(.leading, 48)
-                revenueRow("Platform Commission (50%)", amount: platformCommission, icon: "percent", color: .brandAmber)
+                revenueRow("Platform Commission (40%)", amount: platformCommission, icon: "percent", color: .brandAmber)
                 Divider().padding(.leading, 48)
                 revenueRow("Total Revenue", amount: totalRevenue, icon: "chart.line.uptrend.xyaxis", color: .brandTeal, bold: true)
             }
@@ -163,6 +172,53 @@ struct CEODashboardView: View {
             .background(Color(.systemBackground))
             .cornerRadius(12)
             .shadow(color: .black.opacity(0.04), radius: 4)
+        }
+        .padding(.horizontal)
+    }
+
+    // MARK: - Payout Overview
+
+    var payoutOverview: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionTitle("Payout Overview", icon: "building.columns.fill")
+
+            VStack(spacing: 0) {
+                statRow("Total Pending Doctor Balances",
+                        value: formatGBP(Double(totalPendingDoctorBalancePence) / 100.0),
+                        color: totalPendingDoctorBalancePence > 0 ? .brandAmber : .primary)
+                Divider().padding(.leading, 16)
+                statRow("Doctors Without Payout Account",
+                        value: "\(doctorsWithoutPayout)",
+                        color: doctorsWithoutPayout > 0 ? .brandCoral : .secondary)
+                Divider().padding(.leading, 16)
+                statRow("Active Payout Accounts",
+                        value: "\(activePayoutAccounts)",
+                        color: .brandGreen)
+            }
+            .background(Color(.systemBackground))
+            .cornerRadius(12)
+            .shadow(color: .black.opacity(0.04), radius: 4)
+
+            Button { Task { await triggerPendingTransfers() } } label: {
+                HStack {
+                    if isProcessingTransfers {
+                        ProgressView().tint(.white)
+                    }
+                    Text("Process Pending Transfers")
+                        .font(.subheadline).fontWeight(.semibold)
+                }
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity).frame(height: 54)
+                .background(totalPendingDoctorBalancePence > 0 ? Color.brandPurple : Color.secondary.opacity(0.4))
+                .cornerRadius(14)
+            }
+            .disabled(isProcessingTransfers || totalPendingDoctorBalancePence == 0)
+
+            if let result = transferResult {
+                Text(result)
+                    .font(.caption)
+                    .foregroundColor(result.contains("Error") ? .brandCoral : .brandGreen)
+            }
         }
         .padding(.horizontal)
     }
@@ -250,7 +306,7 @@ struct CEODashboardView: View {
     }
 
     var platformCommission: Double {
-        consultationRevenue * 0.5
+        consultationRevenue * 0.4
     }
 
     var verifiedDoctors: Int {
@@ -367,5 +423,74 @@ struct CEODashboardView: View {
 
     func formatGBP(_ amount: Double) -> String {
         String(format: "£%.2f", amount)
+    }
+
+    // MARK: - Payout Data Loading
+
+    private func loadPayoutOverview() async {
+        let railwayURL = "https://body-sense-ai-production.up.railway.app"
+        guard let url = URL(string: "\(railwayURL)/ceo/payout-overview") else { return }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        do {
+            let (data, _) = try await URLSession.shared.data(for: request)
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                await MainActor.run {
+                    totalPendingDoctorBalancePence = json["totalPendingBalancePence"] as? Int ?? 0
+                    doctorsWithoutPayout = json["doctorsWithoutPayout"] as? Int ?? 0
+                    activePayoutAccounts = json["activePayoutAccounts"] as? Int ?? 0
+                }
+            }
+        } catch {
+            // Silent — keep defaults until backend responds
+        }
+    }
+
+    private func triggerPendingTransfers() async {
+        let railwayURL = "https://body-sense-ai-production.up.railway.app"
+        guard let url = URL(string: "\(railwayURL)/ceo/trigger-pending-transfers") else { return }
+
+        isProcessingTransfers = true
+        transferResult = nil
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse,
+                  (200...299).contains(httpResponse.statusCode) else {
+                await MainActor.run {
+                    isProcessingTransfers = false
+                    transferResult = "Error: Server returned an unexpected response."
+                }
+                return
+            }
+
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let processed = json["processedCount"] as? Int {
+                await MainActor.run {
+                    isProcessingTransfers = false
+                    transferResult = "Successfully processed \(processed) transfer\(processed == 1 ? "" : "s")."
+                }
+            } else {
+                await MainActor.run {
+                    isProcessingTransfers = false
+                    transferResult = "Transfers initiated."
+                }
+            }
+
+            // Refresh overview data
+            await loadPayoutOverview()
+        } catch {
+            await MainActor.run {
+                isProcessingTransfers = false
+                transferResult = "Error: \(error.localizedDescription)"
+            }
+        }
     }
 }

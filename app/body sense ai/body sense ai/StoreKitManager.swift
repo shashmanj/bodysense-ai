@@ -164,6 +164,7 @@ final class StoreKitManager {
     // MARK: - Subscription Status
 
     /// Check current entitlements and update subscription state.
+    /// Automatically syncs the result to HealthStore.
     func updateSubscriptionStatus() async {
         var foundPro = false
         var foundPremium = false
@@ -190,6 +191,9 @@ final class StoreKitManager {
         isPro = foundPro
         isPremium = foundPremium
         currentSubscription = activeProduct
+
+        // Keep HealthStore in sync with StoreKit state
+        syncToHealthStore(HealthStore.shared)
     }
 
     // MARK: - Map to SubscriptionPlan

@@ -17,6 +17,8 @@ struct AgentTeamView: View {
 
     @State private var showReportShare = false
     @State private var reportURL: URL? = nil
+    @State private var showPromptEditor = false
+    @State private var selectedPromptAgent: AgentType? = nil
 
     // Available agents — Nova first for CEO, excluding Becky (doctor-only)
     private var publicAgents: [AgentType] {
@@ -106,6 +108,37 @@ struct AgentTeamView: View {
                         .padding(.horizontal)
                     }
 
+                    // ── Prompt Performance (CEO only) ─────────────────────────
+                    if store.userProfile.isCEO {
+                        promptPerformanceSection
+                    }
+
+                    // ── Prompt Editor button (CEO only) ──────────────────────
+                    if store.userProfile.isCEO {
+                        Button { showPromptEditor = true } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "pencil.and.list.clipboard")
+                                    .font(.title3).foregroundColor(.white)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Prompt Editor")
+                                        .font(.subheadline).fontWeight(.semibold)
+                                    Text("Customise AI agent instructions")
+                                        .font(.caption2).foregroundColor(.white.opacity(0.7))
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .foregroundColor(.white.opacity(0.7))
+                            }
+                            .padding(14)
+                            .background(LinearGradient(
+                                colors: [Color(hex: "#6C63FF"), Color(hex: "#4834d4")],
+                                startPoint: .leading, endPoint: .trailing))
+                            .cornerRadius(14)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.horizontal)
+                    }
+
                     // ── Agent roster ──────────────────────────────────────────
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Your Expert Team")
@@ -142,6 +175,82 @@ struct AgentTeamView: View {
         .sheet(isPresented: $showReportShare) {
             if let url = reportURL {
                 ShareSheet(items: [url])
+            }
+        }
+        // Prompt editor (CEO only)
+        .sheet(isPresented: $showPromptEditor) {
+            PromptEditorListView()
+                .environment(store)
+        }
+    }
+
+    // MARK: Prompt Performance Section
+
+    private var promptPerformanceSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "chart.bar.doc.horizontal.fill")
+                    .foregroundColor(.brandPurple)
+                Text("Prompt Performance")
+                    .font(.headline)
+            }
+            .padding(.horizontal)
+
+            let report = AgentAnalyticsEngine.generateReport(from: AgentMemoryStore.shared, store: store)
+
+            if report.agentStats.isEmpty {
+                HStack {
+                    Image(systemName: "info.circle")
+                        .foregroundColor(.secondary)
+                    Text("No interaction data yet. Performance metrics will appear after users interact with agents.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding()
+                .background(Color(.secondarySystemBackground))
+                .cornerRadius(12)
+                .padding(.horizontal)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(report.agentStats) { stat in
+                        let rating = stat.avgQuality * 5.0
+                        let isUnderperforming = rating < 3.5 && stat.messageCount >= 5
+                        HStack(spacing: 12) {
+                            Image(systemName: stat.domain.icon)
+                                .foregroundColor(Color(hex: stat.domain.colorHex))
+                                .frame(width: 28)
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack(spacing: 6) {
+                                    Text(stat.agentName)
+                                        .font(.subheadline).fontWeight(.medium)
+                                    if isUnderperforming {
+                                        Text("Underperforming")
+                                            .font(.caption2).fontWeight(.semibold)
+                                            .foregroundColor(.brandCoral)
+                                            .padding(.horizontal, 6).padding(.vertical, 2)
+                                            .background(Color.brandCoral.opacity(0.12))
+                                            .cornerRadius(100)
+                                    }
+                                }
+                                Text("\(stat.messageCount) messages, \(String(format: "%.1f", rating))/5.0 avg rating")
+                                    .font(.caption).foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            // Mini rating indicator
+                            Text(String(format: "%.1f", rating))
+                                .font(.subheadline).fontWeight(.bold)
+                                .foregroundColor(rating >= 3.5 ? .brandGreen : .brandCoral)
+                        }
+                        .padding(.horizontal, 16).padding(.vertical, 10)
+                        if stat.id != report.agentStats.last?.id {
+                            Divider().padding(.leading, 56)
+                        }
+                    }
+                }
+                .background(Color(.systemBackground))
+                .cornerRadius(12)
+                .shadow(color: .black.opacity(0.04), radius: 4)
+                .padding(.horizontal)
             }
         }
     }
@@ -825,4 +934,201 @@ struct MeetingAgentCard: View {
     }
 }
 
+// MARK: - Prompt Editor List (CEO Layer 7)
 
+struct PromptEditorListView: View {
+    @Environment(HealthStore.self) var store
+    @Environment(\.dismiss) var dismiss
+    @State private var selectedAgent: AgentType? = nil
+
+    private let allAgents: [AgentType] = AgentType.allCases
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    Text("Customise the system prompts for each AI agent. Your additions are appended to the base prompt and take effect immediately.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .listRowBackground(Color.clear)
+                }
+
+                Section("Agents") {
+                    ForEach(allAgents) { agent in
+                        Button {
+                            selectedAgent = agent
+                        } label: {
+                            HStack(spacing: 12) {
+                                ZStack {
+                                    Circle()
+                                        .fill(Color(hex: agent.colorHex).opacity(0.18))
+                                        .frame(width: 36, height: 36)
+                                    Image(systemName: agent.icon)
+                                        .font(.caption)
+                                        .foregroundColor(Color(hex: agent.colorHex))
+                                }
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(agent.rawValue)
+                                        .font(.subheadline).fontWeight(.medium)
+                                        .foregroundColor(.primary)
+                                    if let custom = store.agentCustomPrompts[agent.rawValue], !custom.isEmpty {
+                                        Text("Custom prompt active")
+                                            .font(.caption2)
+                                            .foregroundColor(.brandGreen)
+                                    } else {
+                                        Text("Default prompt")
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.caption2).foregroundColor(.secondary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .navigationTitle("Prompt Editor")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+            .sheet(item: $selectedAgent) { agent in
+                PromptEditorDetailView(agent: agent)
+                    .environment(store)
+            }
+        }
+    }
+}
+
+// MARK: - Prompt Editor Detail (Single Agent)
+
+struct PromptEditorDetailView: View {
+    @Environment(HealthStore.self) var store
+    @Environment(\.dismiss) var dismiss
+
+    let agent: AgentType
+    @State private var customPrompt: String = ""
+    @State private var showSaved = false
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+
+                    // Agent header
+                    HStack(spacing: 12) {
+                        ZStack {
+                            Circle()
+                                .fill(Color(hex: agent.colorHex).opacity(0.18))
+                                .frame(width: 48, height: 48)
+                            Image(systemName: agent.icon)
+                                .font(.title3)
+                                .foregroundColor(Color(hex: agent.colorHex))
+                        }
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(agent.rawValue)
+                                .font(.headline)
+                            Text(agent.tagline)
+                                .font(.caption).foregroundColor(.secondary)
+                        }
+                    }
+                    .padding(.horizontal)
+
+                    // Base prompt (read-only)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Base System Prompt")
+                            .font(.subheadline).fontWeight(.semibold)
+                        Text("Read-only. This is the built-in prompt for this agent.")
+                            .font(.caption2).foregroundColor(.secondary)
+                        Text(agent.baseSystemPrompt)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color(.tertiarySystemBackground))
+                            .cornerRadius(12)
+                    }
+                    .padding(.horizontal)
+
+                    // Custom addition (editable)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Custom Instructions")
+                            .font(.subheadline).fontWeight(.semibold)
+                        Text("These are appended to the base prompt. Use this to fine-tune the agent's behaviour without modifying code.")
+                            .font(.caption2).foregroundColor(.secondary)
+
+                        TextEditor(text: $customPrompt)
+                            .font(.body)
+                            .frame(minHeight: 150)
+                            .padding(8)
+                            .background(Color(.tertiarySystemBackground))
+                            .cornerRadius(12)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(Color(.separator).opacity(0.3), lineWidth: 1)
+                            )
+                    }
+                    .padding(.horizontal)
+
+                    // Actions
+                    HStack(spacing: 12) {
+                        Button {
+                            store.agentCustomPrompts[agent.rawValue] = customPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+                            store.save()
+                            withAnimation { showSaved = true }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                withAnimation { showSaved = false }
+                            }
+                        } label: {
+                            HStack {
+                                Image(systemName: showSaved ? "checkmark.circle.fill" : "square.and.arrow.down")
+                                Text(showSaved ? "Saved" : "Save")
+                            }
+                            .font(.subheadline).fontWeight(.semibold)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity).frame(height: 54)
+                            .background(showSaved ? Color.brandGreen : Color.brandPurple)
+                            .cornerRadius(14)
+                        }
+
+                        Button {
+                            customPrompt = ""
+                            store.agentCustomPrompts.removeValue(forKey: agent.rawValue)
+                            store.save()
+                        } label: {
+                            HStack {
+                                Image(systemName: "arrow.uturn.backward")
+                                Text("Reset")
+                            }
+                            .font(.subheadline).fontWeight(.semibold)
+                            .foregroundColor(.brandCoral)
+                            .frame(maxWidth: .infinity).frame(height: 54)
+                            .background(Color.brandCoral.opacity(0.1))
+                            .cornerRadius(14)
+                        }
+                    }
+                    .padding(.horizontal)
+
+                    Spacer(minLength: 40)
+                }
+                .padding(.top, 12)
+            }
+            .background(Color(.systemGroupedBackground))
+            .navigationTitle("Edit Prompt")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                }
+            }
+            .onAppear {
+                customPrompt = store.agentCustomPrompts[agent.rawValue] ?? ""
+            }
+        }
+    }
+}

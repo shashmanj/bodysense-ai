@@ -78,38 +78,50 @@ enum AgentType: String, CaseIterable, Identifiable {
         }
     }
 
-    var systemPrompt: String {
+    /// Base system prompt (before CEO custom additions).
+    var baseSystemPrompt: String {
         switch self {
-        case .healthCoach:
-            return AISystemPrompts.healthCoach
-        case .nutritionist:
-            return AISystemPrompts.nutritionist
-        case .fitnessCoach:
-            return AISystemPrompts.fitnessCoach
-        case .sleepCoach:
-            return AISystemPrompts.sleepCoach
-        case .mindfulness:
-            return AISystemPrompts.mindfulness
-        case .shopAdvisor:
-            return AISystemPrompts.shopAdvisor
-        case .ceoAdvisor:
-            return AISystemPrompts.ceoAdvisor
-        case .becky:
-            return AISystemPrompts.becky(appointmentContext: "General consultation support.")
+        case .healthCoach:  return AISystemPrompts.healthCoach
+        case .nutritionist: return AISystemPrompts.nutritionist
+        case .fitnessCoach: return AISystemPrompts.fitnessCoach
+        case .sleepCoach:   return AISystemPrompts.sleepCoach
+        case .mindfulness:  return AISystemPrompts.mindfulness
+        case .shopAdvisor:  return AISystemPrompts.shopAdvisor
+        case .ceoAdvisor:   return AISystemPrompts.ceoAdvisor
+        case .becky:        return AISystemPrompts.becky(appointmentContext: "General consultation support.")
         case .nova:
             let report = AgentAnalyticsEngine.generateReport(from: AgentMemoryStore.shared, store: HealthStore.shared)
             let ctx = AgentAnalyticsEngine.buildContextForNova(report: report)
             return AISystemPrompts.nova(analyticsContext: ctx)
-        case .customerCare:
-            return AISystemPrompts.customerCare
+        case .customerCare: return AISystemPrompts.customerCare
         }
+    }
+
+    /// Full system prompt — base + global patterns + CEO custom prompt additions (Layer 7).
+    var systemPrompt: String {
+        var prompt = baseSystemPrompt
+
+        // Layer 6: Append global pattern context if available
+        let globalPatterns = HealthStore.shared.cachedGlobalPatterns
+        if !globalPatterns.isEmpty {
+            prompt += "\n\n" + AgentAnalyticsEngine.buildGlobalPatternContext(from: globalPatterns)
+        }
+
+        // Layer 7: Append CEO custom prompt if set
+        if let custom = HealthStore.shared.agentCustomPrompts[rawValue], !custom.isEmpty {
+            prompt += "\n\nADDITIONAL INSTRUCTIONS FROM CEO:\n" + custom
+        }
+
+        return prompt
     }
 }
 
-// MARK: - On-Device AI Client (Apple Foundation Models)
+// MARK: - On-Device AI Client (Apple Foundation Models + Cloud Fallback)
 
-/// BodySense AI engine — runs entirely on-device using Apple Intelligence.
-/// No API keys. No cloud calls. No cost. Complete privacy.
+/// BodySense AI engine — on-device first using Apple Intelligence,
+/// with automatic cloud fallback via Claude API on Railway backend.
+/// On-device: zero cost, complete privacy, instant responses.
+/// Cloud fallback: when device doesn't support Foundation Models or on-device fails.
 actor AIClient {
 
     static let shared = AIClient()
@@ -117,24 +129,30 @@ actor AIClient {
 
     /// Whether the on-device AI model is ready.
     nonisolated func isConfigured() -> Bool {
+        // Always return true — we have cloud fallback even if on-device is unavailable
+        return true
+    }
+
+    /// Whether on-device AI specifically is available.
+    nonisolated func isOnDeviceAvailable() -> Bool {
         if case .available = SystemLanguageModel.default.availability {
             return true
         }
         return false
     }
 
-    /// Human-readable reason if the model is unavailable.
+    /// Human-readable reason if the on-device model is unavailable.
     nonisolated func unavailableReason() -> String? {
         if case .unavailable(let reason) = SystemLanguageModel.default.availability {
             switch reason {
             case .deviceNotEligible:
-                return "This device doesn't support Apple Intelligence."
+                return "This device doesn't support Apple Intelligence. Using cloud AI."
             case .appleIntelligenceNotEnabled:
                 return "Please enable Apple Intelligence in Settings > Apple Intelligence & Siri."
             case .modelNotReady:
-                return "The AI model is still downloading. Please try again shortly."
+                return "The AI model is still downloading. Using cloud AI meanwhile."
             @unknown default:
-                return "On-device AI is temporarily unavailable."
+                return "On-device AI is temporarily unavailable. Using cloud AI."
             }
         }
         return nil
@@ -142,22 +160,57 @@ actor AIClient {
 
     // MARK: - Public API
 
-    /// Single-turn message
+    /// Single-turn message — tries on-device first, falls back to cloud
     func send(system: String, userMessage: String) async throws -> String {
         try await sendWithHistory(system: system, history: [], userMessage: userMessage)
     }
 
-    /// Multi-turn with conversation history
+    /// Multi-turn with conversation history — tries on-device first, falls back to cloud
     func sendWithHistory(system: String,
                          history: [(role: String, content: String)],
                          userMessage: String) async throws -> String {
-        guard case .available = SystemLanguageModel.default.availability else {
-            throw AIError.modelUnavailable(unavailableReason() ?? "On-device AI is not available.")
+
+        // Check user preference for on-device AI
+        let preferOnDevice = UserDefaults.standard.object(forKey: "preferOnDeviceAI") as? Bool ?? true
+
+        // Strategy 1: Try on-device if available and preferred
+        if preferOnDevice, case .available = SystemLanguageModel.default.availability {
+            do {
+                return try await generateOnDevice(system: system, history: history, userMessage: userMessage)
+            } catch {
+                #if DEBUG
+                print("On-device AI failed, falling back to cloud: \(error.localizedDescription)")
+                #endif
+                // Fall through to cloud fallback
+            }
         }
 
+        // Strategy 2: Cloud fallback via OnDeviceAIManager
+        return try await generateViaCloud(system: system, history: history, userMessage: userMessage)
+    }
+
+    /// Adaptive routing — tries on-device first, cloud fallback for all complexity levels
+    func sendAdaptive(system: String,
+                      history: [(role: String, content: String)],
+                      userMessage: String,
+                      complexity: QueryComplexity = .standard) async throws -> String {
+        try await sendWithHistory(system: system, history: history, userMessage: userMessage)
+    }
+
+    /// Query complexity hint (kept for API compatibility)
+    enum QueryComplexity: Sendable {
+        case simple    // Greetings, quick facts
+        case standard  // Most health queries
+        case complex   // Multi-domain analysis, meal plans, workout plans
+    }
+
+    // MARK: - On-Device Generation
+
+    private func generateOnDevice(system: String,
+                                   history: [(role: String, content: String)],
+                                   userMessage: String) async throws -> String {
         let session = LanguageModelSession(instructions: system)
 
-        // Build conversation context from history
         if !history.isEmpty {
             let context = history.map { msg in
                 let role = msg.role == "user" ? "User" : "Assistant"
@@ -180,20 +233,61 @@ actor AIClient {
         }
     }
 
-    /// Adaptive routing — on-device model handles all complexity levels
-    func sendAdaptive(system: String,
-                      history: [(role: String, content: String)],
-                      userMessage: String,
-                      complexity: QueryComplexity = .standard) async throws -> String {
-        // On-device model handles all complexity levels natively
-        try await sendWithHistory(system: system, history: history, userMessage: userMessage)
-    }
+    // MARK: - Cloud Fallback (Claude API via Railway)
 
-    /// Query complexity hint (kept for API compatibility)
-    enum QueryComplexity: Sendable {
-        case simple    // Greetings, quick facts
-        case standard  // Most health queries
-        case complex   // Multi-domain analysis, meal plans, workout plans
+    private let backendURL = "https://body-sense-ai-production.up.railway.app"
+
+    private func generateViaCloud(system: String,
+                                   history: [(role: String, content: String)],
+                                   userMessage: String) async throws -> String {
+        guard let url = URL(string: "\(backendURL)/ai-chat") else {
+            throw AIError.cloudError("Invalid backend URL")
+        }
+
+        // Build messages array for the API
+        var messages: [[String: String]] = []
+        for msg in history {
+            messages.append(["role": msg.role, "content": msg.content])
+        }
+        messages.append(["role": "user", "content": userMessage])
+
+        let body: [String: Any] = [
+            "system": system,
+            "messages": messages
+        ]
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 30
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AIError.cloudError("Invalid server response")
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            let errorBody = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw AIError.cloudError("Server error \(httpResponse.statusCode): \(errorBody)")
+        }
+
+        // Parse response
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw AIError.cloudError("Failed to parse AI response")
+        }
+
+        if let content = json["response"] as? String { return content }
+        if let content = json["content"] as? String { return content }
+        if let choices = json["choices"] as? [[String: Any]],
+           let first = choices.first,
+           let message = first["message"] as? [String: String],
+           let content = message["content"] {
+            return content
+        }
+
+        throw AIError.cloudError("Unexpected response format from cloud AI")
     }
 }
 
@@ -201,11 +295,14 @@ actor AIClient {
 
 enum AIError: LocalizedError {
     case modelUnavailable(String)
+    case cloudError(String)
 
     var errorDescription: String? {
         switch self {
         case .modelUnavailable(let reason):
             return reason
+        case .cloudError(let reason):
+            return "Cloud AI: \(reason)"
         }
     }
 }

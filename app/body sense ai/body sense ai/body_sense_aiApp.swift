@@ -43,6 +43,11 @@ struct body_sense_aiApp: App {
                             await HealthKitManager.shared.requestAuthorization()
                             await HealthKitManager.shared.syncAll(to: store)
                         }
+                        .task {
+                            // Auto-sync from iCloud on launch
+                            try? await Task.sleep(for: .seconds(3.0))
+                            await CloudSyncService.shared.autoSyncOnLaunch(store: HealthStore.shared)
+                        }
                 }
             }
             .preferredColorScheme(resolvedScheme)
@@ -75,6 +80,10 @@ struct body_sense_aiApp: App {
                 Button("I Understand") { showJailbreakWarning = false }
             } message: {
                 Text(JailbreakDetector.warningMessage)
+            }
+            .onOpenURL { url in
+                // Handle Stripe Connect deep links via SwiftUI scene lifecycle
+                _ = AppDelegate.handleStripeConnectURL(url)
             }
         }
     }
@@ -201,13 +210,54 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         #endif
     }
 
-    // ── Google Sign-In URL handler ──
+    // ── URL handler: Stripe Connect deep links + Google Sign-In ──
     func application(
         _ app: UIApplication,
         open url: URL,
         options: [UIApplication.OpenURLOptionsKey: Any] = [:]
     ) -> Bool {
+        if Self.handleStripeConnectURL(url) {
+            return true
+        }
         return GIDSignIn.sharedInstance.handle(url)
+    }
+
+    /// Parse Stripe Connect deep links and post notifications.
+    /// Returns `true` if the URL was a recognised Stripe Connect link.
+    static func handleStripeConnectURL(_ url: URL) -> Bool {
+        guard url.scheme == "bodysenseai" else { return false }
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return false }
+
+        switch url.host {
+        case "connect":
+            let path = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+
+            if path == "complete" {
+                // Extract doctorId query parameter
+                var userInfo: [String: String] = [:]
+                if let doctorId = components.queryItems?.first(where: { $0.name == "doctorId" })?.value {
+                    userInfo["doctorId"] = doctorId
+                }
+                NotificationCenter.default.post(
+                    name: Notification.Name("StripeConnectComplete"),
+                    object: nil,
+                    userInfo: userInfo
+                )
+                return true
+
+            } else if path == "refresh" {
+                NotificationCenter.default.post(
+                    name: Notification.Name("StripeConnectRefresh"),
+                    object: nil
+                )
+                return true
+            }
+
+        default:
+            break
+        }
+
+        return false
     }
 
     // MARK: - Daily Reminder Helper
@@ -337,5 +387,68 @@ final class NotificationService {
     func cancelMedicationReminders(for medication: Medication) {
         let ids = medication.timeOfDay.map { "med_\(medication.id.uuidString)_\($0.rawValue)" }
         center.removePendingNotificationRequests(withIdentifiers: ids)
+    }
+
+    // MARK: - Payout Notifications
+
+    /// Notify the doctor they earned money from a consultation.
+    func schedulePayoutEarnedNotification(amount: Double, doctorName: String) {
+        let id = "payout_earned_\(UUID().uuidString)"
+
+        let content       = UNMutableNotificationContent()
+        content.title     = "Payment Received"
+        content.body      = "You earned \(String(format: "£%.2f", amount)) from a consultation! Set up payouts to withdraw."
+        content.sound     = .default
+        content.badge     = 1
+        content.userInfo  = ["type": "payoutEarned", "amount": amount, "doctorName": doctorName]
+
+        // Fire immediately (1 second delay)
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+        let request = UNNotificationRequest(identifier: id, content: content, trigger: trigger)
+        center.add(request)
+    }
+
+    /// Schedule a weekly reminder (every Monday at 10 AM) to set up bank account for payouts.
+    func schedulePayoutSetupReminder() {
+        let id = "payout_setup_reminder"
+        center.removePendingNotificationRequests(withIdentifiers: [id])
+
+        let content       = UNMutableNotificationContent()
+        content.title     = "Pending Earnings"
+        content.body      = "You have pending earnings. Set up your bank account to receive payments."
+        content.sound     = .default
+        content.badge     = 1
+        content.userInfo  = ["type": "payoutSetupReminder"]
+
+        var comps         = DateComponents()
+        comps.weekday     = 2  // Monday
+        comps.hour        = 10
+        comps.minute      = 0
+
+        let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: true)
+        let request = UNNotificationRequest(identifier: id, content: content, trigger: trigger)
+        center.add(request)
+    }
+
+    /// Cancel the weekly payout setup reminder (called when doctor completes payout setup).
+    func cancelPayoutSetupReminder() {
+        center.removePendingNotificationRequests(withIdentifiers: ["payout_setup_reminder"])
+    }
+
+    /// Notify the doctor that a payout has been sent to their bank account.
+    func schedulePayoutSentNotification(amount: Double, bankLast4: String) {
+        let id = "payout_sent_\(UUID().uuidString)"
+
+        let content       = UNMutableNotificationContent()
+        content.title     = "Payout Sent"
+        content.body      = "\(String(format: "£%.2f", amount)) has been sent to your bank account (****\(bankLast4))"
+        content.sound     = .default
+        content.badge     = 1
+        content.userInfo  = ["type": "payoutSent", "amount": amount, "bankLast4": bankLast4]
+
+        // Fire immediately (1 second delay)
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+        let request = UNNotificationRequest(identifier: id, content: content, trigger: trigger)
+        center.add(request)
     }
 }

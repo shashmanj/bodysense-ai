@@ -7,6 +7,7 @@
 
 import SwiftUI
 import PhotosUI
+import StoreKit
 
 // MARK: - Profile Root
 
@@ -363,6 +364,35 @@ struct PatientProfileView: View {
             settingsRow("AI Agent Settings", icon: "brain", color: Color(hex: "#6C63FF")) { showAISettings = true }
             Divider().padding(.leading, 52)
 
+            // ── On-Device AI Toggle ──
+            HStack(spacing: 14) {
+                Image(systemName: "cpu.fill").font(.body).foregroundColor(.white)
+                    .frame(width: 32, height: 32).background(Color.brandPurple).cornerRadius(8)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("On-Device AI").font(.subheadline)
+                    Text(OnDeviceAIManager.shared.isAvailable
+                         ? "Process AI privately on your device"
+                         : "Not supported — using cloud AI")
+                        .font(.caption2).foregroundColor(.secondary)
+                }
+                Spacer()
+                Toggle("", isOn: Binding(
+                    get: { OnDeviceAIManager.shared.preferOnDevice },
+                    set: { OnDeviceAIManager.shared.preferOnDevice = $0 }
+                ))
+                .tint(.brandGreen)
+                .labelsHidden()
+                .disabled(!OnDeviceAIManager.shared.isAvailable)
+            }
+            .padding(.horizontal).padding(.vertical, 12)
+
+            Divider().padding(.leading, 52)
+
+            // ── iCloud Sync Status ──
+            cloudSyncStatusRow
+
+            Divider().padding(.leading, 52)
+
             // ── Apple Health Sync ──
             HStack(spacing: 14) {
                 Image(systemName: "heart.circle.fill").font(.body).foregroundColor(.white)
@@ -526,6 +556,7 @@ struct PatientProfileView: View {
 
             // ── Sign Out ──
             Button {
+                FirebaseAuthManager.shared.signOut()
                 AuthService.shared.signOut()
                 UserDefaults.standard.set(false, forKey: "onboardingDone")
                 store.userProfile = UserProfile()
@@ -549,6 +580,49 @@ struct PatientProfileView: View {
         .sheet(isPresented: $showAPIKeys) { NavigationStack { APIKeysView() } }
         .sheet(isPresented: $showLaunchChecklist) { NavigationStack { LaunchChecklistView() } }
         .sheet(isPresented: $showAgentTeam) { NavigationStack { AgentTeamView() } }
+    }
+
+    // ── iCloud Sync Status Row ──
+    var cloudSyncStatusRow: some View {
+        let sync = CloudSyncService.shared
+        return Button {
+            Task {
+                await CloudSyncService.shared.syncToCloud(store: store)
+            }
+        } label: {
+            HStack(spacing: 14) {
+                Image(systemName: sync.syncState.icon).font(.body).foregroundColor(.white)
+                    .frame(width: 32, height: 32).background(Color.blue).cornerRadius(8)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("iCloud Sync").font(.subheadline).foregroundColor(.primary)
+                    if let progress = sync.syncProgress {
+                        Text(progress)
+                            .font(.caption2).foregroundColor(.brandPurple)
+                    } else if let lastSync = sync.lastSyncDate {
+                        Text("Last synced: \(lastSync.formatted(.relative(presentation: .named)))")
+                            .font(.caption2).foregroundColor(.secondary)
+                    } else {
+                        Text(sync.syncState.label)
+                            .font(.caption2).foregroundColor(sync.syncState.isError ? .red : .secondary)
+                    }
+                }
+                Spacer()
+                if sync.isSyncing {
+                    ProgressView().controlSize(.small)
+                } else {
+                    // Sync state badge
+                    Text(sync.syncState == .upToDate ? "SYNCED" : "SYNC")
+                        .font(.caption2.weight(.bold))
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(sync.syncState == .upToDate
+                                    ? Color.green.opacity(0.12)
+                                    : Color.blue.opacity(0.12))
+                        .foregroundColor(sync.syncState == .upToDate ? .green : .blue)
+                        .clipShape(Capsule())
+                }
+            }
+            .padding(.horizontal).padding(.vertical, 12)
+        }
     }
 
     func settingsRow(_ label: String, icon: String, color: Color, action: @escaping () -> Void) -> some View {
@@ -1047,6 +1121,7 @@ struct AddMedicalRecordView: View {
 struct ManageDevicesView: View {
     @Environment(HealthStore.self) var store
     @Environment(\.dismiss) var dismiss
+    @State private var showRingPairing = false
 
     let allDeviceTypes: [WearableType] = WearableType.allCases
 
@@ -1065,12 +1140,23 @@ struct ManageDevicesView: View {
         }
     }
 
+    var ringManager: BodySenseRingManager { BodySenseRingManager.shared }
+
     var body: some View {
         NavigationStack {
             List {
+                // ── 0. BodySense Ring BLE section (if connected via BLE) ──
+                if ringManager.connectionState == .connected {
+                    Section {
+                        RingStatusCard(ringManager: ringManager)
+                    } header: {
+                        Label("BodySense Ring", systemImage: "circle.fill")
+                    }
+                }
+
                 // ── 1. Active, connected devices ──
                 Section("Connected") {
-                    if connectedDevices.isEmpty {
+                    if connectedDevices.isEmpty && ringManager.connectionState != .connected {
                         Text("No devices currently connected.")
                             .font(.subheadline).foregroundColor(.secondary)
                     } else {
@@ -1113,6 +1199,9 @@ struct ManageDevicesView: View {
                                 Spacer()
                                 // Reconnect button
                                 Button {
+                                    if device.type == .bodySenseRing {
+                                        ringManager.attemptAutoReconnect()
+                                    }
                                     if let idx = store.wearableDevices.firstIndex(where: { $0.id == device.id }) {
                                         store.wearableDevices[idx].isConnected = true
                                         store.wearableDevices[idx].lastSync = Date()
@@ -1151,12 +1240,20 @@ struct ManageDevicesView: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
                 ToolbarItem(placement: .topBarTrailing) { EditButton() }
             }
+            .sheet(isPresented: $showRingPairing) {
+                RingPairingView()
+            }
         }
     }
 
+    @ViewBuilder
     func addDeviceRow(type: WearableType) -> some View {
-        Button {
-            addDevice(type: type)
+        let row = Button {
+            if type == .bodySenseRing {
+                showRingPairing = true
+            } else {
+                addDevice(type: type)
+            }
         } label: {
             HStack(spacing: 14) {
                 Image(systemName: type.icon)
@@ -1168,8 +1265,22 @@ struct ManageDevicesView: View {
                     Text(type.category.rawValue).font(.caption).foregroundColor(.secondary)
                 }
                 Spacer()
-                Image(systemName: "plus.circle.fill").foregroundColor(.brandTeal)
+                if type == .bodySenseRing && store.subscription < .premium {
+                    Text("PREMIUM").font(.caption2).fontWeight(.bold)
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(Color.brandPurple.opacity(0.12))
+                        .foregroundColor(.brandPurple)
+                        .cornerRadius(100)
+                } else {
+                    Image(systemName: "plus.circle.fill").foregroundColor(.brandTeal)
+                }
             }
+        }
+        // BodySense Ring pairing requires Premium subscription
+        if type == .bodySenseRing {
+            row.requiresSubscription(.premium, store: store)
+        } else {
+            row
         }
     }
 
@@ -1186,6 +1297,384 @@ struct ManageDevicesView: View {
         }
         store.wearableDevices.append(device)
         store.save()
+    }
+}
+
+// MARK: - Ring BLE Pairing View
+
+struct RingPairingView: View {
+    @Environment(HealthStore.self) var store
+    @Environment(\.dismiss) var dismiss
+
+    var ringManager: BodySenseRingManager { BodySenseRingManager.shared }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 20) {
+
+                    // ── Status header ──
+                    VStack(spacing: 12) {
+                        ZStack {
+                            Circle()
+                                .fill(ringManager.connectionState.color.opacity(0.12))
+                                .frame(width: 80, height: 80)
+                            Image(systemName: ringManager.connectionState.icon)
+                                .font(.system(size: 32))
+                                .foregroundColor(ringManager.connectionState.color)
+                        }
+
+                        Text(ringManager.connectionState.label)
+                            .font(.headline)
+                            .foregroundColor(ringManager.connectionState.color)
+
+                        if let error = ringManager.errorMessage {
+                            Text(error)
+                                .font(.caption)
+                                .foregroundColor(.brandCoral)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal)
+                        }
+                    }
+                    .padding(.top)
+
+                    // ── Scan button ──
+                    if ringManager.connectionState == .disconnected || ringManager.connectionState == .scanning {
+                        Button {
+                            if ringManager.isScanning {
+                                ringManager.stopScanning()
+                            } else {
+                                ringManager.startScanning()
+                            }
+                        } label: {
+                            HStack(spacing: 8) {
+                                if ringManager.isScanning {
+                                    ProgressView()
+                                        .tint(.white)
+                                }
+                                Text(ringManager.isScanning ? "Stop Scanning" : "Scan for Ring")
+                                    .fontWeight(.semibold)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 54)
+                            .background(ringManager.isScanning ? Color(.systemGray3) : Color.brandPurple)
+                            .foregroundColor(.white)
+                            .cornerRadius(14)
+                        }
+                        .padding(.horizontal)
+                    }
+
+                    // ── Discovered rings ──
+                    if !ringManager.discoveredRings.isEmpty {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Nearby Rings")
+                                .font(.subheadline).fontWeight(.semibold)
+                                .foregroundColor(.secondary)
+                                .padding(.horizontal)
+
+                            ForEach(ringManager.discoveredRings) { ring in
+                                Button {
+                                    ringManager.connect(to: ring)
+                                } label: {
+                                    HStack(spacing: 14) {
+                                        Image(systemName: "circle.fill")
+                                            .font(.title2)
+                                            .foregroundColor(.brandPurple)
+                                            .frame(width: 44, height: 44)
+                                            .background(Color.brandPurple.opacity(0.12))
+                                            .cornerRadius(12)
+
+                                        VStack(alignment: .leading, spacing: 3) {
+                                            Text(ring.name)
+                                                .font(.subheadline).fontWeight(.semibold)
+                                                .foregroundColor(.primary)
+                                            Text(ring.signalQuality)
+                                                .font(.caption).foregroundColor(.secondary)
+                                        }
+
+                                        Spacer()
+
+                                        // Signal strength indicator
+                                        HStack(spacing: 2) {
+                                            Image(systemName: ring.signalIcon)
+                                                .font(.caption)
+                                                .foregroundColor(ring.signalColor)
+                                            Text("\(ring.rssi) dBm")
+                                                .font(.caption2).foregroundColor(.secondary)
+                                        }
+
+                                        Image(systemName: "chevron.right")
+                                            .font(.caption).foregroundColor(.secondary)
+                                    }
+                                    .padding()
+                                    .background(Color(.secondarySystemBackground))
+                                    .cornerRadius(16)
+                                    .shadow(color: .black.opacity(0.06), radius: 8, y: 2)
+                                }
+                                .padding(.horizontal)
+                            }
+                        }
+                    }
+
+                    // ── Connecting progress ──
+                    if ringManager.connectionState == .connecting || ringManager.connectionState == .reconnecting {
+                        VStack(spacing: 12) {
+                            ProgressView()
+                                .scaleEffect(1.2)
+                            Text("Pairing with your Ring...")
+                                .font(.subheadline).foregroundColor(.secondary)
+                            Text("Keep your Ring close to your phone.")
+                                .font(.caption).foregroundColor(.secondary)
+                        }
+                        .padding(.vertical, 30)
+                    }
+
+                    // ── Connected ring info ──
+                    if ringManager.connectionState == .connected {
+                        RingStatusCard(ringManager: ringManager)
+                            .padding(.horizontal)
+
+                        // Live readings
+                        ringLiveReadings
+                            .padding(.horizontal)
+
+                        // Disconnect button
+                        Button(role: .destructive) {
+                            ringManager.disconnect()
+                        } label: {
+                            HStack {
+                                Image(systemName: "xmark.circle.fill")
+                                Text("Disconnect Ring")
+                            }
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 54)
+                            .background(Color.brandCoral.opacity(0.12))
+                            .foregroundColor(.brandCoral)
+                            .cornerRadius(14)
+                        }
+                        .padding(.horizontal)
+                    }
+
+                    // ── Instructions ──
+                    if ringManager.connectionState == .disconnected && ringManager.discoveredRings.isEmpty && !ringManager.isScanning {
+                        VStack(alignment: .leading, spacing: 14) {
+                            Text("How to pair your BodySense Ring")
+                                .font(.subheadline).fontWeight(.semibold)
+
+                            instructionRow(step: "1", text: "Ensure your Ring is charged and nearby")
+                            instructionRow(step: "2", text: "Tap \"Scan for Ring\" above")
+                            instructionRow(step: "3", text: "Select your Ring from the list")
+                            instructionRow(step: "4", text: "Wait for pairing to complete")
+                        }
+                        .padding()
+                        .background(Color(.secondarySystemBackground))
+                        .cornerRadius(16)
+                        .shadow(color: .black.opacity(0.06), radius: 8, y: 2)
+                        .padding(.horizontal)
+                    }
+
+                    Spacer(minLength: 40)
+                }
+            }
+            .navigationTitle("BodySense Ring")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") {
+                        ringManager.stopScanning()
+                        dismiss()
+                    }
+                }
+            }
+            .onDisappear {
+                if ringManager.isScanning {
+                    ringManager.stopScanning()
+                }
+            }
+        }
+    }
+
+    // MARK: - Live Readings Grid
+
+    private var ringLiveReadings: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Live Readings")
+                .font(.subheadline).fontWeight(.semibold)
+                .foregroundColor(.secondary)
+
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                ringMetricCard(
+                    icon: "heart.fill",
+                    label: "Heart Rate",
+                    value: ringManager.latestHeartRate > 0 ? "\(ringManager.latestHeartRate)" : "--",
+                    unit: "bpm",
+                    color: .brandCoral
+                )
+                ringMetricCard(
+                    icon: "lungs.fill",
+                    label: "SpO2",
+                    value: ringManager.latestSpO2 > 0 ? "\(ringManager.latestSpO2)" : "--",
+                    unit: "%",
+                    color: .brandTeal
+                )
+                ringMetricCard(
+                    icon: "thermometer.medium",
+                    label: "Temperature",
+                    value: ringManager.latestTemperature > 0 ? String(format: "%.1f", ringManager.latestTemperature) : "--",
+                    unit: "C",
+                    color: .brandAmber
+                )
+                ringMetricCard(
+                    icon: "figure.walk",
+                    label: "Steps",
+                    value: ringManager.latestSteps > 0 ? "\(ringManager.latestSteps)" : "--",
+                    unit: "today",
+                    color: .brandGreen
+                )
+                ringMetricCard(
+                    icon: ringManager.latestSleepState.icon,
+                    label: "Sleep",
+                    value: ringManager.latestSleepState.label,
+                    unit: "",
+                    color: ringManager.latestSleepState.color
+                )
+                ringMetricCard(
+                    icon: "battery.75",
+                    label: "Battery",
+                    value: ringManager.batteryLevel > 0 ? "\(ringManager.batteryLevel)" : "--",
+                    unit: "%",
+                    color: ringManager.batteryLevel > 20 ? .brandGreen : .brandCoral
+                )
+            }
+        }
+    }
+
+    private func ringMetricCard(icon: String, label: String, value: String, unit: String, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.caption).foregroundColor(color)
+                Text(label)
+                    .font(.caption2).foregroundColor(.secondary)
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 2) {
+                Text(value)
+                    .font(.title2).fontWeight(.bold).foregroundColor(.primary)
+                if !unit.isEmpty {
+                    Text(unit)
+                        .font(.caption).foregroundColor(.secondary)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(Color(.secondarySystemBackground))
+        .cornerRadius(16)
+        .shadow(color: .black.opacity(0.06), radius: 8, y: 2)
+    }
+
+    private func instructionRow(step: String, text: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Text(step)
+                .font(.caption).fontWeight(.bold)
+                .foregroundColor(.white)
+                .frame(width: 24, height: 24)
+                .background(Color.brandPurple)
+                .cornerRadius(12)
+            Text(text)
+                .font(.subheadline).foregroundColor(.primary)
+        }
+    }
+}
+
+// MARK: - Ring Status Card (reusable for ManageDevicesView & PairingView)
+
+struct RingStatusCard: View {
+    var ringManager: BodySenseRingManager
+    @Environment(HealthStore.self) var store
+
+    var body: some View {
+        VStack(spacing: 14) {
+            HStack(spacing: 14) {
+                // Ring icon
+                ZStack {
+                    Circle()
+                        .fill(Color.brandPurple.opacity(0.12))
+                        .frame(width: 52, height: 52)
+                    Image(systemName: "circle.fill")
+                        .font(.title2)
+                        .foregroundColor(.brandPurple)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Text(ringManager.connectedRing?.name ?? "BodySense Ring")
+                            .font(.subheadline).fontWeight(.semibold)
+                        // Connection status pill
+                        Text("Connected")
+                            .font(.caption2).fontWeight(.medium)
+                            .padding(.horizontal, 8).padding(.vertical, 2)
+                            .background(Color.brandGreen.opacity(0.12))
+                            .foregroundColor(.brandGreen)
+                            .cornerRadius(100)
+                    }
+
+                    HStack(spacing: 12) {
+                        // Battery
+                        HStack(spacing: 3) {
+                            Image(systemName: batteryIcon)
+                                .font(.caption2)
+                            Text("\(ringManager.batteryLevel)%")
+                                .font(.caption)
+                        }
+                        .foregroundColor(ringManager.batteryLevel > 20 ? .brandGreen : .brandCoral)
+
+                        // Firmware
+                        if !ringManager.firmwareVersion.isEmpty {
+                            Text("v\(ringManager.firmwareVersion)")
+                                .font(.caption2).foregroundColor(.secondary)
+                        }
+                    }
+
+                    if let lastSync = ringManager.connectedRing?.lastSyncDate {
+                        Text("Last sync: \(lastSync.formatted(.relative(presentation: .numeric)))")
+                            .font(.caption2).foregroundColor(.secondary)
+                    }
+                }
+
+                Spacer()
+            }
+
+            // Sync Now button
+            Button {
+                ringManager.syncDataToHealthStore(store)
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                    Text("Sync Now")
+                        .fontWeight(.semibold)
+                }
+                .font(.subheadline)
+                .frame(maxWidth: .infinity)
+                .frame(height: 44)
+                .background(Color.brandTeal.opacity(0.12))
+                .foregroundColor(.brandTeal)
+                .cornerRadius(12)
+            }
+        }
+        .padding()
+        .background(Color(.secondarySystemBackground))
+        .cornerRadius(16)
+        .shadow(color: .black.opacity(0.06), radius: 8, y: 2)
+    }
+
+    private var batteryIcon: String {
+        let level = ringManager.batteryLevel
+        if level > 75      { return "battery.100" }
+        else if level > 50 { return "battery.75" }
+        else if level > 25 { return "battery.50" }
+        else if level > 10 { return "battery.25" }
+        else               { return "battery.0" }
     }
 }
 
@@ -1534,14 +2023,33 @@ struct SubscriptionPlansSheet: View {
             }
             if !isCurrent && plan != .free {
                 Button {
-                    store.subscription = plan
-                    store.save()
-                    dismiss()
+                    Task {
+                        let storeKit = StoreKitManager.shared
+                        let product: StoreKit.Product?
+                        switch plan {
+                        case .pro:     product = storeKit.proMonthly
+                        case .premium: product = storeKit.premiumMonthly
+                        case .free:    product = nil
+                        }
+                        if let product {
+                            let success = await storeKit.purchase(product)
+                            if success {
+                                storeKit.syncToHealthStore(store)
+                                dismiss()
+                            }
+                        } else {
+                            // Fallback: if StoreKit products not loaded yet
+                            store.subscription = plan
+                            store.save()
+                            dismiss()
+                        }
+                    }
                 } label: {
                     Text("Upgrade to \(plan.badge)")
                         .font(.subheadline).fontWeight(.semibold)
-                        .frame(maxWidth: .infinity).padding()
-                        .background(plan.color).foregroundColor(.white).cornerRadius(12)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 54)
+                        .background(plan.color).foregroundColor(.white).cornerRadius(14)
                 }
             }
         }

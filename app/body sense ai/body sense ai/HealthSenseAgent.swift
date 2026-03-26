@@ -111,6 +111,20 @@ struct InteractionLog: Codable, Identifiable {
     let responseQuality: Double?    // self-assessed quality 0-1
 }
 
+// MARK: - Anonymised Health Pattern (Layer 6 — Server-Side Learning)
+
+struct AnonymisedHealthPattern: Codable, Identifiable {
+    var id: UUID = UUID()
+    var category: String          // "nutrition_glucose", "sleep_activity", etc.
+    var trigger: String           // "high_carb_meal"
+    var outcome: String           // "glucose_spike"
+    var confidence: Double        // 0.0–1.0
+    var sampleSize: Int           // how many users showed this pattern
+    var ageGroup: String          // "30-40" (anonymised)
+    var conditions: [String]      // ["type2_diabetes"] (anonymised)
+    var createdAt: Date = Date()
+}
+
 // MARK: - Health Sense Agent
 
 @Observable
@@ -415,13 +429,15 @@ class HealthSenseAgent {
             }
         }
 
-        // Correlation patterns (cross-domain intelligence)
-        let correlations = CorrelationEngine.detectPatterns(store: store)
-        if !correlations.isEmpty {
-            prompt += "\n--- DETECTED HEALTH CORRELATIONS (data-driven patterns) ---\n"
-            prompt += "You have detected the following cross-domain patterns from this user's data. Mention relevant ones naturally in your responses:\n"
-            for pattern in correlations {
-                prompt += "• \(pattern)\n"
+        // Correlation patterns (cross-domain intelligence) — Pro feature
+        if store.subscription >= .pro {
+            let correlations = CorrelationEngine.detectPatterns(store: store)
+            if !correlations.isEmpty {
+                prompt += "\n--- DETECTED HEALTH CORRELATIONS (data-driven patterns) ---\n"
+                prompt += "You have detected the following cross-domain patterns from this user's data. Mention relevant ones naturally in your responses:\n"
+                for pattern in correlations {
+                    prompt += "• \(pattern)\n"
+                }
             }
         }
 

@@ -7,6 +7,16 @@
 
 import SwiftUI
 
+// MARK: - Doctor Document Response Model
+
+/// JSON shape returned by GET /doctor-documents/:userId
+private struct DoctorDocumentsResponse: Codable {
+    var photoId: String?
+    var dbsCertificate: String?
+    var indemnityInsurance: String?
+    var qualification: String?
+}
+
 // MARK: - Doctor Approval List
 
 struct DoctorApprovalView: View {
@@ -170,6 +180,7 @@ struct DoctorRequestDetailView: View {
 
     @State private var showApproveConfirm = false
     @State private var showRejectConfirm = false
+    @State private var showDocumentViewer = false
 
     var isPending: Bool { request.status == .pending }
 
@@ -195,6 +206,38 @@ struct DoctorRequestDetailView: View {
                 credentialCheck("PLAB/UKMLA Passed", passed: request.plabPassed)
                 credentialCheck("ECFMG Certified", passed: request.ecfmgCertified)
                 credentialCheck("WDOM Listed", passed: request.wdomListed)
+            }
+
+            // Uploaded Documents
+            Section("Uploaded Documents") {
+                if request.userId.isEmpty {
+                    HStack {
+                        Image(systemName: "exclamationmark.triangle")
+                            .foregroundColor(.secondary)
+                        Text("No user ID linked — documents unavailable")
+                            .font(.caption).foregroundColor(.secondary)
+                    }
+                } else {
+                    Button {
+                        showDocumentViewer = true
+                    } label: {
+                        HStack {
+                            Image(systemName: "doc.text.magnifyingglass")
+                                .font(.system(size: 18))
+                                .foregroundColor(.brandTeal)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("View Documents")
+                                    .font(.subheadline).fontWeight(.medium)
+                                    .foregroundColor(.primary)
+                                Text("Photo ID, DBS, Insurance, Qualification")
+                                    .font(.caption2).foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption).foregroundColor(.secondary)
+                        }
+                    }
+                }
             }
 
             // Fees
@@ -270,6 +313,11 @@ struct DoctorRequestDetailView: View {
         .listStyle(.insetGrouped)
         .navigationTitle("Review Doctor")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showDocumentViewer) {
+            NavigationStack {
+                DoctorDocumentViewerView(userId: request.userId, doctorName: request.name)
+            }
+        }
         .alert("Approve Doctor?", isPresented: $showApproveConfirm) {
             Button("Cancel", role: .cancel) { }
             Button("Approve") {
@@ -308,6 +356,302 @@ struct DoctorRequestDetailView: View {
             Spacer()
             Image(systemName: passed ? "checkmark.circle.fill" : "xmark.circle")
                 .foregroundColor(passed ? .brandGreen : .secondary.opacity(0.4))
+        }
+    }
+}
+
+// MARK: - Doctor Document Viewer (CEO Only)
+
+/// Fetches and displays uploaded doctor documents from the backend.
+/// Gated by CEOAccessManager — only the CEO can view these sensitive documents.
+private struct DoctorDocumentViewerView: View {
+    let userId: String
+    let doctorName: String
+
+    @Environment(\.dismiss) var dismiss
+    @State private var documents: [(label: String, url: URL)] = []
+    @State private var isLoading = true
+    @State private var errorMessage: String?
+    @State private var selectedImageURL: URL?
+
+    private let baseURL = "https://body-sense-ai-production.up.railway.app"
+
+    var body: some View {
+        Group {
+            if !CEOAccessManager.isActivated {
+                // Double-gate — should never happen, but defence in depth
+                VStack(spacing: 12) {
+                    Image(systemName: "lock.shield.fill")
+                        .font(.system(size: 48)).foregroundColor(.secondary)
+                    Text("CEO Access Required")
+                        .font(.headline).foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if isLoading {
+                VStack(spacing: 16) {
+                    ProgressView()
+                        .controlSize(.large)
+                    Text("Loading documents...")
+                        .font(.subheadline).foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let errorMessage {
+                VStack(spacing: 16) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 48))
+                        .foregroundColor(.brandAmber)
+                    Text("Failed to Load Documents")
+                        .font(.headline)
+                    Text(errorMessage)
+                        .font(.caption).foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 32)
+                    Button {
+                        Task { await fetchDocuments() }
+                    } label: {
+                        Text("Retry")
+                            .fontWeight(.semibold)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 54)
+                            .background(Color(.systemFill))
+                            .cornerRadius(14)
+                    }
+                    .padding(.horizontal, 40)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if documents.isEmpty {
+                VStack(spacing: 12) {
+                    Image(systemName: "doc.text.fill")
+                        .font(.system(size: 48))
+                        .foregroundColor(.secondary.opacity(0.3))
+                    Text("No Documents Uploaded")
+                        .font(.headline).foregroundColor(.secondary)
+                    Text("This doctor has not uploaded any verification documents yet.")
+                        .font(.caption).foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 32)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 20) {
+                        ForEach(documents, id: \.url) { doc in
+                            documentCard(label: doc.label, url: doc.url)
+                        }
+                    }
+                    .padding(16)
+                }
+            }
+        }
+        .navigationTitle("\(doctorName) — Documents")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Done") { dismiss() }
+            }
+        }
+        .fullScreenCover(item: $selectedImageURL) { url in
+            NavigationStack {
+                DoctorDocumentFullScreenView(url: url)
+            }
+        }
+        .task {
+            await fetchDocuments()
+        }
+    }
+
+    // MARK: - Document Card
+
+    private func documentCard(label: String, url: URL) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Image(systemName: iconForDocumentType(label))
+                    .foregroundColor(.brandTeal)
+                Text(label)
+                    .font(.subheadline).fontWeight(.semibold)
+                Spacer()
+                Button {
+                    selectedImageURL = url
+                } label: {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .empty:
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color(.tertiarySystemBackground))
+                        .frame(height: 200)
+                        .overlay(ProgressView())
+                case .success(let image):
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxHeight: 280)
+                        .cornerRadius(10)
+                        .onTapGesture {
+                            selectedImageURL = url
+                        }
+                case .failure:
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color(.tertiarySystemBackground))
+                        .frame(height: 120)
+                        .overlay(
+                            VStack(spacing: 6) {
+                                Image(systemName: "photo.badge.exclamationmark")
+                                    .font(.title3).foregroundColor(.secondary)
+                                Text("Failed to load image")
+                                    .font(.caption2).foregroundColor(.secondary)
+                            }
+                        )
+                @unknown default:
+                    EmptyView()
+                }
+            }
+        }
+        .padding(14)
+        .background(Color(.secondarySystemBackground))
+        .cornerRadius(16)
+        .shadow(color: .black.opacity(0.06), radius: 8, y: 2)
+    }
+
+    // MARK: - Fetch Documents
+
+    private func fetchDocuments() async {
+        guard CEOAccessManager.isActivated else {
+            errorMessage = "CEO access is required to view documents."
+            isLoading = false
+            return
+        }
+
+        isLoading = true
+        errorMessage = nil
+        documents = []
+
+        guard let url = URL(string: "\(baseURL)/doctor-documents/\(userId)") else {
+            errorMessage = "Invalid request URL."
+            isLoading = false
+            return
+        }
+
+        do {
+            let (data, response) = try await URLSession.shared.data(from: url)
+
+            guard let httpResponse = response as? HTTPURLResponse else {
+                errorMessage = "Unexpected response from server."
+                isLoading = false
+                return
+            }
+
+            guard httpResponse.statusCode == 200 else {
+                errorMessage = "Server returned status \(httpResponse.statusCode)."
+                isLoading = false
+                return
+            }
+
+            let decoded = try JSONDecoder().decode(DoctorDocumentsResponse.self, from: data)
+
+            var result: [(label: String, url: URL)] = []
+            if let urlString = decoded.photoId, let docURL = URL(string: urlString) {
+                result.append((label: "Photo ID", url: docURL))
+            }
+            if let urlString = decoded.dbsCertificate, let docURL = URL(string: urlString) {
+                result.append((label: "DBS Certificate", url: docURL))
+            }
+            if let urlString = decoded.indemnityInsurance, let docURL = URL(string: urlString) {
+                result.append((label: "Indemnity Insurance", url: docURL))
+            }
+            if let urlString = decoded.qualification, let docURL = URL(string: urlString) {
+                result.append((label: "Qualification Certificate", url: docURL))
+            }
+
+            documents = result
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+
+        isLoading = false
+    }
+
+    // MARK: - Helpers
+
+    private func iconForDocumentType(_ label: String) -> String {
+        switch label {
+        case "Photo ID":                return "person.text.rectangle"
+        case "DBS Certificate":         return "checkmark.shield.fill"
+        case "Indemnity Insurance":     return "building.columns.fill"
+        case "Qualification Certificate": return "scroll.fill"
+        default:                        return "doc.fill"
+        }
+    }
+}
+
+// MARK: - Full-Screen Document Image Viewer
+
+/// Makes URL Identifiable so it can be used with .fullScreenCover(item:)
+extension URL: @retroactive Identifiable {
+    public var id: String { absoluteString }
+}
+
+private struct DoctorDocumentFullScreenView: View {
+    let url: URL
+    @Environment(\.dismiss) var dismiss
+    @State private var currentZoom: CGFloat = 1.0
+
+    var body: some View {
+        GeometryReader { geo in
+            ScrollView([.horizontal, .vertical], showsIndicators: false) {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .empty:
+                        ProgressView()
+                            .frame(width: geo.size.width, height: geo.size.height)
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(minWidth: geo.size.width, minHeight: geo.size.height)
+                            .scaleEffect(currentZoom)
+                            .gesture(
+                                MagnifyGesture()
+                                    .onChanged { value in
+                                        currentZoom = max(1.0, min(value.magnification, 5.0))
+                                    }
+                                    .onEnded { value in
+                                        withAnimation(.spring()) {
+                                            currentZoom = max(1.0, min(value.magnification, 5.0))
+                                        }
+                                    }
+                            )
+                            .onTapGesture(count: 2) {
+                                withAnimation(.spring()) {
+                                    currentZoom = currentZoom > 1.0 ? 1.0 : 2.5
+                                }
+                            }
+                    case .failure:
+                        VStack(spacing: 12) {
+                            Image(systemName: "photo.badge.exclamationmark")
+                                .font(.system(size: 48)).foregroundColor(.secondary)
+                            Text("Failed to load image")
+                                .font(.subheadline).foregroundColor(.secondary)
+                        }
+                        .frame(width: geo.size.width, height: geo.size.height)
+                    @unknown default:
+                        EmptyView()
+                    }
+                }
+            }
+        }
+        .background(Color(.systemBackground))
+        .navigationTitle("Document")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Close") { dismiss() }
+            }
         }
     }
 }

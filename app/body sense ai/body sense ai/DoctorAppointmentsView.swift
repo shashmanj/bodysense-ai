@@ -657,7 +657,23 @@ struct BookAppointmentView: View {
 
     var body: some View {
         NavigationStack {
-            if booked {
+            if store.subscription < .premium {
+                // Doctor consultations require Premium subscription
+                ScrollView {
+                    UpgradePromptView(
+                        requiredPlan: .premium,
+                        store: store,
+                        isPresented: .init(get: { true }, set: { _ in dismiss() })
+                    )
+                    .padding(.top, 40)
+                }
+                .background(Color(.systemGroupedBackground))
+                .navigationTitle("Book Appointment")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
+                }
+            } else if booked {
                 BookingConfirmationView(doctor: doctor, date: selectedDate,
                                         time: selectedTime, type: selectedType,
                                         paymentMethod: paymentMethod) { dismiss() }

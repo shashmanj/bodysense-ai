@@ -85,6 +85,7 @@
 	<string>BodySense AI transcribes your voice so you can log health entries hands-free.</string>
 	<key>UIBackgroundModes</key>
 	<array>
+		<string>bluetooth-central</string>
 		<string>remote-notification</string>
 	</array>
 	<key>UILaunchScreen</key>
