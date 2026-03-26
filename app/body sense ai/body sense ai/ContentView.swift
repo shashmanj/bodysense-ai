@@ -70,11 +70,12 @@ struct MainTabView: View {
                 .tag(4)
         }
         .tint(showDoctorHome ? .brandTeal : .brandPurple)
+        .toolbarBackground(.ultraThinMaterial, for: .tabBar)
+        .toolbarBackgroundVisibility(.visible, for: .tabBar)
         // Ensure all tab items render at equal width
         .onAppear {
             let appearance = UITabBarAppearance()
-            appearance.configureWithOpaqueBackground()
-            appearance.backgroundColor = UIColor.systemBackground
+            appearance.configureWithDefaultBackground()
 
             // Equal spacing for all items
             let itemAppearance = UITabBarItemAppearance()

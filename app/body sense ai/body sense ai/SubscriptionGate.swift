@@ -221,6 +221,8 @@ struct UpgradePromptSheet: View {
             .background(Color(.systemGroupedBackground))
             .navigationTitle("Upgrade")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+            .toolbarBackgroundVisibility(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Maybe Later") { dismiss() }

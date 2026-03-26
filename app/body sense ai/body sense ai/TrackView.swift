@@ -73,6 +73,8 @@ struct TrackView: View {
             }
             .navigationTitle("Track")
             .navigationBarTitleDisplayMode(.large)
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+            .toolbarBackgroundVisibility(.visible, for: .navigationBar)
         }
     }
 }

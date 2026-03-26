@@ -46,6 +46,8 @@ struct DashboardView: View {
             .background(Color.brandBg)
             .navigationTitle("Home")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+            .toolbarBackgroundVisibility(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showAlerts = true } label: {

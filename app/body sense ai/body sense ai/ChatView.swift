@@ -31,14 +31,19 @@ struct FloatingChatButton: View {
                             .opacity(pulse ? 0 : 0.5)
                             .animation(.easeOut(duration: 1.6).repeatForever(autoreverses: false), value: pulse)
 
+                        // Glass base
+                        Circle()
+                            .fill(.ultraThinMaterial)
+                            .frame(width: 62, height: 62)
+
                         // Main button
                         Circle()
                             .fill(
-                                LinearGradient(colors: [.brandPurple, Color(hex: "#4834d4")],
+                                LinearGradient(colors: [.brandPurple.opacity(0.85), Color(hex: "#4834d4").opacity(0.85)],
                                                startPoint: .topLeading, endPoint: .bottomTrailing)
                             )
                             .frame(width: 58, height: 58)
-                            .shadow(color: .brandPurple.opacity(0.45), radius: 10, y: 4)
+                            .shadow(color: .brandPurple.opacity(0.35), radius: 12, y: 4)
 
                         // Icon — friendly heart pulse
                         Image(systemName: "heart.text.clipboard.fill")
@@ -316,7 +321,7 @@ struct ChatView: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
-            .background(Color.cardBg)
+            .background(.ultraThinMaterial)
         }
     }
 
