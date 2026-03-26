@@ -66,22 +66,24 @@ final class BodySenseRingManager: NSObject {
 
     private override init() {
         super.init()
-        // Use state restoration for background BLE
+    }
+
+    /// Call this to set up BLE — deferred so it doesn't crash on app launch
+    func setup() {
+        guard centralManager == nil else { return }
         centralManager = CBCentralManager(
-            delegate: nil,
+            delegate: self,
             queue: nil,
             options: [
-                CBCentralManagerOptionRestoreIdentifierKey: BLEConstants.restoreIdentifier,
                 CBCentralManagerOptionShowPowerAlertKey: true
             ]
         )
-        // Set delegate after super.init
-        centralManager.delegate = self
     }
 
     // MARK: - Public API
 
     func startScanning() {
+        setup()
         guard centralManager.state == .poweredOn else {
             errorMessage = "Bluetooth is not available. Please enable Bluetooth in Settings."
             logger.warning("Cannot scan — Bluetooth not powered on (state: \(self.centralManager.state.rawValue))")
@@ -364,26 +366,6 @@ extension BodySenseRingManager: @preconcurrency CBCentralManagerDelegate {
                 self.cleanUpConnection()
             default:
                 break
-            }
-        }
-    }
-
-    nonisolated func centralManager(_ central: CBCentralManager, willRestoreState dict: [String: Any]) {
-        // State restoration for background BLE
-        if let peripherals = dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral],
-           let peripheral = peripherals.first {
-            Task { @MainActor in
-                self.connectedPeripheral = peripheral
-                peripheral.delegate = self
-                if peripheral.state == .connected {
-                    self.connectionState = .connected
-                    peripheral.discoverServices([BLEConstants.serviceUUID])
-                    self.logger.info("Restored connected peripheral from background")
-                } else {
-                    self.connectionState = .reconnecting
-                    central.connect(peripheral, options: nil)
-                    self.logger.info("Restored peripheral, reconnecting...")
-                }
             }
         }
     }
