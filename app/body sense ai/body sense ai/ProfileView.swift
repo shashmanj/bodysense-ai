@@ -63,7 +63,7 @@ struct PatientProfileView: View {
     @State private var showCEOCodeEntry   = false
     @State private var ceoTapCount        = 0
     @AppStorage("biometricLockEnabled") private var biometricLockEnabled = false
-    @AppStorage("darkModeEnabled") private var darkModeEnabled = false
+    @AppStorage("appearanceMode") private var appearanceMode: String = AppearanceMode.system.rawValue
     @State private var pickerItem         : PhotosPickerItem? = nil
 
     var body: some View {
@@ -260,7 +260,10 @@ struct PatientProfileView: View {
                 Label { Text("Biometric Lock") } icon: { SettingsIcon(systemName: "faceid", color: .brandPurple) }
             }
             .tint(.brandGreen)
-            Toggle(isOn: $darkModeEnabled) {
+            Toggle(isOn: Binding(
+                get: { appearanceMode == AppearanceMode.dark.rawValue },
+                set: { appearanceMode = $0 ? AppearanceMode.dark.rawValue : AppearanceMode.system.rawValue }
+            )) {
                 Label { Text("Dark Mode") } icon: { SettingsIcon(systemName: "moon.fill", color: .indigo) }
             }
             .tint(.brandGreen)
