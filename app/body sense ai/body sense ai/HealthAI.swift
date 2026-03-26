@@ -26,6 +26,14 @@ struct ChatMessage: Identifiable, Equatable {
 
     // User feedback on AI responses
     var feedback: MessageFeedback = .none
+
+    // Document attachment (optional)
+    var attachedDocument: MedicalDocument? = nil
+    var attachedDocumentDeleted: Bool = false
+
+    static func == (lhs: ChatMessage, rhs: ChatMessage) -> Bool {
+        lhs.id == rhs.id
+    }
 }
 
 // MARK: - AI Engine

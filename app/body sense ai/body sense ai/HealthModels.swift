@@ -2270,6 +2270,67 @@ struct SupportTicketRecord: Codable, Identifiable, Equatable {
     var isResolved: Bool { status == "Resolved" }
 }
 
+// MARK: - Medical Document (user-uploaded reports, prescriptions, imaging)
+
+struct MedicalDocument: Identifiable, Codable {
+    let id: UUID
+    var name: String
+    var category: DocumentCategory
+    var dateAdded: Date
+    var fileData: Data
+    var thumbnailData: Data?
+    var notes: String
+    var sourceChat: Bool
+    var fileType: FileType
+
+    init(id: UUID = UUID(), name: String, category: DocumentCategory = .other, dateAdded: Date = Date(), fileData: Data, thumbnailData: Data? = nil, notes: String = "", sourceChat: Bool = false, fileType: FileType = .image) {
+        self.id = id
+        self.name = name
+        self.category = category
+        self.dateAdded = dateAdded
+        self.fileData = fileData
+        self.thumbnailData = thumbnailData
+        self.notes = notes
+        self.sourceChat = sourceChat
+        self.fileType = fileType
+    }
+
+    enum DocumentCategory: String, Codable, CaseIterable {
+        case labReport = "Lab Report"
+        case prescription = "Prescription"
+        case imaging = "Imaging"
+        case vaccination = "Vaccination"
+        case insurance = "Insurance"
+        case other = "Other"
+
+        var icon: String {
+            switch self {
+            case .labReport: return "doc.text.magnifyingglass"
+            case .prescription: return "pills"
+            case .imaging: return "photo"
+            case .vaccination: return "syringe"
+            case .insurance: return "shield.checkered"
+            case .other: return "doc"
+            }
+        }
+
+        var color: Color {
+            switch self {
+            case .labReport: return .blue
+            case .prescription: return .green
+            case .imaging: return .purple
+            case .vaccination: return .orange
+            case .insurance: return .teal
+            case .other: return .gray
+            }
+        }
+    }
+
+    enum FileType: String, Codable {
+        case image, pdf
+    }
+}
+
 // MARK: - Chat History Record (persistent)
 
 struct ChatHistoryRecord: Codable, Identifiable {
@@ -2355,6 +2416,9 @@ class HealthStore {
 
     // ── Support tickets (customer care) ─────────────────────────────────────
     var supportTickets   : [SupportTicketRecord] = []
+
+    // ── Medical documents (user-uploaded reports, prescriptions, imaging) ────
+    var medicalDocuments : [MedicalDocument] = []
 
     // ── Chat history (persistent conversations) ─────────────────────────────
     var chatHistories    : [ChatHistoryRecord] = []
@@ -3074,6 +3138,7 @@ class HealthStore {
         enc(wearableDevices,   key: "wearableDevices")
         enc(userProfile,       key: "userProfile")
         enc(supportTickets,    key: "supportTickets")
+        enc(medicalDocuments,  key: "medicalDocuments")
         enc(chatHistories,     key: "chatHistories")
         enc(agentCustomPrompts, key: "agentCustomPrompts")
         enc(cachedGlobalPatterns, key: "cachedGlobalPatterns")
@@ -3138,8 +3203,9 @@ class HealthStore {
         medicalRecords = []
         doctorReviews = []
 
-        // Support & chat history
+        // Support, documents & chat history
         supportTickets = []
+        medicalDocuments = []
         chatHistories = []
 
         // AI Learning
@@ -3204,6 +3270,7 @@ class HealthStore {
         wearableDevices   = dec([WearableDevice].self,    key: "wearableDevices")   ?? []
         userProfile       = dec(UserProfile.self,         key: "userProfile")       ?? UserProfile()
         supportTickets    = dec([SupportTicketRecord].self, key: "supportTickets")  ?? []
+        medicalDocuments  = dec([MedicalDocument].self,   key: "medicalDocuments")  ?? []
         chatHistories     = dec([ChatHistoryRecord].self,   key: "chatHistories")   ?? []
         agentCustomPrompts = dec([String: String].self,       key: "agentCustomPrompts") ?? [:]
         cachedGlobalPatterns = dec([AnonymisedHealthPattern].self, key: "cachedGlobalPatterns") ?? []

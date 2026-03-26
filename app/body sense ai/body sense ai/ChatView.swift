@@ -6,6 +6,9 @@
 //
 
 import SwiftUI
+import PhotosUI
+import PDFKit
+import UniformTypeIdentifiers
 
 // MARK: - Floating Chat Button (added as overlay on Dashboard)
 
@@ -66,6 +69,15 @@ struct ChatView: View {
     @State private var showUpgradeSheet = false
     @FocusState private var focused: Bool
 
+    // Attachment state
+    @State private var showAttachmentSheet = false
+    @State private var photosPickerItem: PhotosPickerItem? = nil
+    @State private var showPhotoPicker = false
+    @State private var showCamera = false
+    @State private var showFileImporter = false
+    @State private var pendingAttachment: PendingAttachment? = nil
+    @State private var showDocumentViewer: MedicalDocument? = nil
+
     var body: some View {
         NavigationStack {
             ZStack {
@@ -99,6 +111,25 @@ struct ChatView: View {
                     reason: "You have reached your daily limit of \(store.subscription.dailyAIMessageLimit) AI messages. Upgrade to \(nextPlan.badge) for \(nextPlan.dailyAIMessageLimit) messages per day."
                 )
                 .environment(store)
+            }
+            .photosPicker(isPresented: $showPhotoPicker, selection: $photosPickerItem, matching: .any(of: [.images]))
+            .fileImporter(isPresented: $showFileImporter, allowedContentTypes: [.pdf], allowsMultipleSelection: false) { result in
+                handleFileImport(result)
+            }
+            .fullScreenCover(item: $showDocumentViewer) { doc in
+                DocumentFullScreenViewer(document: doc)
+            }
+            .onChange(of: photosPickerItem) { _, item in
+                Task {
+                    await handlePhotoSelection(item)
+                }
+            }
+            .confirmationDialog("Attach Document", isPresented: $showAttachmentSheet) {
+                Button("Photo Library") { showPhotoPicker = true }
+                Button("Choose PDF File") { showFileImporter = true }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("Upload a medical document")
             }
         }
         .onAppear { setupAI() }
@@ -206,6 +237,10 @@ struct ChatView: View {
                                     ai?.reportFeedback(feedback, forQuery: query)
                                 }
                             }
+                        }, onViewDocument: { doc in
+                            showDocumentViewer = doc
+                        }, onSaveDocument: { doc in
+                            saveDocumentToStore(doc)
                         })
                         .id(msg.id)
                     }
@@ -248,9 +283,21 @@ struct ChatView: View {
     // ── Input Bar ──
     var inputBar: some View {
         VStack(spacing: 0) {
+            // Pending attachment preview
+            if let attachment = pendingAttachment {
+                attachmentPreview(attachment)
+            }
+
             Divider()
-            HStack(spacing: 12) {
-                TextField("Ask your health coach…", text: $input, axis: .vertical)
+            HStack(spacing: 10) {
+                // Attachment button
+                Button { showAttachmentSheet = true } label: {
+                    Image(systemName: "paperclip")
+                        .font(.system(size: 20))
+                        .foregroundColor(.secondary)
+                }
+
+                TextField("Ask your health coach...", text: $input, axis: .vertical)
                     .lineLimit(1...4)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
@@ -260,7 +307,7 @@ struct ChatView: View {
                     .onSubmit { sendTapped() }
 
                 Button { sendTapped() } label: {
-                    Image(systemName: input.trimmingCharacters(in: .whitespaces).isEmpty
+                    Image(systemName: (input.trimmingCharacters(in: .whitespaces).isEmpty && pendingAttachment == nil)
                           ? "mic.fill" : "arrow.up.circle.fill")
                         .font(.system(size: 32))
                         .foregroundColor(.brandPurple)
@@ -271,6 +318,45 @@ struct ChatView: View {
             .padding(.vertical, 10)
             .background(Color.cardBg)
         }
+    }
+
+    // ── Attachment Preview (above input bar) ──
+    func attachmentPreview(_ attachment: PendingAttachment) -> some View {
+        HStack(spacing: 10) {
+            if let thumb = attachment.thumbnail, let img = UIImage(data: thumb) {
+                Image(uiImage: img)
+                    .resizable().scaledToFill()
+                    .frame(width: 48, height: 48)
+                    .cornerRadius(8)
+                    .clipped()
+            } else {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color(.tertiarySystemBackground))
+                    .frame(width: 48, height: 48)
+                    .overlay(
+                        Image(systemName: attachment.fileType == .pdf ? "doc.fill" : "photo")
+                            .foregroundColor(.secondary)
+                    )
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(attachment.name)
+                    .font(.caption).fontWeight(.medium)
+                    .lineLimit(1)
+                Text(attachment.fileType == .pdf ? "PDF Document" : "Image")
+                    .font(.caption2).foregroundColor(.secondary)
+            }
+            Spacer()
+            Button {
+                pendingAttachment = nil
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundColor(.secondary)
+                    .font(.title3)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(Color(.secondarySystemBackground))
     }
 
     // ── Logic ──
@@ -293,7 +379,9 @@ struct ChatView: View {
 
     private func send(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        let hasAttachment = pendingAttachment != nil
+
+        guard !trimmed.isEmpty || hasAttachment else { return }
 
         // Enforce AI message limit
         if store.isAIMessageLimitReached {
@@ -303,10 +391,37 @@ struct ChatView: View {
 
         focused = false
         input = ""
-        messages.append(ChatMessage(content: trimmed, isUser: true))
+
+        // Build the message
+        var userMessage = ChatMessage(content: trimmed.isEmpty ? "Uploaded a document" : trimmed, isUser: true)
+
+        // Attach document if present
+        if let attachment = pendingAttachment {
+            let doc = MedicalDocument(
+                name: attachment.name,
+                category: .other,
+                dateAdded: Date(),
+                fileData: attachment.fileData,
+                thumbnailData: attachment.thumbnail,
+                notes: trimmed,
+                sourceChat: true,
+                fileType: attachment.fileType == .pdf ? .pdf : .image
+            )
+            userMessage.attachedDocument = doc
+            // Auto-save to My Documents
+            store.medicalDocuments.append(doc)
+            store.save()
+            pendingAttachment = nil
+        }
+
+        messages.append(userMessage)
         store.recordAIMessage()
+
         Task {
-            let reply = await ai?.respond(to: trimmed)
+            let queryText = userMessage.attachedDocument != nil
+                ? "\(trimmed) [User attached a document: \(userMessage.attachedDocument?.name ?? "document")]"
+                : trimmed
+            let reply = await ai?.respond(to: queryText)
             if let r = reply {
                 await MainActor.run { messages.append(r) }
             }
@@ -315,7 +430,76 @@ struct ChatView: View {
 
     private func sendTapped() {
         let t = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !t.isEmpty { send(t) }
+        if !t.isEmpty || pendingAttachment != nil { send(t) }
+    }
+
+    private func saveDocumentToStore(_ doc: MedicalDocument) {
+        // Only save if not already in store
+        guard !store.medicalDocuments.contains(where: { $0.id == doc.id }) else { return }
+        store.medicalDocuments.append(doc)
+        store.save()
+    }
+
+    private func handlePhotoSelection(_ item: PhotosPickerItem?) async {
+        guard let item else { return }
+        if let data = try? await item.loadTransferable(type: Data.self) {
+            let thumbnail = generateThumbnail(from: data, isImage: true)
+            await MainActor.run {
+                pendingAttachment = PendingAttachment(
+                    name: "Photo \(Date().formatted(.dateTime.month().day().hour().minute()))",
+                    fileData: data,
+                    thumbnail: thumbnail,
+                    fileType: .image
+                )
+            }
+        }
+        await MainActor.run { photosPickerItem = nil }
+    }
+
+    private func handleFileImport(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            guard let url = urls.first else { return }
+            guard url.startAccessingSecurityScopedResource() else { return }
+            defer { url.stopAccessingSecurityScopedResource() }
+            if let data = try? Data(contentsOf: url) {
+                let thumbnail = generateThumbnail(from: data, isImage: false)
+                let fileName = url.deletingPathExtension().lastPathComponent
+                pendingAttachment = PendingAttachment(
+                    name: fileName,
+                    fileData: data,
+                    thumbnail: thumbnail,
+                    fileType: .pdf
+                )
+            }
+        case .failure:
+            break
+        }
+    }
+
+    private func generateThumbnail(from data: Data, isImage: Bool) -> Data? {
+        if isImage, let img = UIImage(data: data) {
+            let size = CGSize(width: 120, height: 120)
+            let renderer = UIGraphicsImageRenderer(size: size)
+            let thumb = renderer.image { _ in
+                img.draw(in: CGRect(origin: .zero, size: size))
+            }
+            return thumb.jpegData(compressionQuality: 0.6)
+        } else if !isImage, let pdfDoc = PDFDocument(data: data),
+                  let page = pdfDoc.page(at: 0) {
+            let bounds = page.bounds(for: .mediaBox)
+            let scale: CGFloat = 120.0 / max(bounds.width, bounds.height)
+            let size = CGSize(width: bounds.width * scale, height: bounds.height * scale)
+            let renderer = UIGraphicsImageRenderer(size: size)
+            let thumb = renderer.image { ctx in
+                ctx.cgContext.setFillColor(UIColor.white.cgColor)
+                ctx.cgContext.fill(CGRect(origin: .zero, size: size))
+                ctx.cgContext.scaleBy(x: scale, y: scale)
+                page.draw(with: .mediaBox, to: ctx.cgContext)
+            }
+            return thumb.jpegData(compressionQuality: 0.6)
+        }
+        return nil
     }
 
     private func saveCurrentChat() {
@@ -351,6 +535,15 @@ struct ChatView: View {
         }
         showHistory = false
     }
+}
+
+// MARK: - Pending Attachment (transient, before sending)
+
+struct PendingAttachment {
+    var name: String
+    var fileData: Data
+    var thumbnail: Data?
+    var fileType: MedicalDocument.FileType
 }
 
 // MARK: - Chat History List
@@ -566,6 +759,8 @@ struct ChatBubble: View {
     let message    : ChatMessage
     let onChip     : (String) -> Void
     var onFeedback : ((MessageFeedback) -> Void)? = nil
+    var onViewDocument: ((MedicalDocument) -> Void)? = nil
+    var onSaveDocument: ((MedicalDocument) -> Void)? = nil
 
     var body: some View {
         VStack(alignment: message.isUser ? .trailing : .leading, spacing: 6) {
@@ -581,7 +776,16 @@ struct ChatBubble: View {
                     }
                 }
                 VStack(alignment: message.isUser ? .trailing : .leading, spacing: 4) {
-                    bubbleBody
+                    // Document attachment card
+                    if let doc = message.attachedDocument {
+                        documentCard(doc)
+                    }
+                    // Text bubble (if there's content beyond just "Uploaded a document")
+                    if !message.content.isEmpty && !(message.attachedDocument != nil && message.content == "Uploaded a document") {
+                        bubbleBody
+                    } else if message.attachedDocument == nil {
+                        bubbleBody
+                    }
                     // Feedback row for AI messages
                     if !message.isUser {
                         feedbackRow
@@ -598,6 +802,77 @@ struct ChatBubble: View {
     }
 
     @State private var showCopied = false
+
+    // ── Document Card in Chat ──
+    func documentCard(_ doc: MedicalDocument) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                // Thumbnail
+                if let thumbData = doc.thumbnailData, let img = UIImage(data: thumbData) {
+                    Image(uiImage: img)
+                        .resizable().scaledToFill()
+                        .frame(width: 50, height: 50)
+                        .cornerRadius(8)
+                        .clipped()
+                } else {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color(.tertiarySystemBackground))
+                        .frame(width: 50, height: 50)
+                        .overlay(
+                            Image(systemName: doc.fileType == .pdf ? "doc.fill" : "photo")
+                                .foregroundColor(.secondary)
+                        )
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(doc.name)
+                        .font(.caption).fontWeight(.semibold)
+                        .lineLimit(1)
+                        .foregroundColor(.primary)
+                    HStack(spacing: 4) {
+                        Text(doc.category.rawValue)
+                            .font(.system(size: 10))
+                            .foregroundColor(doc.category.color)
+                        Text("·")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                        Text(doc.dateAdded.formatted(.dateTime.day().month()))
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+                    if message.attachedDocumentDeleted {
+                        Text("Deleted from My Documents")
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color(.systemGray5))
+                            .cornerRadius(4)
+                    }
+                }
+                Spacer()
+            }
+
+            // Action buttons
+            if !message.attachedDocumentDeleted {
+                HStack(spacing: 12) {
+                    Spacer()
+                    Button {
+                        onViewDocument?(doc)
+                    } label: {
+                        Text("View")
+                            .font(.caption2).fontWeight(.medium)
+                            .foregroundColor(.brandPurple)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(10)
+        .background(Color(.secondarySystemBackground))
+        .cornerRadius(16)
+        .shadow(color: .black.opacity(0.06), radius: 8, y: 2)
+        .frame(maxWidth: 240)
+    }
 
     var feedbackRow: some View {
         HStack(spacing: 12) {
@@ -695,6 +970,76 @@ struct ChatBubble: View {
 
     // Convert simple **bold** markdown to attributed string key
     private func markdownify(_ text: String) -> String { text }
+}
+
+// MARK: - Document Full Screen Viewer
+
+struct DocumentFullScreenViewer: View {
+    let document: MedicalDocument
+    @Environment(\.dismiss) var dismiss
+    @State private var scale: CGFloat = 1.0
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color(.systemBackground).ignoresSafeArea()
+
+                if document.fileType == .image, let img = UIImage(data: document.fileData) {
+                    ScrollView([.horizontal, .vertical], showsIndicators: false) {
+                        Image(uiImage: img)
+                            .resizable()
+                            .scaledToFit()
+                            .scaleEffect(scale)
+                            .gesture(
+                                MagnifyGesture()
+                                    .onChanged { value in
+                                        scale = value.magnification
+                                    }
+                                    .onEnded { value in
+                                        withAnimation {
+                                            scale = max(1.0, min(value.magnification, 5.0))
+                                        }
+                                    }
+                            )
+                            .onTapGesture(count: 2) {
+                                withAnimation { scale = scale > 1.0 ? 1.0 : 2.5 }
+                            }
+                    }
+                } else if document.fileType == .pdf {
+                    PDFKitView(data: document.fileData)
+                } else {
+                    VStack(spacing: 16) {
+                        Image(systemName: "doc.questionmark")
+                            .font(.largeTitle).foregroundColor(.secondary)
+                        Text("Unable to preview this document")
+                            .font(.subheadline).foregroundColor(.secondary)
+                    }
+                }
+            }
+            .navigationTitle(document.name)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - PDFKit SwiftUI Wrapper
+
+struct PDFKitView: UIViewRepresentable {
+    let data: Data
+
+    func makeUIView(context: Context) -> PDFView {
+        let pdfView = PDFView()
+        pdfView.autoScales = true
+        pdfView.document = PDFDocument(data: data)
+        return pdfView
+    }
+
+    func updateUIView(_ uiView: PDFView, context: Context) {}
 }
 
 // MARK: - Typing Bubble Animation

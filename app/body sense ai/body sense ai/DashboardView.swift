@@ -340,7 +340,7 @@ struct DashboardView: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                 Label("Nutrition Today", systemImage: "fork.knife.circle.fill")
-                    .font(.headline).foregroundColor(.brandAmber)
+                    .font(.subheadline.weight(.semibold)).foregroundColor(.brandAmber)
                 Spacer()
                 Image(systemName: "chevron.right").font(.caption).foregroundColor(.secondary)
                 }
@@ -353,8 +353,15 @@ struct DashboardView: View {
                 let calorieGoal = 2000
 
                 if todayLogs.isEmpty {
-                    Text("No meals logged today. Tap to log your nutrition.")
-                        .font(.caption).foregroundColor(.secondary)
+                    VStack(spacing: 8) {
+                        Image(systemName: "fork.knife")
+                            .font(.title2).foregroundColor(Color(.tertiaryLabel))
+                        Text("No meals logged today")
+                            .font(.subheadline).foregroundColor(.secondary)
+                        Text("Tap to log your nutrition")
+                            .font(.caption).foregroundColor(Color(.tertiaryLabel))
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 60)
                 } else {
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
@@ -408,7 +415,7 @@ struct DashboardView: View {
                 BSCard {
                     VStack(alignment: .leading, spacing: 10) {
                         Label("Heart Rate Variability", systemImage: "waveform.path.ecg")
-                            .font(.headline).foregroundColor(.brandGreen)
+                            .font(.subheadline.weight(.semibold)).foregroundColor(.brandGreen)
                         HStack {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("\(Int(hrv.value)) ms").font(.title2).fontWeight(.bold).foregroundColor(.brandGreen)
@@ -446,7 +453,8 @@ struct DashboardView: View {
     var glucoseCard: some View {
         BSCard {
             VStack(alignment: .leading, spacing: 10) {
-                Label("Blood Glucose", systemImage: "drop.fill").font(.headline).foregroundColor(.brandPurple)
+                Label("Blood Glucose", systemImage: "drop.fill")
+                    .font(.subheadline.weight(.semibold)).foregroundColor(.brandPurple)
                 if let g = store.latestGlucose {
                     let s = store.glucoseStatus(g.value)
                     HStack {
@@ -486,7 +494,15 @@ struct DashboardView: View {
                         }
                     }
                 } else {
-                    Text("No readings yet. Tap Track → Vitals to log.").font(.caption).foregroundColor(.secondary)
+                    VStack(spacing: 8) {
+                        Image(systemName: "drop")
+                            .font(.title2).foregroundColor(Color(.tertiaryLabel))
+                        Text("No readings yet")
+                            .font(.subheadline).foregroundColor(.secondary)
+                        Text("Tap Track to log your glucose")
+                            .font(.caption).foregroundColor(Color(.tertiaryLabel))
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 60)
                 }
             }
         }
@@ -497,7 +513,8 @@ struct DashboardView: View {
     var bpCard: some View {
         BSCard {
             VStack(alignment: .leading, spacing: 10) {
-                Label("Blood Pressure", systemImage: "heart.fill").font(.headline).foregroundColor(.brandCoral)
+                Label("Blood Pressure", systemImage: "heart.fill")
+                    .font(.subheadline.weight(.semibold)).foregroundColor(.brandCoral)
                 if let b = store.latestBP {
                     HStack {
                         HStack(spacing: 16) {
@@ -511,7 +528,15 @@ struct DashboardView: View {
                             .background(b.category.color.opacity(0.15)).foregroundColor(b.category.color).cornerRadius(10)
                     }
                 } else {
-                    Text("No readings yet.").font(.caption).foregroundColor(.secondary)
+                    VStack(spacing: 8) {
+                        Image(systemName: "heart")
+                            .font(.title2).foregroundColor(Color(.tertiaryLabel))
+                        Text("No readings yet")
+                            .font(.subheadline).foregroundColor(.secondary)
+                        Text("Tap Track to log your blood pressure")
+                            .font(.caption).foregroundColor(Color(.tertiaryLabel))
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 60)
                 }
             }
         }
@@ -522,7 +547,8 @@ struct DashboardView: View {
     var streaksRow: some View {
         BSCard {
             VStack(alignment: .leading, spacing: 10) {
-                Label("Streaks 🔥", systemImage: "flame.fill").font(.headline).foregroundColor(.brandCoral)
+                Label("Streaks", systemImage: "flame.fill")
+                    .font(.subheadline.weight(.semibold)).foregroundColor(.brandCoral)
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 10) {
                         ForEach(store.userStreaks.prefix(4)) { streak in
@@ -550,9 +576,18 @@ struct DashboardView: View {
         let activeMeds = store.medications.filter { $0.isActive }
         return BSCard {
             VStack(alignment: .leading, spacing: 10) {
-                Label("Today's Medications", systemImage: "pill.fill").font(.headline).foregroundColor(.brandPurple)
+                Label("Today's Medications", systemImage: "pill.fill")
+                    .font(.subheadline.weight(.semibold)).foregroundColor(.brandPurple)
                 if activeMeds.isEmpty {
-                    Text("No active medications. Add them in Track → Meds.").font(.caption).foregroundColor(.secondary)
+                    VStack(spacing: 8) {
+                        Image(systemName: "pill")
+                            .font(.title2).foregroundColor(Color(.tertiaryLabel))
+                        Text("No active medications")
+                            .font(.subheadline).foregroundColor(.secondary)
+                        Text("Add them in Track")
+                            .font(.caption).foregroundColor(Color(.tertiaryLabel))
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 60)
                 } else {
                     ForEach(activeMeds.prefix(3)) { med in
                         HStack {
@@ -577,7 +612,8 @@ struct DashboardView: View {
         guard !active.isEmpty else { return AnyView(EmptyView()) }
         return AnyView(BSCard {
             VStack(alignment: .leading, spacing: 10) {
-                Label("Active Challenges", systemImage: "flag.fill").font(.headline).foregroundColor(.brandAmber)
+                Label("Active Challenges", systemImage: "flag.fill")
+                    .font(.subheadline.weight(.semibold)).foregroundColor(.brandAmber)
                 ForEach(active.prefix(2)) { ch in
                     HStack {
                         Image(systemName: ch.type.icon).foregroundColor(ch.type.color)
@@ -1192,7 +1228,7 @@ struct QuickStatCard: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 14)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: 80, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(color.opacity(0.08))

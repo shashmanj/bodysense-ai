@@ -8,6 +8,8 @@
 import SwiftUI
 import PhotosUI
 import StoreKit
+import PDFKit
+import UniformTypeIdentifiers
 
 // MARK: - Profile Root
 
@@ -23,13 +25,28 @@ struct ProfileView: View {
     }
 }
 
+// MARK: - Settings Icon Helper (Apple Settings 29x29 standard)
+
+private struct SettingsIcon: View {
+    let systemName: String
+    let color: Color
+
+    var body: some View {
+        Image(systemName: systemName)
+            .font(.system(size: 15))
+            .foregroundColor(.white)
+            .frame(width: 29, height: 29)
+            .background(color)
+            .cornerRadius(7)
+    }
+}
+
 // MARK: - Patient Profile View
 
 struct PatientProfileView: View {
     @Environment(HealthStore.self) var store
     @State private var showEdit           = false
     @State private var showRecords        = false
-    @State private var showSettings       = false
     @State private var showDevices        = false
     @State private var showGiftCode       = false
     @State private var showSubPlans       = false
@@ -49,85 +66,21 @@ struct PatientProfileView: View {
     @AppStorage("darkModeEnabled") private var darkModeEnabled = false
     @State private var pickerItem         : PhotosPickerItem? = nil
 
-    var bmi: Double {
-        let h = store.userProfile.height / 100
-        guard h > 0 else { return 0 }
-        return store.userProfile.weight / (h * h)
-    }
-
-    func formatWeight(_ kg: Double) -> String {
-        let u = store.userProfile.weightUnit
-        let v = u.fromKg(kg)
-        switch u {
-        case .kg:     return String(format: "%.0f kg", v)
-        case .lbs:    return String(format: "%.0f lbs", v)
-        case .stones:
-            let totalLbs = kg / 0.453592
-            let st = Int(totalLbs) / 14
-            let lbs = Int(totalLbs) % 14
-            return "\(st)st \(lbs)lb"
-        }
-    }
-
-    func formatHeight(_ cm: Double) -> String {
-        store.userProfile.heightUnit.format(cm)
-    }
-
     var body: some View {
         NavigationStack {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    VStack(spacing: 20) {
-                        // ── Avatar & name header ──
-                        profileHeader
-
-                        // ── Stats row ──
-                        HStack(spacing: 0) {
-                            statCell("\(store.userProfile.age)", label: "Age")
-                            Divider().frame(height: 40)
-                            statCell(formatWeight(store.userProfile.weight), label: "Weight")
-                            Divider().frame(height: 40)
-                            statCell(String(format: "%.1f", bmi), label: "BMI")
-                            Divider().frame(height: 40)
-                            statCell(store.userProfile.currencyCode, label: "Currency")
-                        }
-                        .padding()
-                        .background(Color(.systemBackground))
-                        .cornerRadius(16).shadow(color: .black.opacity(0.05), radius: 6)
-                        .padding(.horizontal)
-
-                        // ── Subscription badge ──
-                        subscriptionCard
-
-                        // ── Quick actions ──
-                        quickActionsGrid
-
-                        // ── Medical records ──
-                        medicalRecordsPreview
-
-                        // ── Data summary ──
-                        dataSummaryCard
-
-                        // ── Settings ──
-                        settingsSection
-                            .id("settingsSection")
-
-                        // ── About ──
-                        aboutSection
-
-                        Spacer(minLength: 32)
-                    }
-                    .padding(.top)
-                }
-                .onChange(of: showSettings) { _, show in
-                    if show {
-                        withAnimation(.easeInOut(duration: 0.4)) {
-                            proxy.scrollTo("settingsSection", anchor: .top)
-                        }
-                        showSettings = false
-                    }
-                }
+            List {
+                profileHeaderSection
+                accountSection
+                aiSection
+                healthDataSection
+                devicesSection
+                privacySection
+                supportSection
+                ceoSection
+                accountActionsSection
+                versionFooterSection
             }
+            .listStyle(.insetGrouped)
             .navigationTitle("Profile")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
@@ -147,6 +100,13 @@ struct PatientProfileView: View {
         .sheet(isPresented: $showNotifSettings) { NotificationsSettingsView() }
         .sheet(isPresented: $showFamilySharing) { FamilySharingView() }
         .sheet(isPresented: $showAISettings) { AIAgentSettingsView() }
+        .sheet(isPresented: $showPrivacyData) { PrivacySettingsView() }
+        .sheet(isPresented: $showCEODashboard) { NavigationStack { CEODashboardView() } }
+        .sheet(isPresented: $showDoctorApproval) { NavigationStack { DoctorApprovalView() } }
+        .sheet(isPresented: $showAPIKeys) { NavigationStack { APIKeysView() } }
+        .sheet(isPresented: $showLaunchChecklist) { NavigationStack { LaunchChecklistView() } }
+        .sheet(isPresented: $showAgentTeam) { NavigationStack { AgentTeamView() } }
+        .sheet(isPresented: $showCEOCodeEntry) { CEOActivationSheet() }
         .onChange(of: pickerItem) { _, item in
             Task {
                 if let data = try? await item?.loadTransferable(type: Data.self) {
@@ -157,460 +117,360 @@ struct PatientProfileView: View {
         }
     }
 
-    var profileHeader: some View {
-        VStack(spacing: 12) {
-            PhotosPicker(selection: $pickerItem, matching: .images) {
-                ZStack(alignment: .bottomTrailing) {
-                    if let photoData = store.userProfile.profilePhotoData,
-                       let uiImg = UIImage(data: photoData) {
-                        Image(uiImage: uiImg)
-                            .resizable().scaledToFill()
-                            .frame(width: 90, height: 90)
-                            .clipShape(Circle())
-                    } else {
-                        Circle()
-                            .fill(LinearGradient(colors: [.brandPurple, .brandTeal], startPoint: .topLeading, endPoint: .bottomTrailing))
-                            .frame(width: 90, height: 90)
-                            .overlay(
-                                Text(store.userProfile.anonymousAlias.prefix(2).uppercased())
-                                    .font(.system(size: 32, weight: .bold))
-                                    .foregroundColor(.white)
-                            )
+    // MARK: - Extracted List Sections
+
+    private var profileHeaderSection: some View {
+        Section {
+            profileHeaderRow
+        }
+    }
+
+    private var accountSection: some View {
+        Section("Account") {
+            Button { showEdit = true } label: {
+                Label { Text("Edit Profile") } icon: { SettingsIcon(systemName: "person.fill", color: .brandPurple) }
+                    .foregroundColor(.primary)
+            }
+            Button { showSubPlans = true } label: {
+                Label { Text("Subscription & Plans") } icon: { SettingsIcon(systemName: "crown.fill", color: .brandAmber) }
+                    .foregroundColor(.primary)
+            }
+            Button { showGiftCode = true } label: {
+                Label { Text("Gift Codes") } icon: { SettingsIcon(systemName: "gift.fill", color: .brandGreen) }
+                    .foregroundColor(.primary)
+            }
+            Button { showRecords = true } label: {
+                Label { Text("Medical Records") } icon: { SettingsIcon(systemName: "doc.text.fill", color: .brandTeal) }
+                    .foregroundColor(.primary)
+            }
+        }
+    }
+
+    private var aiSection: some View {
+        Section("AI & Intelligence") {
+            Button { showAISettings = true } label: {
+                Label { Text("AI Agent Settings") } icon: { SettingsIcon(systemName: "brain", color: Color(hex: "#6C63FF")) }
+                    .foregroundColor(.primary)
+            }
+            Toggle(isOn: Binding(
+                get: { OnDeviceAIManager.shared.preferOnDevice },
+                set: { OnDeviceAIManager.shared.preferOnDevice = $0 }
+            )) {
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("On-Device AI")
+                        Text(OnDeviceAIManager.shared.isAvailable
+                             ? "Process AI privately on your device"
+                             : "Not supported -- using cloud AI")
+                            .font(.caption).foregroundColor(.secondary)
                     }
-                    Image(systemName: "camera.circle.fill")
-                        .font(.title3)
-                        .foregroundColor(.brandPurple)
-                        .background(Color.white.clipShape(Circle()))
-                        .offset(x: 4, y: 4)
-                }
+                } icon: { SettingsIcon(systemName: "cpu.fill", color: .brandPurple) }
             }
-
-            VStack(spacing: 4) {
-                Text(store.userProfile.name).font(.title2).fontWeight(.bold)
-                if !store.userProfile.email.isEmpty {
-                    Text(store.userProfile.email).font(.caption).foregroundColor(.brandPurple)
-                }
-                Text(store.userProfile.anonymousAlias).font(.subheadline).foregroundColor(.secondary)
-                if !store.userProfile.city.isEmpty {
-                    Label("\(store.userProfile.city), \(store.userProfile.country)", systemImage: "mappin.circle.fill")
-                        .font(.caption).foregroundColor(.secondary)
-                }
-            }
-        }
-        .padding(.vertical)
-    }
-
-    var subscriptionCard: some View {
-        let plan = store.subscription
-        // Determine how the user got the plan: redeemed gift code vs. paid subscription
-        let redeemedCode = store.giftCodes.first(where: { $0.isRedeemed && $0.plan == plan })
-        let acquiredLabel: String = {
-            if plan == .free { return "Free tier" }
-            if redeemedCode != nil { return "Gift code redeemed" }
-            return "Active subscription"
-        }()
-        let acquiredIcon: String = redeemedCode != nil ? "gift.fill" : "checkmark.seal.fill"
-        let acquiredColor: Color = redeemedCode != nil ? .brandAmber : .brandGreen
-
-        return HStack(spacing: 14) {
-            Image(systemName: plan.icon)
-                .font(.title2)
-                .foregroundColor(plan.color)
-                .frame(width: 44, height: 44)
-                .background(plan.color.opacity(0.12))
-                .clipShape(Circle())
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text("\(plan.badge) Plan").font(.headline)
-                    // Tier badge
-                    if plan != .free {
-                        Text(plan == .premium ? "PREMIUM" : "PRO")
-                            .font(.system(size: 9, weight: .bold))
-                            .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(plan.color.opacity(0.18))
-                            .foregroundColor(plan.color)
-                            .cornerRadius(4)
-                    }
-                }
-                HStack(spacing: 4) {
-                    Image(systemName: acquiredIcon).font(.caption2).foregroundColor(acquiredColor)
-                    Text(acquiredLabel).font(.caption).foregroundColor(acquiredColor)
-                }
-            }
-            Spacer()
-            if plan == .free {
-                Button { showSubPlans = true } label: {
-                    Text("Upgrade").font(.caption).fontWeight(.semibold)
-                        .padding(.horizontal, 14).padding(.vertical, 8)
-                        .background(Color.brandPurple.opacity(0.1))
-                        .foregroundColor(.brandPurple).cornerRadius(10)
-                }
-            } else {
-                Button { showSubPlans = true } label: {
-                    Text("Manage").font(.caption).fontWeight(.semibold)
-                        .padding(.horizontal, 14).padding(.vertical, 8)
-                        .background(plan.color.opacity(0.1))
-                        .foregroundColor(plan.color).cornerRadius(10)
-                }
-            }
-        }
-        .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(16).shadow(color: .black.opacity(0.05), radius: 6)
-        .padding(.horizontal)
-    }
-
-    var quickActionsGrid: some View {
-        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 14) {
-            quickAction("Medical Records", icon: "doc.fill", color: .brandTeal)   { showRecords = true }
-            quickAction("Gift Code", icon: "gift.fill", color: .brandAmber)        { showGiftCode = true }
-            quickAction("Devices", icon: "applewatch", color: .brandPurple)        { showDevices = true }
-            quickAction("Settings", icon: "gearshape.fill", color: Color(.systemGray)) { showSettings = true }
-        }
-        .padding(.horizontal)
-    }
-
-    func quickAction(_ label: String, icon: String, color: Color, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 8) {
-                Image(systemName: icon).font(.title2).foregroundColor(color)
-                    .frame(width: 48, height: 48).background(color.opacity(0.1)).clipShape(Circle())
-                Text(label).font(.caption2).multilineTextAlignment(.center).foregroundColor(.primary)
-            }
+            .tint(.brandGreen)
+            .disabled(!OnDeviceAIManager.shared.isAvailable)
         }
     }
 
-    var medicalRecordsPreview: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Medical Records").font(.headline)
-                Spacer()
-                Button("See All") { showRecords = true }.font(.caption).foregroundColor(.brandTeal)
-            }
-            .padding(.horizontal)
-
-            if store.medicalRecords.isEmpty {
-                // Clean empty state — no upload button, just a subtle message
-                HStack(spacing: 14) {
-                    Image(systemName: "doc.text.magnifyingglass")
-                        .font(.title2).foregroundColor(.brandTeal.opacity(0.6))
-                    Text("No records yet. Tap See All to add your first medical record.")
-                        .font(.caption).foregroundColor(.secondary)
-                }
-                .padding()
-                .background(Color(.systemGray6))
-                .cornerRadius(14)
-                .padding(.horizontal)
-            } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
-                        ForEach(store.medicalRecords.prefix(5)) { rec in
-                            MedicalRecordMiniCard(record: rec)
-                        }
-                        Button { showRecords = true } label: {
-                            VStack(spacing: 8) {
-                                Image(systemName: "plus.circle.fill").font(.title2).foregroundColor(.brandTeal)
-                                Text("Add More").font(.caption2)
-                            }
-                            .frame(width: 80, height: 90)
-                            .background(Color(.systemGray6)).cornerRadius(12)
+    private var healthDataSection: some View {
+        Section("Health & Data") {
+            Toggle(isOn: Binding(
+                get: { store.userProfile.healthKitEnabled },
+                set: { newVal in
+                    store.userProfile.healthKitEnabled = newVal
+                    store.save()
+                    if newVal {
+                        Task {
+                            await HealthKitManager.shared.requestAuthorization()
+                            await HealthKitManager.shared.syncAll(to: store)
                         }
                     }
-                    .padding(.horizontal)
                 }
-            }
-        }
-    }
-
-    var dataSummaryCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Health Data Summary").font(.headline).padding(.horizontal)
-            HStack(spacing: 10) {
-                dataChip("\(store.glucoseReadings.count)", label: "Glucose", icon: "drop.fill", color: .brandCoral)
-                dataChip("\(store.bpReadings.count)", label: "BP", icon: "heart.fill", color: .brandTeal)
-                dataChip("\(store.medications.count)", label: "Meds", icon: "pills.fill", color: .brandPurple)
-                dataChip("\(store.medicalRecords.count)", label: "Records", icon: "doc.fill", color: .brandAmber)
-            }
-            .padding(.horizontal)
-        }
-    }
-
-    func dataChip(_ value: String, label: String, icon: String, color: Color) -> some View {
-        VStack(spacing: 6) {
-            Image(systemName: icon).font(.subheadline).foregroundColor(color)
-            Text(value).font(.headline)
-            Text(label).font(.caption2).foregroundColor(.secondary)
-        }
-        .frame(maxWidth: .infinity).padding(.vertical, 12)
-        .background(color.opacity(0.08)).cornerRadius(12)
-    }
-
-    var settingsSection: some View {
-        VStack(spacing: 0) {
-            settingsRow("Edit Profile", icon: "person.fill", color: .brandPurple) { showEdit = true }
-            Divider().padding(.leading, 52)
-            settingsRow("Manage Devices", icon: "applewatch", color: .brandTeal) { showDevices = true }
-            Divider().padding(.leading, 52)
-            settingsRow("Subscription & Plans", icon: "crown.fill", color: .brandAmber) { showSubPlans = true }
-            Divider().padding(.leading, 52)
-            settingsRow("Gift Codes", icon: "gift.fill", color: .brandGreen) { showGiftCode = true }
-            Divider().padding(.leading, 52)
-            settingsRow("Notifications", icon: "bell.fill", color: .brandCoral) { showNotifSettings = true }
-            Divider().padding(.leading, 52)
-            settingsRow("Family Sharing", icon: "person.3.fill", color: .brandGreen) { showFamilySharing = true }
-            Divider().padding(.leading, 52)
-            settingsRow("Help & Support", icon: "headphones.circle.fill", color: .brandTeal) { showSupport = true }
-            Divider().padding(.leading, 52)
-            settingsRow("AI Agent Settings", icon: "brain", color: Color(hex: "#6C63FF")) { showAISettings = true }
-            Divider().padding(.leading, 52)
-
-            // ── On-Device AI Toggle ──
-            HStack(spacing: 14) {
-                Image(systemName: "cpu.fill").font(.body).foregroundColor(.white)
-                    .frame(width: 32, height: 32).background(Color.brandPurple).cornerRadius(8)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("On-Device AI").font(.subheadline)
-                    Text(OnDeviceAIManager.shared.isAvailable
-                         ? "Process AI privately on your device"
-                         : "Not supported — using cloud AI")
-                        .font(.caption2).foregroundColor(.secondary)
-                }
-                Spacer()
-                Toggle("", isOn: Binding(
-                    get: { OnDeviceAIManager.shared.preferOnDevice },
-                    set: { OnDeviceAIManager.shared.preferOnDevice = $0 }
-                ))
-                .tint(.brandGreen)
-                .labelsHidden()
-                .disabled(!OnDeviceAIManager.shared.isAvailable)
-            }
-            .padding(.horizontal).padding(.vertical, 12)
-
-            Divider().padding(.leading, 52)
-
-            // ── iCloud Sync Status ──
-            cloudSyncStatusRow
-
-            Divider().padding(.leading, 52)
-
-            // ── Apple Health Sync ──
-            HStack(spacing: 14) {
-                Image(systemName: "heart.circle.fill").font(.body).foregroundColor(.white)
-                    .frame(width: 32, height: 32).background(Color.red).cornerRadius(8)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Apple Health Sync").font(.subheadline)
-                    Text("Auto-sync steps, calories, SpO₂")
-                        .font(.caption2).foregroundColor(.secondary)
-                }
-                Spacer()
-                Toggle("", isOn: Binding(
-                    get: { store.userProfile.healthKitEnabled },
-                    set: { newVal in
-                        store.userProfile.healthKitEnabled = newVal
-                        store.save()
-                        if newVal {
-                            Task {
-                                await HealthKitManager.shared.requestAuthorization()
-                                await HealthKitManager.shared.syncAll(to: store)
-                            }
-                        }
+            )) {
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Apple Health Sync")
+                        Text("Auto-sync steps, calories, SpO2")
+                            .font(.caption).foregroundColor(.secondary)
                     }
-                ))
-                .tint(.brandGreen)
-                .labelsHidden()
+                } icon: { SettingsIcon(systemName: "heart.fill", color: .red) }
             }
-            .padding(.horizontal).padding(.vertical, 12)
+            .tint(.brandGreen)
 
-            Divider().padding(.leading, 52)
+            cloudSyncRow
 
-            // ── Weight Unit ──
-            HStack(spacing: 14) {
-                Image(systemName: "scalemass.fill").font(.body).foregroundColor(.white)
-                    .frame(width: 32, height: 32).background(Color.brandAmber).cornerRadius(8)
-                Text("Weight Unit").font(.subheadline)
-                Spacer()
+            LabeledContent {
                 Picker("", selection: Binding(
                     get: { store.userProfile.weightUnit },
                     set: { store.userProfile.weightUnit = $0; store.save() }
                 )) {
                     ForEach(WeightUnit.allCases, id: \.self) { Text($0.label).tag($0) }
                 }
-                .pickerStyle(.menu).tint(.brandPurple)
+                .pickerStyle(.menu).tint(.secondary)
+            } label: {
+                Label { Text("Weight Unit") } icon: { SettingsIcon(systemName: "scalemass.fill", color: .brandAmber) }
             }
-            .padding(.horizontal).padding(.vertical, 12)
 
-            Divider().padding(.leading, 52)
-
-            // ── Height Unit ──
-            HStack(spacing: 14) {
-                Image(systemName: "ruler.fill").font(.body).foregroundColor(.white)
-                    .frame(width: 32, height: 32).background(Color.brandTeal).cornerRadius(8)
-                Text("Height Unit").font(.subheadline)
-                Spacer()
+            LabeledContent {
                 Picker("", selection: Binding(
                     get: { store.userProfile.heightUnit },
                     set: { store.userProfile.heightUnit = $0; store.save() }
                 )) {
                     ForEach(HeightUnit.allCases, id: \.self) { Text($0.label).tag($0) }
                 }
-                .pickerStyle(.menu).tint(.brandPurple)
+                .pickerStyle(.menu).tint(.secondary)
+            } label: {
+                Label { Text("Height Unit") } icon: { SettingsIcon(systemName: "ruler.fill", color: .brandTeal) }
             }
-            .padding(.horizontal).padding(.vertical, 12)
 
-            Divider().padding(.leading, 52)
-
-            // ── Privacy & Data ──
-            settingsRow("Privacy & Data", icon: "hand.raised.fill", color: .blue) { showPrivacyData = true }
-            Divider().padding(.leading, 52)
-
-            // ── Biometric Lock ──
-            HStack(spacing: 14) {
-                Image(systemName: "faceid").font(.body).foregroundColor(.white)
-                    .frame(width: 32, height: 32).background(Color.brandPurple).cornerRadius(8)
-                Text("Biometric Lock").font(.subheadline)
-                Spacer()
-                Toggle("", isOn: $biometricLockEnabled)
-                    .tint(.brandGreen).labelsHidden()
-            }
-            .padding(.horizontal).padding(.vertical, 12)
-
-            Divider().padding(.leading, 52)
-
-            // ── Dark Mode ──
-            HStack(spacing: 14) {
-                Image(systemName: "moon.fill").font(.body).foregroundColor(.white)
-                    .frame(width: 32, height: 32).background(Color.indigo).cornerRadius(8)
-                Text("Dark Mode").font(.subheadline)
-                Spacer()
-                Toggle("", isOn: $darkModeEnabled)
-                    .tint(.brandGreen).labelsHidden()
-            }
-            .padding(.horizontal).padding(.vertical, 12)
-
-            // ── CEO Section (only visible to CEO) ──
-            if store.userProfile.isCEO {
-                Divider().padding(.leading, 52)
-
-                VStack(spacing: 0) {
-                    HStack {
-                        Image(systemName: "crown.fill").foregroundColor(.brandAmber)
-                        Text("CEO Controls").font(.caption.weight(.bold)).foregroundColor(.brandAmber)
-                        Spacer()
-                    }
-                    .padding(.horizontal).padding(.top, 12).padding(.bottom, 4)
-
-                    settingsRow("CEO Dashboard", icon: "chart.bar.fill", color: .brandAmber) { showCEODashboard = true }
-                    Divider().padding(.leading, 52)
-                    settingsRow("AI Agent Team", icon: "sparkles.rectangle.stack.fill", color: Color(hex: "#E040FB")) { showAgentTeam = true }
-                    Divider().padding(.leading, 52)
-                    Button {
-                        showDoctorApproval = true
-                    } label: {
-                        HStack(spacing: 14) {
-                            Image(systemName: "checkmark.shield.fill").font(.body).foregroundColor(.white)
-                                .frame(width: 32, height: 32).background(Color.brandTeal).cornerRadius(8)
-                            Text("Doctor Approvals").font(.subheadline).foregroundColor(.primary)
-                            Spacer()
-                            if !store.pendingDoctorRequests.isEmpty {
-                                Text("\(store.pendingDoctorRequests.count) pending")
-                                    .font(.caption2.weight(.bold))
-                                    .padding(.horizontal, 8).padding(.vertical, 3)
-                                    .background(Color.brandCoral)
-                                    .foregroundColor(.white)
-                                    .clipShape(Capsule())
-                            }
-                            Image(systemName: "chevron.right").font(.caption).foregroundColor(.secondary)
-                        }
-                        .padding(.horizontal).padding(.vertical, 12)
-                    }
-                    Divider().padding(.leading, 52)
-                    settingsRow("API Keys & Security", icon: "key.fill", color: .orange) { showAPIKeys = true }
-                    Divider().padding(.leading, 52)
-                    settingsRow("Launch Checklist", icon: "checklist", color: .brandGreen) { showLaunchChecklist = true }
+            Button { showRecords = true } label: {
+                LabeledContent {
+                    Text(healthDataSummaryText).font(.caption).foregroundColor(.secondary)
+                } label: {
+                    Label { Text("Health Data Summary") } icon: { SettingsIcon(systemName: "chart.bar.fill", color: .brandCoral) }
                 }
+                .foregroundColor(.primary)
             }
+        }
+    }
 
-            Divider().padding(.leading, 52)
+    private var devicesSection: some View {
+        Section("Devices") {
+            Button { showDevices = true } label: {
+                Label { Text("BodySense Ring") } icon: { SettingsIcon(systemName: "circle.fill", color: .brandPurple) }
+                    .foregroundColor(.primary)
+            }
+            Button { showDevices = true } label: {
+                Label { Text("Manage Devices") } icon: { SettingsIcon(systemName: "applewatch", color: .brandTeal) }
+                    .foregroundColor(.primary)
+            }
+        }
+    }
 
-            // ── Account Recovery (Apple ID) ──
+    private var privacySection: some View {
+        Section("Privacy & Security") {
+            Button { showPrivacyData = true } label: {
+                Label { Text("Privacy & Data") } icon: { SettingsIcon(systemName: "hand.raised.fill", color: .blue) }
+                    .foregroundColor(.primary)
+            }
+            Button { showNotifSettings = true } label: {
+                Label { Text("Notifications") } icon: { SettingsIcon(systemName: "bell.badge.fill", color: .brandCoral) }
+                    .foregroundColor(.primary)
+            }
+            Toggle(isOn: $biometricLockEnabled) {
+                Label { Text("Biometric Lock") } icon: { SettingsIcon(systemName: "faceid", color: .brandPurple) }
+            }
+            .tint(.brandGreen)
+            Toggle(isOn: $darkModeEnabled) {
+                Label { Text("Dark Mode") } icon: { SettingsIcon(systemName: "moon.fill", color: .indigo) }
+            }
+            .tint(.brandGreen)
+        }
+    }
+
+    private var supportSection: some View {
+        Section("Support") {
+            Button { showSupport = true } label: {
+                Label { Text("Help & Support") } icon: { SettingsIcon(systemName: "headphones.circle.fill", color: .brandTeal) }
+                    .foregroundColor(.primary)
+            }
+            Button { showFamilySharing = true } label: {
+                Label { Text("Family Sharing") } icon: { SettingsIcon(systemName: "person.3.fill", color: .brandGreen) }
+                    .foregroundColor(.primary)
+            }
+            Link(destination: URL(string: "https://bodysenseai.co.uk")!) {
+                Label {
+                    HStack {
+                        Text("bodysenseai.co.uk").foregroundColor(.primary)
+                        Spacer()
+                        Image(systemName: "arrow.up.right").font(.caption).foregroundColor(.secondary)
+                    }
+                } icon: { SettingsIcon(systemName: "globe", color: .brandTeal) }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var ceoSection: some View {
+        if store.userProfile.isCEO {
+            Section {
+                Button { showCEODashboard = true } label: {
+                    Label { Text("CEO Dashboard") } icon: { SettingsIcon(systemName: "chart.bar.fill", color: .brandAmber) }
+                        .foregroundColor(.primary)
+                }
+                Button { showAgentTeam = true } label: {
+                    Label { Text("AI Agent Team") } icon: { SettingsIcon(systemName: "sparkles.rectangle.stack.fill", color: Color(hex: "#E040FB")) }
+                        .foregroundColor(.primary)
+                }
+                Button { showDoctorApproval = true } label: {
+                    HStack {
+                        Label { Text("Doctor Approvals") } icon: { SettingsIcon(systemName: "checkmark.shield.fill", color: .brandTeal) }
+                        Spacer()
+                        if !store.pendingDoctorRequests.isEmpty {
+                            Text("\(store.pendingDoctorRequests.count) pending")
+                                .font(.caption2.weight(.bold))
+                                .padding(.horizontal, 8).padding(.vertical, 3)
+                                .background(Color.brandCoral)
+                                .foregroundColor(.white)
+                                .clipShape(Capsule())
+                        }
+                    }
+                    .foregroundColor(.primary)
+                }
+                Button { showAPIKeys = true } label: {
+                    Label { Text("API Keys & Security") } icon: { SettingsIcon(systemName: "key.fill", color: .orange) }
+                        .foregroundColor(.primary)
+                }
+                Button { showLaunchChecklist = true } label: {
+                    Label { Text("Launch Checklist") } icon: { SettingsIcon(systemName: "checklist", color: .brandGreen) }
+                        .foregroundColor(.primary)
+                }
+            } header: {
+                Label("CEO Controls", systemImage: "crown.fill")
+                    .foregroundColor(.brandAmber)
+            }
+        }
+    }
+
+    private var accountActionsSection: some View {
+        Section {
             Button {
-                // Sign in with Apple — password is managed by Apple ID
                 if let url = URL(string: "https://iforgot.apple.com") {
                     UIApplication.shared.open(url)
                 }
             } label: {
-                HStack(spacing: 14) {
-                    Image(systemName: "person.badge.key.fill").font(.body).foregroundColor(.white)
-                        .frame(width: 32, height: 32).background(Color.blue).cornerRadius(8)
+                Label {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Account Recovery").font(.body)
-                        Text("Managed by your Apple ID").font(.caption2).foregroundColor(.secondary)
+                        Text("Account Recovery")
+                        Text("Managed by your Apple ID").font(.caption).foregroundColor(.secondary)
                     }
-                    Spacer()
-                    Image(systemName: "arrow.up.right").font(.caption).foregroundColor(.secondary)
-                }
-                .padding(.horizontal).padding(.vertical, 12)
+                } icon: { SettingsIcon(systemName: "person.badge.key.fill", color: .blue) }
+                    .foregroundColor(.primary)
             }
-
-            Divider().padding(.leading, 52)
-
-            // ── Sign Out ──
-            Button {
+            Button(role: .destructive) {
                 FirebaseAuthManager.shared.signOut()
                 AuthService.shared.signOut()
                 UserDefaults.standard.set(false, forKey: "onboardingDone")
                 store.userProfile = UserProfile()
                 store.save()
             } label: {
-                HStack(spacing: 14) {
-                    Image(systemName: "rectangle.portrait.and.arrow.right").font(.body).foregroundColor(.white)
-                        .frame(width: 32, height: 32).background(Color.red).cornerRadius(8)
-                    Text("Sign Out").font(.body).foregroundColor(.red)
-                    Spacer()
-                }
-                .padding(.horizontal).padding(.vertical, 12)
+                Label { Text("Sign Out") } icon: { SettingsIcon(systemName: "rectangle.portrait.and.arrow.right", color: .red) }
             }
         }
-        .background(Color(.systemBackground))
-        .cornerRadius(16).shadow(color: .black.opacity(0.05), radius: 6)
-        .padding(.horizontal)
-        .sheet(isPresented: $showPrivacyData) { PrivacySettingsView() }
-        .sheet(isPresented: $showCEODashboard) { NavigationStack { CEODashboardView() } }
-        .sheet(isPresented: $showDoctorApproval) { NavigationStack { DoctorApprovalView() } }
-        .sheet(isPresented: $showAPIKeys) { NavigationStack { APIKeysView() } }
-        .sheet(isPresented: $showLaunchChecklist) { NavigationStack { LaunchChecklistView() } }
-        .sheet(isPresented: $showAgentTeam) { NavigationStack { AgentTeamView() } }
     }
 
-    // ── iCloud Sync Status Row ──
-    var cloudSyncStatusRow: some View {
+    private var versionFooterSection: some View {
+        Section {
+        } footer: {
+            Button {
+                ceoTapCount += 1
+                if ceoTapCount >= 5 {
+                    ceoTapCount = 0
+                    showCEOCodeEntry = true
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                    ceoTapCount = 0
+                }
+            } label: {
+                Text("BodySense AI v1.0 (Build 1)")
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.top, 8)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    // MARK: - Profile Header Row
+
+    private var profileHeaderRow: some View {
+        HStack(spacing: 14) {
+            PhotosPicker(selection: $pickerItem, matching: .images) {
+                ZStack(alignment: .bottomTrailing) {
+                    if let photoData = store.userProfile.profilePhotoData,
+                       let uiImg = UIImage(data: photoData) {
+                        Image(uiImage: uiImg)
+                            .resizable().scaledToFill()
+                            .frame(width: 64, height: 64)
+                            .clipShape(Circle())
+                    } else {
+                        Circle()
+                            .fill(LinearGradient(colors: [.brandPurple, .brandTeal], startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .frame(width: 64, height: 64)
+                            .overlay(
+                                Text(store.userProfile.anonymousAlias.prefix(2).uppercased())
+                                    .font(.system(size: 22, weight: .bold))
+                                    .foregroundColor(.white)
+                            )
+                    }
+                    Image(systemName: "camera.circle.fill")
+                        .font(.system(size: 18))
+                        .foregroundColor(.brandPurple)
+                        .background(Color(.systemBackground).clipShape(Circle()))
+                        .offset(x: 2, y: 2)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(store.userProfile.name)
+                    .font(.title3).fontWeight(.semibold)
+                if !store.userProfile.email.isEmpty {
+                    Text(store.userProfile.email)
+                        .font(.caption).foregroundColor(.secondary)
+                }
+                subscriptionPill
+            }
+
+            Spacer()
+        }
+        .padding(.vertical, 4)
+    }
+
+    private var subscriptionPill: some View {
+        let plan = store.subscription
+        return Text(plan.badge)
+            .font(.caption2.weight(.semibold))
+            .padding(.horizontal, 8).padding(.vertical, 3)
+            .background(plan.color.opacity(0.12))
+            .foregroundColor(plan.color)
+            .clipShape(Capsule())
+    }
+
+    private var healthDataSummaryText: String {
+        let parts = [
+            "\(store.glucoseReadings.count) glucose",
+            "\(store.bpReadings.count) BP",
+            "\(store.medications.count) meds"
+        ]
+        return parts.joined(separator: " · ")
+    }
+
+    private var cloudSyncRow: some View {
         let sync = CloudSyncService.shared
         return Button {
             Task {
                 await CloudSyncService.shared.syncToCloud(store: store)
             }
         } label: {
-            HStack(spacing: 14) {
-                Image(systemName: sync.syncState.icon).font(.body).foregroundColor(.white)
-                    .frame(width: 32, height: 32).background(Color.blue).cornerRadius(8)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("iCloud Sync").font(.subheadline).foregroundColor(.primary)
-                    if let progress = sync.syncProgress {
-                        Text(progress)
-                            .font(.caption2).foregroundColor(.brandPurple)
-                    } else if let lastSync = sync.lastSyncDate {
-                        Text("Last synced: \(lastSync.formatted(.relative(presentation: .named)))")
-                            .font(.caption2).foregroundColor(.secondary)
-                    } else {
-                        Text(sync.syncState.label)
-                            .font(.caption2).foregroundColor(sync.syncState.isError ? .red : .secondary)
+            HStack {
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("iCloud Sync").foregroundColor(.primary)
+                        if let progress = sync.syncProgress {
+                            Text(progress).font(.caption).foregroundColor(.brandPurple)
+                        } else if let lastSync = sync.lastSyncDate {
+                            Text("Last synced: \(lastSync.formatted(.relative(presentation: .named)))")
+                                .font(.caption).foregroundColor(.secondary)
+                        } else {
+                            Text(sync.syncState.label)
+                                .font(.caption).foregroundColor(sync.syncState.isError ? .red : .secondary)
+                        }
                     }
-                }
+                } icon: { SettingsIcon(systemName: sync.syncState.icon, color: .blue) }
                 Spacer()
                 if sync.isSyncing {
                     ProgressView().controlSize(.small)
                 } else {
-                    // Sync state badge
                     Text(sync.syncState == .upToDate ? "SYNCED" : "SYNC")
                         .font(.caption2.weight(.bold))
                         .padding(.horizontal, 8).padding(.vertical, 3)
@@ -621,70 +481,7 @@ struct PatientProfileView: View {
                         .clipShape(Capsule())
                 }
             }
-            .padding(.horizontal).padding(.vertical, 12)
         }
-    }
-
-    func settingsRow(_ label: String, icon: String, color: Color, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 14) {
-                Image(systemName: icon).font(.body).foregroundColor(.white)
-                    .frame(width: 32, height: 32).background(color).cornerRadius(8)
-                Text(label).font(.body).foregroundColor(.primary)
-                Spacer()
-                Image(systemName: "chevron.right").font(.caption).foregroundColor(.secondary)
-            }
-            .padding()
-        }
-    }
-
-    var aboutSection: some View {
-        VStack(spacing: 0) {
-            Link(destination: URL(string: "https://bodysenseai.co.uk")!) {
-                HStack {
-                    Image(systemName: "globe").foregroundColor(.brandTeal).frame(width: 24)
-                    Text("bodysenseai.co.uk").foregroundColor(.primary)
-                    Spacer()
-                    Image(systemName: "arrow.up.right").font(.caption).foregroundColor(.secondary)
-                }
-                .padding()
-            }
-            Divider().padding(.leading, 52)
-            Button {
-                // Hidden CEO activation — tap version text 5 times rapidly
-                ceoTapCount += 1
-                if ceoTapCount >= 5 {
-                    ceoTapCount = 0
-                    showCEOCodeEntry = true
-                }
-                // Reset counter after 3 seconds of no taps
-                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                    ceoTapCount = 0
-                }
-            } label: {
-                HStack {
-                    Image(systemName: "info.circle").foregroundColor(.secondary).frame(width: 24)
-                    Text("Version 1.0 · BodySense AI").font(.subheadline).foregroundColor(.secondary)
-                    Spacer()
-                }
-                .padding()
-            }
-            .buttonStyle(.plain)
-        }
-        .background(Color(.systemBackground))
-        .cornerRadius(16).shadow(color: .black.opacity(0.05), radius: 6)
-        .padding(.horizontal)
-        .sheet(isPresented: $showCEOCodeEntry) {
-            CEOActivationSheet()
-        }
-    }
-
-    func statCell(_ value: String, label: String) -> some View {
-        VStack(spacing: 4) {
-            Text(value).font(.headline)
-            Text(label).font(.caption2).foregroundColor(.secondary)
-        }
-        .frame(maxWidth: .infinity)
     }
 }
 
@@ -704,80 +501,61 @@ struct DoctorUserProfileView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 20) {
-                    // Doctor profile header
-                    doctorProfileHeader
-
-                    // ── Doctor Mode toggle (only when approved) ──
-                    if store.isDoctorApproved {
-                        HStack(spacing: 14) {
-                            Image(systemName: "stethoscope.circle.fill")
-                                .font(.title2).foregroundColor(.brandTeal)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Doctor Mode").font(.headline)
-                                Text(doctorMode ? "Home tab shows your doctor dashboard" : "Home tab shows your health dashboard")
-                                    .font(.caption).foregroundColor(.secondary)
-                            }
-                            Spacer()
-                            Toggle("", isOn: $doctorMode).tint(.brandTeal).labelsHidden()
-                        }
-                        .padding(14)
-                        .background(doctorMode ? Color.brandTeal.opacity(0.08) : Color(.secondarySystemBackground))
-                        .cornerRadius(14)
-                        .padding(.horizontal)
-                    } else if store.isDoctor {
-                        // Doctor registered but not yet approved — show status
-                        Button { showAppStatus = true } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: "clock.badge.exclamationmark.fill")
-                                    .font(.title3).foregroundColor(.brandAmber)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Application \(store.doctorApplicationStatus)")
-                                        .font(.headline)
-                                    Text("Tap to view your application status")
-                                        .font(.caption).foregroundColor(.secondary)
-                                }
-                                Spacer()
-                                Image(systemName: "chevron.right").foregroundColor(.secondary)
-                            }
-                            .padding(14)
-                            .background(Color.brandAmber.opacity(0.08))
-                            .cornerRadius(14)
-                        }
-                        .foregroundColor(.primary)
-                        .padding(.horizontal)
-                    }
-
-                    // Info banner
-                    VStack(spacing: 0) {
-                        Text("You have full access to all BodySense AI health features as a user. Toggle Doctor Mode above to manage appointments and patients.")
-                            .font(.caption).foregroundColor(.secondary)
-                            .padding()
-                            .background(Color.brandTeal.opacity(0.06))
-                            .cornerRadius(12)
-                    }
-                    .padding(.horizontal)
-
-                    // Quick actions (same as patient)
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 14) {
-                        quickAction("Medical Records", icon: "doc.fill", color: .brandTeal) { showRecords = true }
-                        quickAction("Gift Code", icon: "gift.fill", color: .brandAmber) { showGiftCode = true }
-                        quickAction("Devices", icon: "applewatch", color: .brandPurple) { showDevices = true }
-                        quickAction("Subscription", icon: "crown.fill", color: .brandGreen) { showSubPlans = true }
-                    }
-                    .padding(.horizontal)
-
-                    // Medical records section
-                    medicalRecordsPreview
-
-                    // Settings
-                    settingsSection
-
-                    Spacer(minLength: 32)
+            List {
+                // ── Doctor Profile Header ──
+                Section {
+                    doctorProfileHeaderRow
                 }
-                .padding(.top)
+
+                // ── Doctor Mode ──
+                doctorModeSection
+
+                // ── Account ──
+                Section("Account") {
+                    Button { showEdit = true } label: {
+                        Label { Text("Edit Profile") } icon: { SettingsIcon(systemName: "person.fill", color: .brandPurple) }
+                            .foregroundColor(.primary)
+                    }
+                    Button { showSubPlans = true } label: {
+                        Label { Text("Subscription & Plans") } icon: { SettingsIcon(systemName: "crown.fill", color: .brandAmber) }
+                            .foregroundColor(.primary)
+                    }
+                    Button { showGiftCode = true } label: {
+                        Label { Text("Gift Codes") } icon: { SettingsIcon(systemName: "gift.fill", color: .brandGreen) }
+                            .foregroundColor(.primary)
+                    }
+                    Button { showRecords = true } label: {
+                        Label { Text("Medical Records") } icon: { SettingsIcon(systemName: "doc.text.fill", color: .brandTeal) }
+                            .foregroundColor(.primary)
+                    }
+                }
+
+                // ── Devices ──
+                Section("Devices") {
+                    Button { showDevices = true } label: {
+                        Label { Text("Manage Devices") } icon: { SettingsIcon(systemName: "applewatch", color: .brandTeal) }
+                            .foregroundColor(.primary)
+                    }
+                }
+
+                // ── Support ──
+                Section("Support") {
+                    Button { showSupport = true } label: {
+                        Label { Text("Help & Support") } icon: { SettingsIcon(systemName: "headphones.circle.fill", color: .brandTeal) }
+                            .foregroundColor(.primary)
+                    }
+                }
+
+                // ── Version ──
+                Section {
+                } footer: {
+                    Text("BodySense AI v1.0 (Build 1)")
+                        .font(.footnote).foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.top, 8)
+                }
             }
+            .listStyle(.insetGrouped)
             .navigationTitle("Profile")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
@@ -803,108 +581,89 @@ struct DoctorUserProfileView: View {
         }
     }
 
-    var doctorProfileHeader: some View {
-        VStack(spacing: 12) {
+    // MARK: - Doctor Mode Section
+
+    @ViewBuilder
+    private var doctorModeSection: some View {
+        if store.isDoctorApproved {
+            Section {
+                Toggle(isOn: $doctorMode) {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Doctor Mode")
+                            Text(doctorMode ? "Home tab shows your doctor dashboard" : "Home tab shows your health dashboard")
+                                .font(.caption).foregroundColor(.secondary)
+                        }
+                    } icon: { SettingsIcon(systemName: "stethoscope", color: .brandTeal) }
+                }
+                .tint(.brandTeal)
+            } footer: {
+                Text("You have full access to all BodySense AI health features as a user. Toggle Doctor Mode to manage appointments and patients.")
+            }
+        } else if store.isDoctor {
+            Section {
+                Button { showAppStatus = true } label: {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Application \(store.doctorApplicationStatus)")
+                            Text("Tap to view your application status")
+                                .font(.caption).foregroundColor(.secondary)
+                        }
+                    } icon: { SettingsIcon(systemName: "clock.badge.exclamationmark.fill", color: .brandAmber) }
+                        .foregroundColor(.primary)
+                }
+            }
+        }
+    }
+
+    // MARK: - Doctor Profile Header Row
+
+    private var doctorProfileHeaderRow: some View {
+        HStack(spacing: 14) {
             PhotosPicker(selection: $pickerItem, matching: .images) {
                 ZStack(alignment: .bottomTrailing) {
                     if let photoData = store.userProfile.profilePhotoData,
                        let uiImg = UIImage(data: photoData) {
                         Image(uiImage: uiImg).resizable().scaledToFill()
-                            .frame(width: 90, height: 90).clipShape(Circle())
+                            .frame(width: 64, height: 64).clipShape(Circle())
                     } else {
                         Circle()
                             .fill(LinearGradient(colors: [Color(hex: "#00BFA5"), .brandPurple], startPoint: .topLeading, endPoint: .bottomTrailing))
-                            .frame(width: 90, height: 90)
+                            .frame(width: 64, height: 64)
                             .overlay(Text(String(store.userProfile.name.prefix(2)).uppercased())
-                                .font(.system(size: 32, weight: .bold)).foregroundColor(.white))
+                                .font(.system(size: 22, weight: .bold)).foregroundColor(.white))
                     }
-                    Image(systemName: "camera.circle.fill").font(.title3).foregroundColor(.brandTeal)
-                        .background(Color.white.clipShape(Circle())).offset(x: 4, y: 4)
+                    Image(systemName: "camera.circle.fill")
+                        .font(.system(size: 18))
+                        .foregroundColor(.brandTeal)
+                        .background(Color(.systemBackground).clipShape(Circle()))
+                        .offset(x: 2, y: 2)
                 }
             }
-            VStack(spacing: 4) {
-                HStack(spacing: 8) {
-                    Text(store.userProfile.name).font(.title2).fontWeight(.bold)
-                    if store.userProfile.doctorProfile?.isVerified == true {
-                        Image(systemName: "checkmark.seal.fill").foregroundColor(.brandTeal)
-                    }
-                }
-                Text(store.userProfile.doctorProfile?.specialty ?? "Doctor").font(.subheadline).foregroundColor(.secondary)
-                Label("\(store.userProfile.city), \(store.userProfile.country)", systemImage: "mappin.circle.fill")
-                    .font(.caption).foregroundColor(.secondary)
-            }
-        }
-        .padding(.vertical)
-    }
 
-    var medicalRecordsPreview: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("My Medical Records").font(.headline)
-                Spacer()
-                Button("See All") { showRecords = true }.font(.caption).foregroundColor(.brandTeal)
-            }
-            .padding(.horizontal)
-            if store.medicalRecords.isEmpty {
-                // Clean empty state — no upload button
-                HStack(spacing: 14) {
-                    Image(systemName: "doc.text.magnifyingglass")
-                        .font(.title2).foregroundColor(.brandTeal.opacity(0.6))
-                    Text("No records yet. Tap See All to add your first medical record.")
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text(store.userProfile.name)
+                        .font(.title3).fontWeight(.semibold)
+                    if store.userProfile.doctorProfile?.isVerified == true {
+                        Image(systemName: "checkmark.seal.fill")
+                            .foregroundColor(.brandTeal).font(.subheadline)
+                    }
+                }
+                Text(store.userProfile.doctorProfile?.specialty ?? "Doctor")
+                    .font(.caption).foregroundColor(.secondary)
+                if !store.userProfile.city.isEmpty {
+                    Text("\(store.userProfile.city), \(store.userProfile.country)")
                         .font(.caption).foregroundColor(.secondary)
                 }
-                .padding()
-                .background(Color(.systemGray6))
-                .cornerRadius(14)
-                .padding(.horizontal)
-            } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
-                        ForEach(store.medicalRecords.prefix(5)) { rec in MedicalRecordMiniCard(record: rec) }
-                    }
-                    .padding(.horizontal)
-                }
             }
-        }
-    }
 
-    var settingsSection: some View {
-        VStack(spacing: 0) {
-            settingsRow("Edit Profile", icon: "person.fill", color: .brandPurple) { showEdit = true }
-            Divider().padding(.leading, 52)
-            settingsRow("Manage Devices", icon: "applewatch", color: .brandTeal) { showDevices = true }
-            Divider().padding(.leading, 52)
-            settingsRow("Subscription & Plans", icon: "crown.fill", color: .brandAmber) { showSubPlans = true }
-            Divider().padding(.leading, 52)
-            settingsRow("Help & Support", icon: "headphones.circle.fill", color: .brandTeal) { showSupport = true }
+            Spacer()
         }
-        .background(Color(.systemBackground)).cornerRadius(16)
-        .shadow(color: .black.opacity(0.05), radius: 6).padding(.horizontal)
-    }
-
-    func quickAction(_ label: String, icon: String, color: Color, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 8) {
-                Image(systemName: icon).font(.title2).foregroundColor(color)
-                    .frame(width: 48, height: 48).background(color.opacity(0.1)).clipShape(Circle())
-                Text(label).font(.caption2).multilineTextAlignment(.center).foregroundColor(.primary)
-            }
-        }
-    }
-
-    func settingsRow(_ label: String, icon: String, color: Color, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 14) {
-                Image(systemName: icon).font(.body).foregroundColor(.white)
-                    .frame(width: 32, height: 32).background(color).cornerRadius(8)
-                Text(label).font(.body).foregroundColor(.primary)
-                Spacer()
-                Image(systemName: "chevron.right").font(.caption).foregroundColor(.secondary)
-            }
-            .padding()
-        }
+        .padding(.vertical, 4)
     }
 }
+
 
 // MARK: - Medical Records View
 
@@ -2408,6 +2167,352 @@ struct CEOActivationSheet: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") { dismiss() }
                 }
+            }
+        }
+    }
+}
+
+// MARK: - My Documents View
+
+struct MyDocumentsView: View {
+    @Environment(HealthStore.self) var store
+    @Environment(\.dismiss) var dismiss
+    @State private var showAddSheet = false
+    @State private var showPhotoPicker = false
+    @State private var showFileImporter = false
+    @State private var photosPickerItem: PhotosPickerItem? = nil
+    @State private var selectedDocument: MedicalDocument? = nil
+    @State private var editingDocument: MedicalDocument? = nil
+
+    private var groupedDocuments: [(MedicalDocument.DocumentCategory, [MedicalDocument])] {
+        let grouped = Dictionary(grouping: store.medicalDocuments) { $0.category }
+        return MedicalDocument.DocumentCategory.allCases.compactMap { cat in
+            guard let docs = grouped[cat], !docs.isEmpty else { return nil }
+            return (cat, docs.sorted { $0.dateAdded > $1.dateAdded })
+        }
+    }
+
+    var body: some View {
+        Group {
+            if store.medicalDocuments.isEmpty {
+                emptyState
+            } else {
+                documentList
+            }
+        }
+        .navigationTitle("My Documents")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Done") { dismiss() }
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button { showAddSheet = true } label: {
+                    Image(systemName: "plus")
+                }
+            }
+        }
+        .confirmationDialog("Add Document", isPresented: $showAddSheet) {
+            Button("Photo Library") { showPhotoPicker = true }
+            Button("Choose PDF File") { showFileImporter = true }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Upload a medical document")
+        }
+        .photosPicker(isPresented: $showPhotoPicker, selection: $photosPickerItem, matching: .any(of: [.images]))
+        .fileImporter(isPresented: $showFileImporter, allowedContentTypes: [.pdf], allowsMultipleSelection: false) { result in
+            handleFileImport(result)
+        }
+        .onChange(of: photosPickerItem) { _, item in
+            Task { await handlePhotoSelection(item) }
+        }
+        .fullScreenCover(item: $selectedDocument) { doc in
+            DocumentFullScreenViewer(document: doc)
+        }
+        .sheet(item: $editingDocument) { doc in
+            NavigationStack {
+                DocumentEditView(document: doc) { updated in
+                    if let idx = store.medicalDocuments.firstIndex(where: { $0.id == updated.id }) {
+                        store.medicalDocuments[idx] = updated
+                        store.save()
+                    }
+                    editingDocument = nil
+                }
+            }
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 20) {
+            Spacer()
+            Image(systemName: "folder.badge.plus")
+                .font(.system(size: 56))
+                .foregroundColor(.secondary.opacity(0.5))
+            Text("No documents yet")
+                .font(.title3).fontWeight(.semibold)
+                .foregroundColor(.secondary)
+            Text("Upload medical reports from chat or tap + to add.")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 40)
+            Button {
+                showAddSheet = true
+            } label: {
+                Text("Add Document")
+                    .font(.body).fontWeight(.semibold)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 54)
+                    .background(Color.brandPurple)
+                    .cornerRadius(14)
+            }
+            .padding(.horizontal, 40)
+            Spacer()
+        }
+    }
+
+    private var documentList: some View {
+        List {
+            ForEach(groupedDocuments, id: \.0) { category, docs in
+                Section {
+                    ForEach(docs) { doc in
+                        Button {
+                            selectedDocument = doc
+                        } label: {
+                            documentRow(doc)
+                        }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            Button(role: .destructive) {
+                                deleteDocument(doc)
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
+                        .swipeActions(edge: .leading) {
+                            Button {
+                                editingDocument = doc
+                            } label: {
+                                Label("Edit", systemImage: "pencil")
+                            }
+                            .tint(.brandPurple)
+                        }
+                        .contextMenu {
+                            Button {
+                                selectedDocument = doc
+                            } label: {
+                                Label("View", systemImage: "eye")
+                            }
+                            Button {
+                                editingDocument = doc
+                            } label: {
+                                Label("Edit", systemImage: "pencil")
+                            }
+                            Button(role: .destructive) {
+                                deleteDocument(doc)
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
+                    }
+                } header: {
+                    HStack(spacing: 6) {
+                        Image(systemName: category.icon)
+                            .foregroundColor(category.color)
+                            .font(.caption)
+                        Text(category.rawValue)
+                    }
+                }
+            }
+        }
+        .listStyle(.insetGrouped)
+    }
+
+    private func documentRow(_ doc: MedicalDocument) -> some View {
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 7)
+                    .fill(doc.category.color.opacity(0.12))
+                    .frame(width: 29, height: 29)
+                Image(systemName: doc.category.icon)
+                    .font(.system(size: 13))
+                    .foregroundColor(doc.category.color)
+            }
+            if let thumbData = doc.thumbnailData, let img = UIImage(data: thumbData) {
+                Image(uiImage: img)
+                    .resizable().scaledToFill()
+                    .frame(width: 40, height: 40)
+                    .cornerRadius(6)
+                    .clipped()
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                Text(doc.name)
+                    .font(.subheadline).fontWeight(.medium)
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(doc.dateAdded.formatted(.dateTime.day().month().year()))
+                        .font(.caption2).foregroundColor(.secondary)
+                    if doc.sourceChat {
+                        Text("From Chat")
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundColor(.brandPurple)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(Color.brandPurple.opacity(0.1))
+                            .cornerRadius(100)
+                    }
+                    Text(doc.fileType == .pdf ? "PDF" : "Image")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(Color(.systemGray5))
+                        .cornerRadius(100)
+                }
+            }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.caption).foregroundColor(.secondary)
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func deleteDocument(_ doc: MedicalDocument) {
+        store.medicalDocuments.removeAll { $0.id == doc.id }
+        store.save()
+    }
+
+    private func handlePhotoSelection(_ item: PhotosPickerItem?) async {
+        guard let item else { return }
+        if let data = try? await item.loadTransferable(type: Data.self) {
+            let thumbnail = generateDocThumbnail(from: data, isImage: true)
+            let doc = MedicalDocument(
+                name: "Photo \(Date().formatted(.dateTime.month().day().hour().minute()))",
+                category: .other,
+                dateAdded: Date(),
+                fileData: data,
+                thumbnailData: thumbnail,
+                notes: "",
+                sourceChat: false,
+                fileType: .image
+            )
+            await MainActor.run {
+                store.medicalDocuments.append(doc)
+                store.save()
+                editingDocument = doc
+            }
+        }
+        await MainActor.run { photosPickerItem = nil }
+    }
+
+    private func handleFileImport(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            guard let url = urls.first else { return }
+            guard url.startAccessingSecurityScopedResource() else { return }
+            defer { url.stopAccessingSecurityScopedResource() }
+            if let data = try? Data(contentsOf: url) {
+                let thumbnail = generateDocThumbnail(from: data, isImage: false)
+                let fileName = url.deletingPathExtension().lastPathComponent
+                let doc = MedicalDocument(
+                    name: fileName,
+                    category: .other,
+                    dateAdded: Date(),
+                    fileData: data,
+                    thumbnailData: thumbnail,
+                    notes: "",
+                    sourceChat: false,
+                    fileType: .pdf
+                )
+                store.medicalDocuments.append(doc)
+                store.save()
+                editingDocument = doc
+            }
+        case .failure:
+            break
+        }
+    }
+
+    private func generateDocThumbnail(from data: Data, isImage: Bool) -> Data? {
+        if isImage, let img = UIImage(data: data) {
+            let size = CGSize(width: 120, height: 120)
+            let renderer = UIGraphicsImageRenderer(size: size)
+            let thumb = renderer.image { _ in
+                img.draw(in: CGRect(origin: .zero, size: size))
+            }
+            return thumb.jpegData(compressionQuality: 0.6)
+        } else if !isImage {
+            if let pdfDoc = PDFDocument(data: data), let page = pdfDoc.page(at: 0) {
+                let bounds = page.bounds(for: .mediaBox)
+                let scale: CGFloat = 120.0 / max(bounds.width, bounds.height)
+                let size = CGSize(width: bounds.width * scale, height: bounds.height * scale)
+                let renderer = UIGraphicsImageRenderer(size: size)
+                let thumb = renderer.image { ctx in
+                    ctx.cgContext.setFillColor(UIColor.white.cgColor)
+                    ctx.cgContext.fill(CGRect(origin: .zero, size: size))
+                    ctx.cgContext.scaleBy(x: scale, y: scale)
+                    page.draw(with: .mediaBox, to: ctx.cgContext)
+                }
+                return thumb.jpegData(compressionQuality: 0.6)
+            }
+        }
+        return nil
+    }
+}
+
+// MARK: - Document Edit View
+
+struct DocumentEditView: View {
+    @State var document: MedicalDocument
+    var onSave: (MedicalDocument) -> Void
+    @Environment(\.dismiss) var dismiss
+
+    var body: some View {
+        Form {
+            Section("Document Name") {
+                TextField("Name", text: $document.name)
+            }
+            Section("Category") {
+                Picker("Category", selection: $document.category) {
+                    ForEach(MedicalDocument.DocumentCategory.allCases, id: \.self) { cat in
+                        Label(cat.rawValue, systemImage: cat.icon).tag(cat)
+                    }
+                }
+                .pickerStyle(.inline)
+                .labelsHidden()
+            }
+            Section("Notes") {
+                TextEditor(text: $document.notes)
+                    .frame(minHeight: 80)
+            }
+            Section {
+                HStack {
+                    Text("Type"); Spacer()
+                    Text(document.fileType == .pdf ? "PDF" : "Image").foregroundColor(.secondary)
+                }
+                HStack {
+                    Text("Date Added"); Spacer()
+                    Text(document.dateAdded.formatted(.dateTime.day().month().year())).foregroundColor(.secondary)
+                }
+                if document.sourceChat {
+                    HStack {
+                        Text("Source"); Spacer()
+                        Text("Uploaded via Chat").foregroundColor(.secondary)
+                    }
+                }
+            }
+        }
+        .navigationTitle("Edit Document")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Cancel") { dismiss() }
+            }
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Save") { onSave(document) }
+                    .fontWeight(.semibold)
+                    .disabled(document.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
     }

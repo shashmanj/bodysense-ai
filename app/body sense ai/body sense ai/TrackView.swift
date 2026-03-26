@@ -1549,14 +1549,15 @@ struct BSCard<Content: View>: View {
     init(@ViewBuilder content: () -> Content) { self.content = content() }
     var body: some View {
         content
-            .padding()
-            .background(Color(.secondarySystemGroupedBackground))
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(.secondarySystemBackground))
             .cornerRadius(16)
             .overlay(
                 RoundedRectangle(cornerRadius: 16)
                     .stroke(Color.cardBorder.opacity(colorScheme == .dark ? 0.3 : 0), lineWidth: 1)
             )
-            .shadow(color: colorScheme == .dark ? .clear : Color.primary.opacity(0.06), radius: 6, y: 2)
+            .shadow(color: colorScheme == .dark ? .clear : .black.opacity(0.06), radius: 8, y: 2)
     }
 }
 

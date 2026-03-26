@@ -164,112 +164,120 @@ struct HealthPermissionsView: View {
     @State private var isRequestingCamera = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            ScrollView {
-                VStack(spacing: 24) {
-                    // Header
-                    VStack(spacing: 12) {
-                        Image(systemName: "shield.checkered")
-                            .font(.system(size: 56))
-                            .foregroundStyle(
-                                LinearGradient(colors: [.brandTeal, .brandPurple], startPoint: .topLeading, endPoint: .bottomTrailing)
-                            )
-                        Text("Enable Health Features")
-                            .font(.title2).fontWeight(.bold).foregroundColor(.white)
-                        Text("Grant permissions to unlock the full power of BodySense AI. You can change these later in Settings.")
-                            .font(.subheadline).foregroundColor(.white.opacity(0.8))
-                            .multilineTextAlignment(.center)
-                    }
-                    .padding(.top, 40).padding(.horizontal, 24)
+        ZStack {
+            // Brand gradient background — readable in both light and dark mode
+            LinearGradient(
+                colors: [Color.brandPurple.opacity(0.15), Color.brandTeal.opacity(0.08), Color(.systemBackground)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
 
-                    // Permission cards
-                    VStack(spacing: 14) {
-                        // ── Apple Health ──
-                        permissionCard(
-                            icon: "heart.text.square.fill",
-                            iconColor: .red,
-                            title: "Apple Health",
-                            description: "Sync glucose, blood pressure, heart rate, sleep, steps, weight, SpO2, HRV & 40+ health metrics",
-                            isGranted: healthKitGranted,
-                            isLoading: isRequestingHK
-                        ) {
-                            isRequestingHK = true
-                            await HealthKitManager.shared.requestAuthorization()
-                            healthKitGranted = HealthKitManager.shared.isAuthorized
-                            isRequestingHK = false
-                            // Enable HealthKit sync in profile
-                            HealthStore.shared.userProfile.healthKitEnabled = true
-                            HealthStore.shared.save()
+            VStack(spacing: 0) {
+                ScrollView {
+                    VStack(spacing: 24) {
+                        // Header
+                        VStack(spacing: 12) {
+                            Image(systemName: "shield.checkered")
+                                .font(.system(size: 56))
+                                .foregroundStyle(Color.brandPurple)
+                            Text("Enable Health Features")
+                                .font(.title2).fontWeight(.bold).foregroundColor(.primary)
+                            Text("Grant permissions to unlock the full power of BodySense AI. You can change these later in Settings.")
+                                .font(.subheadline).foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
                         }
+                        .padding(.top, 40).padding(.horizontal, 24)
 
-                        // ── Notifications ──
-                        permissionCard(
-                            icon: "bell.badge.fill",
-                            iconColor: .brandAmber,
-                            title: "Notifications",
-                            description: "Medication reminders, health alerts, appointment updates & AI insights",
-                            isGranted: notificationsGranted,
-                            isLoading: isRequestingNotif
-                        ) {
-                            isRequestingNotif = true
-                            let center = UNUserNotificationCenter.current()
-                            let granted = (try? await center.requestAuthorization(options: [.alert, .badge, .sound])) ?? false
-                            notificationsGranted = granted
-                            isRequestingNotif = false
+                        // Permission cards
+                        VStack(spacing: 14) {
+                            // ── Apple Health ──
+                            permissionCard(
+                                icon: "heart.text.square.fill",
+                                iconColor: .red,
+                                title: "Apple Health",
+                                description: "Sync glucose, blood pressure, heart rate, sleep, steps, weight, SpO2, HRV & 40+ health metrics",
+                                isGranted: healthKitGranted,
+                                isLoading: isRequestingHK
+                            ) {
+                                isRequestingHK = true
+                                await HealthKitManager.shared.requestAuthorization()
+                                healthKitGranted = HealthKitManager.shared.isAuthorized
+                                isRequestingHK = false
+                                // Enable HealthKit sync in profile
+                                HealthStore.shared.userProfile.healthKitEnabled = true
+                                HealthStore.shared.save()
+                            }
+
+                            // ── Notifications ──
+                            permissionCard(
+                                icon: "bell.badge.fill",
+                                iconColor: .brandAmber,
+                                title: "Notifications",
+                                description: "Medication reminders, health alerts, appointment updates & AI insights",
+                                isGranted: notificationsGranted,
+                                isLoading: isRequestingNotif
+                            ) {
+                                isRequestingNotif = true
+                                let center = UNUserNotificationCenter.current()
+                                let granted = (try? await center.requestAuthorization(options: [.alert, .badge, .sound])) ?? false
+                                notificationsGranted = granted
+                                isRequestingNotif = false
+                            }
+
+                            // ── Camera & Microphone ──
+                            permissionCard(
+                                icon: "video.fill",
+                                iconColor: .brandPurple,
+                                title: "Camera & Microphone",
+                                description: "Video consultations with doctors, food label scanning & voice logging",
+                                isGranted: cameraGranted && micGranted,
+                                isLoading: isRequestingCamera
+                            ) {
+                                isRequestingCamera = true
+                                let camGranted = await AVCaptureDevice.requestAccess(for: .video)
+                                let audioGranted = await AVCaptureDevice.requestAccess(for: .audio)
+                                cameraGranted = camGranted
+                                micGranted = audioGranted
+                                isRequestingCamera = false
+                            }
                         }
+                        .padding(.horizontal, 20)
 
-                        // ── Camera & Microphone ──
-                        permissionCard(
-                            icon: "video.fill",
-                            iconColor: .brandPurple,
-                            title: "Camera & Microphone",
-                            description: "Video consultations with doctors, food label scanning & voice logging",
-                            isGranted: cameraGranted && micGranted,
-                            isLoading: isRequestingCamera
-                        ) {
-                            isRequestingCamera = true
-                            let camGranted = await AVCaptureDevice.requestAccess(for: .video)
-                            let audioGranted = await AVCaptureDevice.requestAccess(for: .audio)
-                            cameraGranted = camGranted
-                            micGranted = audioGranted
-                            isRequestingCamera = false
+                        // Privacy note
+                        HStack(spacing: 8) {
+                            Image(systemName: "lock.shield.fill")
+                                .font(.caption).foregroundColor(.brandGreen)
+                            Text("Your data is encrypted with AES-256 and never shared without your consent.")
+                                .font(.caption2).foregroundColor(.secondary)
                         }
+                        .padding(.horizontal, 24)
                     }
-                    .padding(.horizontal, 20)
-
-                    // Privacy note
-                    HStack(spacing: 8) {
-                        Image(systemName: "lock.shield.fill")
-                            .font(.caption).foregroundColor(.brandGreen)
-                        Text("Your data is encrypted with AES-256 and never shared without your consent.")
-                            .font(.caption2).foregroundColor(.white.opacity(0.7))
-                    }
-                    .padding(.horizontal, 24)
                 }
-            }
 
-            // Continue button
-            Button {
-                onDone()
-            } label: {
-                Text("Continue")
-                    .font(.headline).foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.brandTeal)
-                    .cornerRadius(14)
-            }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 16)
+                // Continue button
+                Button {
+                    onDone()
+                } label: {
+                    Text("Continue")
+                        .font(.headline).foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 54)
+                        .background(Color.brandPurple)
+                        .cornerRadius(14)
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 16)
 
-            // Skip option
-            Button {
-                onDone()
-            } label: {
-                Text("Skip for now")
-                    .font(.subheadline).foregroundColor(.white.opacity(0.6))
+                // Skip option
+                Button {
+                    onDone()
+                } label: {
+                    Text("Skip for now")
+                        .font(.subheadline).foregroundColor(.secondary)
+                }
+                .padding(.bottom, 24)
             }
-            .padding(.bottom, 24)
         }
     }
 
@@ -283,12 +291,12 @@ struct HealthPermissionsView: View {
             Image(systemName: icon)
                 .font(.title2).foregroundColor(iconColor)
                 .frame(width: 44, height: 44)
-                .background(iconColor.opacity(0.15))
+                .background(iconColor.opacity(0.12))
                 .cornerRadius(12)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.subheadline).fontWeight(.semibold).foregroundColor(.white)
-                Text(description).font(.caption2).foregroundColor(.white.opacity(0.7))
+                Text(title).font(.subheadline).fontWeight(.semibold).foregroundColor(.primary)
+                Text(description).font(.caption2).foregroundColor(.secondary)
                     .lineLimit(2)
             }
 
@@ -298,7 +306,7 @@ struct HealthPermissionsView: View {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.title3).foregroundColor(.brandGreen)
             } else if isLoading {
-                ProgressView().tint(.white)
+                ProgressView().tint(.brandPurple)
             } else {
                 Button {
                     Task { await action() }
@@ -306,15 +314,16 @@ struct HealthPermissionsView: View {
                     Text("Enable")
                         .font(.caption).fontWeight(.semibold)
                         .padding(.horizontal, 14).padding(.vertical, 7)
-                        .background(Color.white.opacity(0.2))
-                        .foregroundColor(.white)
+                        .background(Color.brandPurple.opacity(0.15))
+                        .foregroundColor(.brandPurple)
                         .cornerRadius(8)
                 }
             }
         }
         .padding(14)
-        .background(Color.white.opacity(0.08))
+        .background(Color(.secondarySystemBackground))
         .cornerRadius(16)
+        .shadow(color: .black.opacity(0.06), radius: 8, y: 2)
     }
 }
 
