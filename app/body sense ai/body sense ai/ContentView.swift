@@ -102,14 +102,14 @@ struct AuthRootView: View {
     @State private var flow: AuthFlow = .intro
 
     enum AuthFlow {
-        case intro, welcome, profileSetup, registerDoctor, permissions
+        case intro, welcome, profileSetup, permissions
     }
 
     /// Flows that use the branded purple gradient background
     private var usesGradient: Bool {
         switch flow {
         case .intro, .welcome, .profileSetup: return true
-        case .registerDoctor, .permissions: return false
+        case .permissions: return false
         }
     }
 
@@ -141,13 +141,10 @@ struct AuthRootView: View {
                 IntroSlidesView(onFinish: { withAnimation { flow = .welcome } })
             case .welcome:
                 WelcomeScreen(
-                    onSignInComplete: { handleSignInComplete() },
-                    onRegisterDoctor: { withAnimation { flow = .registerDoctor } }
+                    onSignInComplete: { handleSignInComplete() }
                 )
             case .profileSetup:
                 PatientOnboardingView(onBack: { flow = .welcome }, onDone: { withAnimation { flow = .permissions } })
-            case .registerDoctor:
-                DoctorRegistrationView(onBack: { flow = .welcome }, onDone: { withAnimation { flow = .permissions } })
             case .permissions:
                 HealthPermissionsView(onDone: { onboardingDone = true })
             }
@@ -340,8 +337,6 @@ struct HealthPermissionsView: View {
 
 struct WelcomeScreen: View {
     let onSignInComplete: () -> Void
-    var onRegisterDoctor: (() -> Void)? = nil
-
     @State private var showPhoneSheet = false
     @State private var showEmailSheet = false
     @State private var authError: String?
@@ -428,29 +423,6 @@ struct WelcomeScreen: View {
                     showEmailSheet = true
                 }
 
-                // ── Doctor registration link ──
-                if let onRegisterDoctor {
-                    VStack(spacing: 8) {
-                        Text("Are you a healthcare professional?")
-                            .font(.caption)
-                            .foregroundColor(.white.opacity(0.55))
-
-                        Button(action: onRegisterDoctor) {
-                            HStack(spacing: 6) {
-                                Image(systemName: "stethoscope")
-                                Text("Register as a Doctor")
-                            }
-                            .font(.subheadline.weight(.medium))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 20)
-                            .padding(.vertical, 10)
-                            .background(Color.white.opacity(0.15))
-                            .cornerRadius(20)
-                        }
-                    }
-                    .padding(.top, 20)
-                    .padding(.bottom, 50)
-                }
             }
         }
         .sheet(isPresented: $showPhoneSheet) {
@@ -794,101 +766,6 @@ struct EmailSignInSheet: View {
             errorMessage = error.localizedDescription
         }
         isLoading = false
-    }
-}
-
-// MARK: - Sign In View (local profile lookup)
-
-struct SignInView: View {
-    let onBack: () -> Void
-    let onDone: () -> Void
-    @Environment(HealthStore.self) var store
-
-    @State private var name = ""
-    @State private var email = ""
-    @State private var showError = false
-
-    var body: some View {
-        VStack(spacing: 28) {
-            HStack {
-                Button(action: onBack) {
-                    Image(systemName: "chevron.left")
-                        .foregroundColor(.white)
-                        .padding(10)
-                        .background(Color.white.opacity(0.2))
-                        .clipShape(Circle())
-                }
-                .accessibilityLabel("Go back")
-                Spacer()
-            }
-            .padding(.horizontal, 24)
-            .padding(.top, 50)
-
-            Spacer()
-
-            Image(systemName: "person.circle.fill")
-                .font(.system(size: 70))
-                .foregroundColor(.white)
-                .accessibilityHidden(true)
-
-            Text(AuthService.shared.isAuthenticated ? "Welcome Back" : "Sign In").font(.title.bold()).foregroundColor(.white)
-            Text("Enter your details to continue").font(.subheadline).foregroundColor(.white.opacity(0.8))
-
-            VStack(spacing: 16) {
-                HStack {
-                    Image(systemName: "envelope").foregroundColor(.white.opacity(0.7))
-                    TextField("Email address", text: $email)
-                        .foregroundColor(.white)
-                        .tint(.white)
-                        .textContentType(.emailAddress)
-                        .keyboardType(.emailAddress)
-                        .autocapitalization(.none)
-                }
-                .padding()
-                .background(Color.white.opacity(0.15))
-                .cornerRadius(12)
-                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.3)))
-
-                HStack {
-                    Image(systemName: "person").foregroundColor(.white.opacity(0.7))
-                    TextField("Your name", text: $name)
-                        .foregroundColor(.white)
-                        .tint(.white)
-                }
-                .padding()
-                .background(Color.white.opacity(0.15))
-                .cornerRadius(12)
-                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.3)))
-            }
-            .padding(.horizontal, 28)
-
-            if showError {
-                Text("Please enter your email and name to continue")
-                    .font(.caption).foregroundColor(.yellow)
-            }
-
-            Spacer()
-
-            Button {
-                guard !name.isEmpty, !email.isEmpty else { showError = true; return }
-                var p = store.userProfile
-                p.name = name
-                p.email = email.lowercased().trimmingCharacters(in: .whitespaces)
-                store.userProfile = p
-                store.save()
-                onDone()
-            } label: {
-                Text("Sign In")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.white)
-                    .foregroundColor(.brandPurple)
-                    .cornerRadius(16)
-            }
-            .padding(.horizontal, 28)
-            .padding(.bottom, 50)
-        }
     }
 }
 

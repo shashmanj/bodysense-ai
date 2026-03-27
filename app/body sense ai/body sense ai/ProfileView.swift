@@ -61,6 +61,7 @@ struct PatientProfileView: View {
     @State private var showLaunchChecklist = false
     @State private var showAgentTeam      = false
     @State private var showCEOCodeEntry   = false
+    @State private var showDoctorRegistration = false
     @State private var ceoTapCount        = 0
     @AppStorage("biometricLockEnabled") private var biometricLockEnabled = false
     @AppStorage("appearanceMode") private var appearanceMode: String = AppearanceMode.system.rawValue
@@ -107,6 +108,12 @@ struct PatientProfileView: View {
         .sheet(isPresented: $showLaunchChecklist) { NavigationStack { LaunchChecklistView() } }
         .sheet(isPresented: $showAgentTeam) { NavigationStack { AgentTeamView() } }
         .sheet(isPresented: $showCEOCodeEntry) { CEOActivationSheet() }
+        .sheet(isPresented: $showDoctorRegistration) {
+            DoctorRegistrationView(
+                onBack: { showDoctorRegistration = false },
+                onDone: { showDoctorRegistration = false }
+            )
+        }
         .onChange(of: pickerItem) { _, item in
             Task {
                 if let data = try? await item?.loadTransferable(type: Data.self) {
@@ -142,6 +149,16 @@ struct PatientProfileView: View {
             Button { showRecords = true } label: {
                 Label { Text("Medical Records") } icon: { SettingsIcon(systemName: "doc.text.fill", color: .brandTeal) }
                     .foregroundColor(.primary)
+            }
+            if !store.isDoctor {
+                Button { showDoctorRegistration = true } label: {
+                    Label {
+                        Text("Register as a Verified Doctor")
+                    } icon: {
+                        SettingsIcon(systemName: "stethoscope", color: Color(hex: "#00B4D8"))
+                    }
+                    .foregroundColor(.primary)
+                }
             }
         }
     }
