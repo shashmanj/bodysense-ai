@@ -102,14 +102,14 @@ struct AuthRootView: View {
     @State private var flow: AuthFlow = .intro
 
     enum AuthFlow {
-        case intro, welcome, profileSetup, permissions
+        case intro, welcome, profileSetup, registerDoctor, permissions
     }
 
     /// Flows that use the branded purple gradient background
     private var usesGradient: Bool {
         switch flow {
-        case .intro, .welcome: return true
-        case .profileSetup, .permissions: return false
+        case .intro, .welcome, .profileSetup: return true
+        case .registerDoctor, .permissions: return false
         }
     }
 
@@ -141,10 +141,13 @@ struct AuthRootView: View {
                 IntroSlidesView(onFinish: { withAnimation { flow = .welcome } })
             case .welcome:
                 WelcomeScreen(
-                    onSignInComplete: { handleSignInComplete() }
+                    onSignInComplete: { handleSignInComplete() },
+                    onRegisterDoctor: { withAnimation { flow = .registerDoctor } }
                 )
             case .profileSetup:
                 PatientOnboardingView(onBack: { flow = .welcome }, onDone: { withAnimation { flow = .permissions } })
+            case .registerDoctor:
+                DoctorRegistrationView(onBack: { flow = .welcome }, onDone: { withAnimation { flow = .permissions } })
             case .permissions:
                 HealthPermissionsView(onDone: { onboardingDone = true })
             }
@@ -337,6 +340,7 @@ struct HealthPermissionsView: View {
 
 struct WelcomeScreen: View {
     let onSignInComplete: () -> Void
+    var onRegisterDoctor: (() -> Void)? = nil
 
     @State private var showPhoneSheet = false
     @State private var showEmailSheet = false
@@ -424,14 +428,29 @@ struct WelcomeScreen: View {
                     showEmailSheet = true
                 }
 
-                // ── Footer ──
-                Text("New users will be guided through setup after sign-in.\nDoctors can register from Profile after signing in.")
-                    .font(.caption2)
-                    .foregroundColor(.white.opacity(0.5))
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 40)
+                // ── Doctor registration link ──
+                if let onRegisterDoctor {
+                    VStack(spacing: 8) {
+                        Text("Are you a healthcare professional?")
+                            .font(.caption)
+                            .foregroundColor(.white.opacity(0.55))
+
+                        Button(action: onRegisterDoctor) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "stethoscope")
+                                Text("Register as a Doctor")
+                            }
+                            .font(.subheadline.weight(.medium))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 10)
+                            .background(Color.white.opacity(0.15))
+                            .cornerRadius(20)
+                        }
+                    }
                     .padding(.top, 20)
                     .padding(.bottom, 50)
+                }
             }
         }
         .sheet(isPresented: $showPhoneSheet) {
