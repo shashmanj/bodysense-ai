@@ -102,14 +102,25 @@ struct AuthRootView: View {
     @State private var flow: AuthFlow = .intro
 
     enum AuthFlow {
-        case intro, welcome, signIn, registerPatient, registerDoctor, permissions
+        case intro, welcome, profileSetup, permissions
     }
 
     /// Flows that use the branded purple gradient background
     private var usesGradient: Bool {
         switch flow {
-        case .intro, .welcome, .signIn, .registerPatient: return true
-        case .registerDoctor, .permissions: return false
+        case .intro, .welcome: return true
+        case .profileSetup, .permissions: return false
+        }
+    }
+
+    /// After sign-in, go to profile setup if new user, otherwise straight to permissions
+    private func handleSignInComplete() {
+        withAnimation {
+            if store.userProfile.name.isEmpty {
+                flow = .profileSetup
+            } else {
+                flow = .permissions
+            }
         }
     }
 
@@ -130,16 +141,10 @@ struct AuthRootView: View {
                 IntroSlidesView(onFinish: { withAnimation { flow = .welcome } })
             case .welcome:
                 WelcomeScreen(
-                    onSignIn:            { flow = .signIn },
-                    onRegisterPatient:   { flow = .registerPatient },
-                    onRegisterDoctor:    { flow = .registerDoctor }
+                    onSignInComplete: { handleSignInComplete() }
                 )
-            case .signIn:
-                SignInView(onBack: { flow = .welcome }, onDone: { withAnimation { flow = .permissions } })
-            case .registerPatient:
+            case .profileSetup:
                 PatientOnboardingView(onBack: { flow = .welcome }, onDone: { withAnimation { flow = .permissions } })
-            case .registerDoctor:
-                DoctorRegistrationView(onBack: { flow = .welcome }, onDone: { withAnimation { flow = .permissions } })
             case .permissions:
                 HealthPermissionsView(onDone: { onboardingDone = true })
             }
@@ -331,9 +336,7 @@ struct HealthPermissionsView: View {
 // MARK: - Welcome Screen
 
 struct WelcomeScreen: View {
-    let onSignIn: () -> Void
-    let onRegisterPatient: () -> Void
-    let onRegisterDoctor: () -> Void
+    let onSignInComplete: () -> Void
 
     @State private var showPhoneSheet = false
     @State private var showEmailSheet = false
@@ -374,8 +377,8 @@ struct WelcomeScreen: View {
                 }
                 .padding(.bottom, 36)
 
-                // ── Sign In label ────────────────────────────────────────────
-                Text("Sign In")
+                // ── Get Started label ────────────────────────────────────────
+                Text("Get Started")
                     .font(.footnote.weight(.semibold))
                     .foregroundColor(.white.opacity(0.70))
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -384,20 +387,20 @@ struct WelcomeScreen: View {
 
                 // ── Sign in with Apple (primary) ──
                 SignInWithAppleButton(
-                    onSuccess: { onSignIn() }
+                    onSuccess: { onSignInComplete() }
                 )
                 .padding(.horizontal, 28)
                 .padding(.bottom, 10)
 
                 // ── Sign in with Google ──
                 socialBtn(
-                    icon: "g.circle.fill", label: "Sign in with Google",
+                    icon: "g.circle.fill", label: "Continue with Google",
                     bg: .white, fg: Color(.darkGray), iconTint: .red
                 ) {
                     Task {
                         do {
                             try await FirebaseAuthManager.shared.signInWithGoogle()
-                            onSignIn()
+                            onSignInComplete()
                         } catch {
                             authError = error.localizedDescription
                         }
@@ -406,7 +409,7 @@ struct WelcomeScreen: View {
 
                 // ── Sign in with Phone ──
                 socialBtn(
-                    icon: "phone.fill", label: "Sign in with Phone",
+                    icon: "phone.fill", label: "Continue with Phone",
                     bg: Color.brandTeal, fg: .white, iconTint: .white
                 ) {
                     showPhoneSheet = true
@@ -414,83 +417,28 @@ struct WelcomeScreen: View {
 
                 // ── Sign in with Email ──
                 socialBtn(
-                    icon: "envelope.fill", label: "Sign in with Email",
+                    icon: "envelope.fill", label: "Continue with Email",
                     bg: Color.white.opacity(0.15), fg: .white, iconTint: .white,
                     outlined: true
                 ) {
                     showEmailSheet = true
                 }
 
-                // ── Or divider ──
-                HStack {
-                    Rectangle().fill(Color.white.opacity(0.25)).frame(height: 1)
-                    Text("or")
-                        .font(.caption).foregroundColor(.white.opacity(0.55))
-                        .padding(.horizontal, 10).fixedSize()
-                    Rectangle().fill(Color.white.opacity(0.25)).frame(height: 1)
-                }
-                .padding(.horizontal, 28)
-                .padding(.vertical, 16)
-
-                // ── Create New Account ──
-                Button(action: onRegisterPatient) {
-                    Text("Create New Account")
-                        .font(.headline)
-                        .foregroundColor(.brandPurple)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 54)
-                        .background(Color.white)
-                        .cornerRadius(14)
-                        .shadow(color: .black.opacity(0.12), radius: 6, y: 3)
-                }
-                .padding(.horizontal, 28)
-
-                // ── Doctor divider ────────────────────────────────────────────
-                HStack {
-                    Rectangle().fill(Color.white.opacity(0.25)).frame(height: 1)
-                    Text("For Doctors")
-                        .font(.caption).foregroundColor(.white.opacity(0.55))
-                        .padding(.horizontal, 10).fixedSize()
-                    Rectangle().fill(Color.white.opacity(0.25)).frame(height: 1)
-                }
-                .padding(.horizontal, 28)
-                .padding(.vertical, 20)
-
-                // ── Doctor Sign In ────────────────────────────────────────────
-                Button(action: onSignIn) {
-                    HStack(spacing: 10) {
-                        Image(systemName: "stethoscope")
-                        Text("Sign In as a Doctor").fontWeight(.semibold)
-                    }
-                    .font(.subheadline)
-                    .foregroundColor(.brandTeal)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 50)
-                    .background(Color.brandTeal.opacity(0.14))
-                    .cornerRadius(14)
-                    .overlay(RoundedRectangle(cornerRadius: 14)
-                        .stroke(Color.brandTeal.opacity(0.45), lineWidth: 1.5))
-                }
-                .padding(.horizontal, 28)
-
-                // ── Register as Doctor ────────────────────────────────────────
-                Button(action: onRegisterDoctor) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "plus.circle")
-                        Text("Register as a Verified Doctor")
-                    }
-                    .font(.subheadline)
-                    .foregroundColor(.white.opacity(0.72))
-                }
-                .padding(.top, 14)
-                .padding(.bottom, 50)
+                // ── Footer ──
+                Text("New users will be guided through setup after sign-in.\nDoctors can register from Profile after signing in.")
+                    .font(.caption2)
+                    .foregroundColor(.white.opacity(0.5))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 40)
+                    .padding(.top, 20)
+                    .padding(.bottom, 50)
             }
         }
         .sheet(isPresented: $showPhoneSheet) {
-            PhoneSignInSheet(onDone: onSignIn)
+            PhoneSignInSheet(onDone: onSignInComplete)
         }
         .sheet(isPresented: $showEmailSheet) {
-            EmailSignInSheet(onDone: onSignIn)
+            EmailSignInSheet(onDone: onSignInComplete)
         }
         .alert("Sign In Error", isPresented: .init(
             get: { authError != nil },
