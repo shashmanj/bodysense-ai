@@ -93,7 +93,7 @@ struct PatientProfileView: View {
             }
         }
         .sheet(isPresented: $showEdit) { EditProfileSheet() }
-        .sheet(isPresented: $showRecords) { MedicalRecordsView() }
+        .sheet(isPresented: $showRecords) { MyDocumentsView() }
         .sheet(isPresented: $showDevices) { ManageDevicesView() }
         .sheet(isPresented: $showGiftCode) { GiftCodeView() }
         .sheet(isPresented: $showSubPlans) { SubscriptionPlansSheet() }
@@ -144,10 +144,6 @@ struct PatientProfileView: View {
             }
             Button { showGiftCode = true } label: {
                 Label { Text("Gift Codes") } icon: { SettingsIcon(systemName: "gift.fill", color: .brandGreen) }
-                    .foregroundColor(.primary)
-            }
-            Button { showRecords = true } label: {
-                Label { Text("Medical Records") } icon: { SettingsIcon(systemName: "doc.text.fill", color: .brandTeal) }
                     .foregroundColor(.primary)
             }
             if !store.isDoctor {
@@ -240,12 +236,8 @@ struct PatientProfileView: View {
             }
 
             Button { showRecords = true } label: {
-                LabeledContent {
-                    Text(healthDataSummaryText).font(.caption).foregroundColor(.secondary)
-                } label: {
-                    Label { Text("Health Data Summary") } icon: { SettingsIcon(systemName: "chart.bar.fill", color: .brandCoral) }
-                }
-                .foregroundColor(.primary)
+                Label { Text("My Documents") } icon: { SettingsIcon(systemName: "folder.fill", color: .brandCoral) }
+                    .foregroundColor(.primary)
             }
         }
     }
@@ -253,11 +245,13 @@ struct PatientProfileView: View {
     private var devicesSection: some View {
         Section("Devices") {
             Button { showDevices = true } label: {
-                Label { Text("BodySense Ring") } icon: { SettingsIcon(systemName: "circle.fill", color: .brandPurple) }
-                    .foregroundColor(.primary)
-            }
-            Button { showDevices = true } label: {
-                Label { Text("Manage Devices") } icon: { SettingsIcon(systemName: "applewatch", color: .brandTeal) }
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Devices & Ring")
+                        Text("BodySense Ring, Apple Watch & more")
+                            .font(.caption).foregroundColor(.secondary)
+                    }
+                } icon: { SettingsIcon(systemName: "applewatch.and.arrow.forward", color: .brandPurple) }
                     .foregroundColor(.primary)
             }
         }
@@ -456,15 +450,6 @@ struct PatientProfileView: View {
             .clipShape(Capsule())
     }
 
-    private var healthDataSummaryText: String {
-        let parts = [
-            "\(store.glucoseReadings.count) glucose",
-            "\(store.bpReadings.count) BP",
-            "\(store.medications.count) meds"
-        ]
-        return parts.joined(separator: " · ")
-    }
-
     private var cloudSyncRow: some View {
         let sync = CloudSyncService.shared
         return Button {
@@ -545,7 +530,7 @@ struct DoctorUserProfileView: View {
                             .foregroundColor(.primary)
                     }
                     Button { showRecords = true } label: {
-                        Label { Text("Medical Records") } icon: { SettingsIcon(systemName: "doc.text.fill", color: .brandTeal) }
+                        Label { Text("My Documents") } icon: { SettingsIcon(systemName: "folder.fill", color: .brandTeal) }
                             .foregroundColor(.primary)
                     }
                 }
@@ -585,7 +570,7 @@ struct DoctorUserProfileView: View {
             }
         }
         .sheet(isPresented: $showEdit) { EditProfileSheet() }
-        .sheet(isPresented: $showRecords) { MedicalRecordsView() }
+        .sheet(isPresented: $showRecords) { MyDocumentsView() }
         .sheet(isPresented: $showDevices) { ManageDevicesView() }
         .sheet(isPresented: $showGiftCode) { GiftCodeView() }
         .sheet(isPresented: $showSubPlans) { SubscriptionPlansSheet() }
@@ -684,216 +669,6 @@ struct DoctorUserProfileView: View {
     }
 }
 
-
-// MARK: - Medical Records View
-
-struct MedicalRecordsView: View {
-    @Environment(HealthStore.self) var store
-    @Environment(\.dismiss) var dismiss
-    @State private var showAdd      = false
-    @State private var selectedType : MedicalRecordType = .report
-    @State private var search       = ""
-
-    var filtered: [MedicalRecord] {
-        store.medicalRecords.filter { rec in
-            search.isEmpty || rec.title.localizedCaseInsensitiveContains(search) ||
-            rec.notes.localizedCaseInsensitiveContains(search)
-        }
-        .sorted { $0.date > $1.date }
-    }
-
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                // Search
-                HStack {
-                    Image(systemName: "magnifyingglass").foregroundColor(.secondary)
-                    TextField("Search records…", text: $search)
-                }
-                .padding(12).background(Color(.systemGray6)).cornerRadius(12)
-                .padding(.horizontal).padding(.top, 8)
-
-                if filtered.isEmpty {
-                    Spacer()
-                    VStack(spacing: 16) {
-                        Image(systemName: "folder.badge.plus")
-                            .font(.system(size: 56)).foregroundColor(.brandTeal.opacity(0.4))
-                        Text("No medical records").font(.headline)
-                        Text("Upload photos, PDFs, lab results,\nprescriptions and more.").font(.subheadline)
-                            .foregroundColor(.secondary).multilineTextAlignment(.center)
-                        Button { showAdd = true } label: {
-                            Label("Upload Record", systemImage: "plus")
-                                .font(.headline).padding().frame(maxWidth: .infinity)
-                                .background(Color.brandTeal).foregroundColor(.white).cornerRadius(14)
-                        }
-                        .padding(.horizontal, 32)
-                    }
-                    Spacer()
-                } else {
-                    List {
-                        ForEach(filtered) { rec in
-                            MedicalRecordRow(record: rec)
-                        }
-                        .onDelete { idx in
-                            let toDelete = idx.map { filtered[$0].id }
-                            store.medicalRecords.removeAll { toDelete.contains($0.id) }
-                            store.save()
-                        }
-                    }
-                }
-            }
-            .navigationTitle("Medical Records")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button { showAdd = true } label: { Image(systemName: "plus") }
-                }
-            }
-        }
-        .sheet(isPresented: $showAdd) { AddMedicalRecordView() }
-    }
-}
-
-// MARK: - Medical Record Row
-
-struct MedicalRecordRow: View {
-    let record: MedicalRecord
-
-    var body: some View {
-        HStack(spacing: 14) {
-            if let thumbData = record.thumbnailData, let uiImg = UIImage(data: thumbData) {
-                Image(uiImage: uiImg).resizable().scaledToFill()
-                    .frame(width: 48, height: 48).clipShape(RoundedRectangle(cornerRadius: 8))
-            } else {
-                Image(systemName: record.fileType.icon).font(.title2)
-                    .foregroundColor(record.fileType.color)
-                    .frame(width: 48, height: 48)
-                    .background(record.fileType.color.opacity(0.12))
-                    .cornerRadius(10)
-            }
-            VStack(alignment: .leading, spacing: 4) {
-                Text(record.title).font(.subheadline).fontWeight(.semibold)
-                Text(record.fileType.rawValue).font(.caption).foregroundColor(.secondary)
-                Text(record.date.formatted(date: .abbreviated, time: .omitted)).font(.caption2).foregroundColor(.secondary)
-            }
-            Spacer()
-            if record.isShared {
-                Image(systemName: "person.2.fill").font(.caption).foregroundColor(.brandTeal)
-            }
-        }
-        .padding(.vertical, 4)
-    }
-}
-
-// MARK: - Medical Record Mini Card
-
-struct MedicalRecordMiniCard: View {
-    let record: MedicalRecord
-
-    var body: some View {
-        VStack(spacing: 6) {
-            if let thumbData = record.thumbnailData, let uiImg = UIImage(data: thumbData) {
-                Image(uiImage: uiImg).resizable().scaledToFill()
-                    .frame(width: 60, height: 60).clipShape(RoundedRectangle(cornerRadius: 8))
-            } else {
-                Image(systemName: record.fileType.icon).font(.title2)
-                    .foregroundColor(record.fileType.color)
-                    .frame(width: 60, height: 60)
-                    .background(record.fileType.color.opacity(0.12))
-                    .cornerRadius(10)
-            }
-            Text(record.title).font(.caption2).lineLimit(2).multilineTextAlignment(.center).frame(width: 70)
-        }
-        .frame(width: 80, height: 95)
-        .background(Color(.systemBackground)).cornerRadius(12)
-        .shadow(color: .black.opacity(0.06), radius: 4)
-    }
-}
-
-// MARK: - Add Medical Record
-
-struct AddMedicalRecordView: View {
-    @Environment(HealthStore.self) var store
-    @Environment(\.dismiss) var dismiss
-
-    @State private var title        = ""
-    @State private var fileType     : MedicalRecordType = .report
-    @State private var notes        = ""
-    @State private var pickerItem   : PhotosPickerItem? = nil
-    @State private var fileData     : Data? = nil
-    @State private var thumbData    : Data? = nil
-    @State private var saved        = false
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("Record Details") {
-                    TextField("Title (e.g. Blood Test Results)", text: $title)
-                    Picker("Type", selection: $fileType) {
-                        ForEach(MedicalRecordType.allCases, id: \.self) { type in
-                            Label(type.rawValue, systemImage: type.icon).tag(type)
-                        }
-                    }
-                }
-                Section("Upload File") {
-                    PhotosPicker(selection: $pickerItem, matching: .images) {
-                        HStack {
-                            let hasFile = fileData != nil
-                            Image(systemName: hasFile ? "checkmark.circle.fill" : "arrow.up.doc.fill")
-                                .foregroundColor(hasFile ? .brandGreen : .brandTeal)
-                            Text(hasFile ? "File selected ✓" : "Tap to select a photo")
-                                .foregroundColor(hasFile ? .brandGreen : .brandTeal)
-                        }
-                    }
-                    .onChange(of: pickerItem) { _, item in
-                        Task {
-                            if let data = try? await item?.loadTransferable(type: Data.self) {
-                                fileData = data
-                                // Create thumbnail if it's an image
-                                if let uiImg = UIImage(data: data) {
-                                    let thumb = uiImg.preparingThumbnail(of: CGSize(width: 120, height: 120))
-                                    thumbData = thumb?.jpegData(compressionQuality: 0.7)
-                                }
-                            }
-                        }
-                    }
-                }
-                Section("Notes (optional)") {
-                    TextEditor(text: $notes).frame(height: 80)
-                }
-                Section {
-                    Button { saveRecord() } label: {
-                        Label("Save Record", systemImage: "checkmark.circle.fill").foregroundColor(.brandTeal)
-                    }
-                    .disabled(title.isEmpty)
-                }
-            }
-            .navigationTitle("Add Medical Record")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-            }
-            .alert("Record Saved!", isPresented: $saved) { Button("OK") { dismiss() } }
-        }
-    }
-
-    func saveRecord() {
-        let rec = MedicalRecord(
-            title: title,
-            fileType: fileType,
-            fileName: title,
-            fileData: fileData,
-            thumbnailData: thumbData,
-            notes: notes,
-            date: Date(),
-            addedBy: "Me"
-        )
-        store.medicalRecords.append(rec)
-        store.save()
-        saved = true
-    }
-}
 
 // MARK: - Manage Devices View (standalone, not linked to shop)
 

@@ -8,6 +8,7 @@
 import SwiftUI
 import AuthenticationServices
 import FirebaseAuth
+import CoreLocation
 
 // MARK: - ContentView (root)
 
@@ -650,7 +651,7 @@ struct EmailSignInSheet: View {
     @State private var email = ""
     @State private var password = ""
     @State private var name = ""
-    @State private var isSignUp = false
+    @State private var isSignUp = false   // auto-flips to true when no account found
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var showForgotPassword = false
@@ -658,13 +659,6 @@ struct EmailSignInSheet: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 20) {
-                // Toggle sign-in / sign-up
-                Picker("Mode", selection: $isSignUp) {
-                    Text("Sign In").tag(false)
-                    Text("Create Account").tag(true)
-                }
-                .pickerStyle(.segmented)
-
                 if isSignUp {
                     TextField("Full Name", text: $name)
                         .textContentType(.name)
@@ -702,7 +696,7 @@ struct EmailSignInSheet: View {
                         if isLoading {
                             ProgressView()
                         } else {
-                            Text(isSignUp ? "Create Account" : "Sign In")
+                            Text("Continue")
                         }
                     }
                     .font(.headline).foregroundColor(.white)
@@ -756,14 +750,24 @@ struct EmailSignInSheet: View {
         errorMessage = nil
         do {
             if isSignUp {
+                // Already in sign-up mode — create account
                 try await FirebaseAuthManager.shared.signUpWithEmail(email, password: password, name: name)
+                dismiss()
+                onDone()
             } else {
+                // Try sign-in first
                 try await FirebaseAuthManager.shared.signInWithEmail(email, password: password)
+                dismiss()
+                onDone()
             }
-            dismiss()
-            onDone()
-        } catch {
-            errorMessage = error.localizedDescription
+        } catch let error as NSError {
+            if error.code == 17011 /* userNotFound */ && !isSignUp {
+                // No account found — switch to sign-up mode
+                isSignUp = true
+                errorMessage = "No account found. Enter your name to create one."
+            } else {
+                errorMessage = error.localizedDescription
+            }
         }
         isLoading = false
     }
@@ -791,6 +795,8 @@ struct PatientOnboardingView: View {
     @State private var heightText   = "165"
     @State private var weightUnit   : WeightUnit = .kg
     @State private var heightUnit   : HeightUnit = .cm
+    @State private var locationManager = CLLocationManager()
+    @State private var isDetectingLocation = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -901,6 +907,24 @@ struct PatientOnboardingView: View {
                 // Page 3: Location (was page 2)
                 onboardStep(icon: "mappin.and.ellipse", title: "Your Location") {
                     AnyView(VStack(spacing: 16) {
+                        // Auto-detect location button
+                        Button {
+                            detectLocation()
+                        } label: {
+                            HStack {
+                                if isDetectingLocation {
+                                    ProgressView().tint(.brandPurple)
+                                } else {
+                                    Image(systemName: "location.fill")
+                                }
+                                Text(isDetectingLocation ? "Detecting..." : "Use My Location")
+                            }
+                            .font(.headline).foregroundColor(.brandPurple)
+                            .frame(maxWidth: .infinity).padding()
+                            .background(Color.white).cornerRadius(12)
+                        }
+                        .disabled(isDetectingLocation)
+
                         let cities = CurrencyService.countryCities[country] ?? []
                         HStack {
                             Image(systemName: "globe").foregroundColor(.white.opacity(0.7))
@@ -918,7 +942,6 @@ struct PatientOnboardingView: View {
                                 Picker("City", selection: $city) {
                                     Text("Select city").tag("")
                                     ForEach(cities, id: \.self) { c in Text(c).tag(c) }
-                                    Text("Other").tag("__other__")
                                 }.tint(.white)
                             }
                             .padding().background(Color.white.opacity(0.15)).cornerRadius(12)
@@ -975,6 +998,35 @@ struct PatientOnboardingView: View {
         }
         .padding().background(Color.white.opacity(0.15)).cornerRadius(12)
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.3)))
+    }
+
+    func detectLocation() {
+        isDetectingLocation = true
+        locationManager.requestWhenInUseAuthorization()
+
+        if let location = locationManager.location {
+            let geocoder = CLGeocoder()
+            geocoder.reverseGeocodeLocation(location) { placemarks, error in
+                isDetectingLocation = false
+                if let placemark = placemarks?.first {
+                    if let detectedCountry = placemark.country {
+                        let mapped = CurrencyService.supportedCountries.first {
+                            detectedCountry.contains($0) || $0.contains(detectedCountry)
+                        }
+                        if let mapped { country = mapped }
+                    }
+                    if let detectedCity = placemark.locality {
+                        city = detectedCity
+                        customCity = detectedCity
+                    }
+                    if let detectedPostcode = placemark.postalCode {
+                        postcode = detectedPostcode
+                    }
+                }
+            }
+        } else {
+            isDetectingLocation = false
+        }
     }
 
     func completePatientOnboarding() {

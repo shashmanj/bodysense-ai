@@ -9,6 +9,8 @@ import SwiftUI
 import PhotosUI
 import PDFKit
 import UniformTypeIdentifiers
+import Speech
+import AVFoundation
 
 // MARK: - Floating Chat Button (added as overlay on Dashboard)
 
@@ -82,6 +84,13 @@ struct ChatView: View {
     @State private var showFileImporter = false
     @State private var pendingAttachment: PendingAttachment? = nil
     @State private var showDocumentViewer: MedicalDocument? = nil
+
+    // Speech recognition
+    @State private var isRecording = false
+    @State private var speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-GB"))
+    @State private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
+    @State private var recognitionTask: SFSpeechRecognitionTask?
+    @State private var audioEngine = AVAudioEngine()
 
     var body: some View {
         NavigationStack {
@@ -311,11 +320,21 @@ struct ChatView: View {
                     .focused($focused)
                     .onSubmit { sendTapped() }
 
-                Button { sendTapped() } label: {
-                    Image(systemName: (input.trimmingCharacters(in: .whitespaces).isEmpty && pendingAttachment == nil)
-                          ? "mic.fill" : "arrow.up.circle.fill")
+                Button {
+                    if !input.trimmingCharacters(in: .whitespaces).isEmpty || pendingAttachment != nil {
+                        sendTapped()
+                    } else if isRecording {
+                        stopRecording()
+                    } else {
+                        startRecording()
+                    }
+                } label: {
+                    Image(systemName: isRecording ? "stop.circle.fill"
+                          : (!input.trimmingCharacters(in: .whitespaces).isEmpty || pendingAttachment != nil)
+                          ? "arrow.up.circle.fill" : "mic.fill")
                         .font(.system(size: 32))
-                        .foregroundColor(.brandPurple)
+                        .foregroundColor(isRecording ? .red : .brandPurple)
+                        .symbolEffect(.pulse, isActive: isRecording)
                 }
                 .disabled(ai?.isTyping == true)
             }
@@ -436,6 +455,61 @@ struct ChatView: View {
     private func sendTapped() {
         let t = input.trimmingCharacters(in: .whitespacesAndNewlines)
         if !t.isEmpty || pendingAttachment != nil { send(t) }
+    }
+
+    // MARK: - Speech Recognition
+
+    private func startRecording() {
+        SFSpeechRecognizer.requestAuthorization { status in
+            guard status == .authorized else { return }
+
+            Task { @MainActor in
+                do {
+                    let audioSession = AVAudioSession.sharedInstance()
+                    try audioSession.setCategory(.record, mode: .measurement, options: .duckOthers)
+                    try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+
+                    recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
+                    guard let recognitionRequest else { return }
+                    recognitionRequest.shouldReportPartialResults = true
+
+                    let inputNode = audioEngine.inputNode
+                    recognitionTask = speechRecognizer?.recognitionTask(with: recognitionRequest) { result, error in
+                        if let result {
+                            Task { @MainActor in
+                                input = result.bestTranscription.formattedString
+                            }
+                        }
+                        if error != nil || (result?.isFinal == true) {
+                            Task { @MainActor in
+                                stopRecording()
+                            }
+                        }
+                    }
+
+                    let recordingFormat = inputNode.outputFormat(forBus: 0)
+                    inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
+                        recognitionRequest.append(buffer)
+                    }
+
+                    audioEngine.prepare()
+                    try audioEngine.start()
+                    isRecording = true
+                } catch {
+                    stopRecording()
+                }
+            }
+        }
+    }
+
+    private func stopRecording() {
+        audioEngine.stop()
+        audioEngine.inputNode.removeTap(onBus: 0)
+        recognitionRequest?.endAudio()
+        recognitionTask?.cancel()
+        recognitionRequest = nil
+        recognitionTask = nil
+        isRecording = false
     }
 
     private func saveDocumentToStore(_ doc: MedicalDocument) {
