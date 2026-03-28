@@ -346,7 +346,7 @@ app.post("/book-appointment", requireStripe, async (req, res) => {
 
 // ── 4. Stripe Webhook (optional but recommended) ─────────────────────────
 // Confirms payment server-side; update DB here
-app.post("/webhook", express.raw({ type: "application/json" }), (req, res) => {
+app.post("/webhook", express.raw({ type: "application/json" }), async (req, res) => {
   if (!stripe) return res.status(503).send("Stripe not configured");
   const sig    = req.headers["stripe-signature"];
   const secret = process.env.STRIPE_WEBHOOK_SECRET;
