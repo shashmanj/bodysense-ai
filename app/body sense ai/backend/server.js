@@ -13,7 +13,9 @@ const express    = require("express");
 const cors       = require("cors");
 const helmet     = require("helmet");
 const rateLimit  = require("express-rate-limit");
-const stripe     = require("stripe")(process.env.STRIPE_SECRET_KEY);
+const stripe     = process.env.STRIPE_SECRET_KEY
+  ? require("stripe")(process.env.STRIPE_SECRET_KEY)
+  : null;
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -147,21 +149,29 @@ app.get("/", (req, res) => {
   });
 });
 
+// Guard: returns 503 if Stripe is not configured
+function requireStripe(req, res, next) {
+  if (!stripe) return res.status(503).json({ error: "Stripe not configured. Set STRIPE_SECRET_KEY." });
+  next();
+}
+
 // ── Deep health check (Stripe + Firebase connectivity) ──────────────────
 app.get("/health", async (req, res) => {
   const checks = { stripe: false, firebase: false, overall: "unhealthy" };
-  try {
-    await stripe.balance.retrieve();
-    checks.stripe = true;
-  } catch (e) { checks.stripeError = e.message; }
+  if (stripe) {
+    try {
+      await stripe.balance.retrieve();
+      checks.stripe = true;
+    } catch (e) { checks.stripeError = e.message; }
+  } else { checks.stripe = null; checks.stripeError = "Not configured"; }
   if (db) {
     try {
       await db.collection("_healthcheck").limit(1).get();
       checks.firebase = true;
     } catch (e) { checks.firebaseError = e.message; }
   } else { checks.firebase = null; }
-  checks.overall = checks.stripe ? "healthy" : "degraded";
-  res.status(checks.stripe ? 200 : 503).json(checks);
+  checks.overall = (checks.firebase !== false) ? "healthy" : "degraded";
+  res.status(200).json(checks);
 });
 
 // ── Input validation helpers ────────────────────────────────────────────
@@ -176,7 +186,7 @@ function validateAmount(amount) {
 // Called by: StripeManager.createPaymentIntent(amountGBP:)
 // Body: { amount: <pence>, currency: "gbp" }
 // Returns: { clientSecret: "pi_xxx_secret_xxx" }
-app.post("/create-payment-intent", async (req, res) => {
+app.post("/create-payment-intent", requireStripe, async (req, res) => {
   try {
     const { amount, currency = "gbp" } = req.body;
 
@@ -202,7 +212,7 @@ app.post("/create-payment-intent", async (req, res) => {
 // Called by: StripeManager.createSubscription(plan:customerId:)
 // Body: { priceId: "price_xxx", customerId: "cus_xxx" (optional) }
 // Returns: { subscriptionId, clientSecret }
-app.post("/create-subscription", async (req, res) => {
+app.post("/create-subscription", requireStripe, async (req, res) => {
   try {
     const { priceId, customerId, email } = req.body;
 
@@ -249,7 +259,7 @@ app.post("/create-subscription", async (req, res) => {
 // Called by: Doctor appointment booking flow
 // Body: { amount: <pence>, doctorId, userId, slotISO }
 // Returns: { clientSecret, appointmentId }
-app.post("/book-appointment", async (req, res) => {
+app.post("/book-appointment", requireStripe, async (req, res) => {
   try {
     const { amount = 2500, doctorId, userId, slotISO } = req.body;
     // Default £25.00 consultation fee
@@ -337,6 +347,7 @@ app.post("/book-appointment", async (req, res) => {
 // ── 4. Stripe Webhook (optional but recommended) ─────────────────────────
 // Confirms payment server-side; update DB here
 app.post("/webhook", express.raw({ type: "application/json" }), (req, res) => {
+  if (!stripe) return res.status(503).send("Stripe not configured");
   const sig    = req.headers["stripe-signature"];
   const secret = process.env.STRIPE_WEBHOOK_SECRET;
 
@@ -909,7 +920,7 @@ async function processPendingTransfers(doctorId, connectedAccountId) {
 
 // Create Stripe Connect Express account for a doctor
 // SECURED: Requires Firebase auth + ownership verification
-app.post("/doctor/create-connect-account", requireAuth, async (req, res) => {
+app.post("/doctor/create-connect-account", requireAuth, requireStripe, async (req, res) => {
   try {
     const { doctorId, email, firstName, lastName } = req.body;
     if (!doctorId || !email) {
@@ -993,7 +1004,7 @@ app.post("/doctor/create-connect-account", requireAuth, async (req, res) => {
 
 // Refresh an expired onboarding link
 // SECURED: Requires Firebase auth + ownership verification
-app.post("/doctor/refresh-onboarding-link", requireAuth, async (req, res) => {
+app.post("/doctor/refresh-onboarding-link", requireAuth, requireStripe, async (req, res) => {
   try {
     const { doctorId } = req.body;
     if (!doctorId) return res.status(400).json({ error: "doctorId required" });
@@ -1025,7 +1036,7 @@ app.post("/doctor/refresh-onboarding-link", requireAuth, async (req, res) => {
 
 // Get doctor's payout status, balance, and recent transactions
 // SECURED: Requires Firebase auth + ownership verification (or CEO)
-app.get("/doctor/payout-status/:doctorId", requireAuth, async (req, res) => {
+app.get("/doctor/payout-status/:doctorId", requireAuth, requireStripe, async (req, res) => {
   try {
     const { doctorId } = req.params;
     if (!db) return res.status(500).json({ error: "Firebase not configured" });
@@ -1083,7 +1094,7 @@ app.get("/doctor/payout-status/:doctorId", requireAuth, async (req, res) => {
 
 // Doctor requests manual payout (min £10 = 1000 pence)
 // SECURED: Requires Firebase auth + ownership verification
-app.post("/doctor/request-payout", requireAuth, async (req, res) => {
+app.post("/doctor/request-payout", requireAuth, requireStripe, async (req, res) => {
   try {
     const { doctorId } = req.body;
     if (!doctorId) return res.status(400).json({ error: "doctorId required" });
@@ -1111,7 +1122,7 @@ app.post("/doctor/request-payout", requireAuth, async (req, res) => {
 });
 
 // CEO: View all doctor payouts overview
-app.get("/ceo/payouts", ceoLimiter, requireCEO, async (req, res) => {
+app.get("/ceo/payouts", ceoLimiter, requireCEO, requireStripe, async (req, res) => {
   try {
     if (!db) return res.status(500).json({ error: "Firebase not configured" });
 
@@ -1159,7 +1170,7 @@ app.get("/ceo/payouts", ceoLimiter, requireCEO, async (req, res) => {
 });
 
 // CEO: Trigger pending transfers for all eligible doctors
-app.post("/ceo/trigger-pending-transfers", ceoLimiter, requireCEO, async (req, res) => {
+app.post("/ceo/trigger-pending-transfers", ceoLimiter, requireCEO, requireStripe, async (req, res) => {
   try {
     if (!db) return res.status(500).json({ error: "Firebase not configured" });
 
