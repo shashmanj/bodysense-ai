@@ -9,6 +9,7 @@ import SwiftUI
 import AuthenticationServices
 import FirebaseAuth
 import CoreLocation
+import MapKit
 
 // MARK: - ContentView (root)
 
@@ -1005,23 +1006,31 @@ struct PatientOnboardingView: View {
         locationManager.requestWhenInUseAuthorization()
 
         if let location = locationManager.location {
-            let geocoder = CLGeocoder()
-            geocoder.reverseGeocodeLocation(location) { placemarks, error in
-                isDetectingLocation = false
-                if let placemark = placemarks?.first {
-                    if let detectedCountry = placemark.country {
-                        let mapped = CurrencyService.supportedCountries.first {
-                            detectedCountry.contains($0) || $0.contains(detectedCountry)
+            Task {
+                do {
+                    let request = MKReverseGeocodingRequest(coordinate: location.coordinate)
+                    let results = try await request.start()
+                    await MainActor.run {
+                        isDetectingLocation = false
+                        if let mapItem = results.first {
+                            let placemark = mapItem.placemark
+                            if let detectedCountry = placemark.country {
+                                let mapped = CurrencyService.supportedCountries.first {
+                                    detectedCountry.contains($0) || $0.contains(detectedCountry)
+                                }
+                                if let mapped { country = mapped }
+                            }
+                            if let detectedCity = placemark.locality {
+                                city = detectedCity
+                                customCity = detectedCity
+                            }
+                            if let detectedPostcode = placemark.postalCode {
+                                postcode = detectedPostcode
+                            }
                         }
-                        if let mapped { country = mapped }
                     }
-                    if let detectedCity = placemark.locality {
-                        city = detectedCity
-                        customCity = detectedCity
-                    }
-                    if let detectedPostcode = placemark.postalCode {
-                        postcode = detectedPostcode
-                    }
+                } catch {
+                    await MainActor.run { isDetectingLocation = false }
                 }
             }
         } else {

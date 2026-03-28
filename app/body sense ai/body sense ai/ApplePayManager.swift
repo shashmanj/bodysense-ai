@@ -139,9 +139,9 @@ final class ApplePayManager: NSObject {
 
         let controller = PKPaymentAuthorizationController(paymentRequest: request)
         controller.delegate = self
-        controller.present { [weak self] presented in
+        controller.present { presented in
             if !presented {
-                Task { @MainActor in
+                Task { @MainActor [weak self] in
                     self?.isProcessing = false
                     self?.paymentCompletion?(.failed(error: "Failed to present Apple Pay"))
                 }
@@ -206,15 +206,11 @@ extension ApplePayManager: PKPaymentAuthorizationControllerDelegate {
         // Determine payment method
         let method = payment.token.paymentMethod.displayName ?? "Apple Pay"
 
+        // Report success immediately
+        completion(PKPaymentAuthorizationResult(status: .success, errors: nil))
+
         Task { @MainActor [weak self] in
             guard let self else { return }
-            // Store the result for didFinish
-            self.authorizationCompletion = completion
-
-            // Report success
-            completion(PKPaymentAuthorizationResult(status: .success, errors: nil))
-
-            // Call our completion handler
             self.paymentCompletion?(.success(transactionId: transactionId, method: "Apple Pay (\(method))"))
         }
     }

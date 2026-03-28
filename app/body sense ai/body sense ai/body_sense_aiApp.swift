@@ -82,8 +82,10 @@ struct body_sense_aiApp: App {
                 Text(JailbreakDetector.warningMessage)
             }
             .onOpenURL { url in
-                // Handle Stripe Connect deep links via SwiftUI scene lifecycle
-                _ = AppDelegate.handleStripeConnectURL(url)
+                // Handle Stripe Connect deep links + Google Sign-In via SwiftUI scene lifecycle
+                if !AppDelegate.handleStripeConnectURL(url) {
+                    GIDSignIn.sharedInstance.handle(url)
+                }
             }
         }
     }
@@ -210,17 +212,8 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         #endif
     }
 
-    // ── URL handler: Stripe Connect deep links + Google Sign-In ──
-    func application(
-        _ app: UIApplication,
-        open url: URL,
-        options: [UIApplication.OpenURLOptionsKey: Any] = [:]
-    ) -> Bool {
-        if Self.handleStripeConnectURL(url) {
-            return true
-        }
-        return GIDSignIn.sharedInstance.handle(url)
-    }
+    // Note: Primary URL handling is via .onOpenURL modifier on the SwiftUI scene.
+    // This UIApplicationDelegate fallback uses the scene-era method for backward compatibility.
 
     /// Parse Stripe Connect deep links and post notifications.
     /// Returns `true` if the URL was a recognised Stripe Connect link.

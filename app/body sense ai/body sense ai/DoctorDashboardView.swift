@@ -697,7 +697,7 @@ struct DoctorEarningsView: View {
     }
 
     private func startPayoutSetup() async {
-        guard let profile = store.userProfile.doctorProfile else { return }
+        guard store.userProfile.doctorProfile != nil else { return }
         isLoadingPayout = true
         payoutError = nil
 
@@ -756,7 +756,6 @@ struct SafariViewWrapper: UIViewControllerRepresentable {
         let config = SFSafariViewController.Configuration()
         config.entersReaderIfAvailable = false
         let safari = SFSafariViewController(url: url, configuration: config)
-        safari.preferredControlTintColor = UIColor.tintColor
         return safari
     }
 

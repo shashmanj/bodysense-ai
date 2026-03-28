@@ -7,20 +7,21 @@
 //
 
 import Foundation
-import CoreBluetooth
+@preconcurrency import CoreBluetooth
 import os.log
 
 // MARK: - BLE Service & Characteristic UUIDs
 
-private enum BLEConstants {
-    static let serviceUUID           = CBUUID(string: "A0001000-B5A3-F393-E0A9-E50E24DCCA9E")
-    static let heartRateCharUUID     = CBUUID(string: "A0001001-B5A3-F393-E0A9-E50E24DCCA9E")
-    static let spo2CharUUID          = CBUUID(string: "A0001002-B5A3-F393-E0A9-E50E24DCCA9E")
-    static let temperatureCharUUID   = CBUUID(string: "A0001003-B5A3-F393-E0A9-E50E24DCCA9E")
-    static let stepsCharUUID         = CBUUID(string: "A0001004-B5A3-F393-E0A9-E50E24DCCA9E")
-    static let sleepStateCharUUID    = CBUUID(string: "A0001005-B5A3-F393-E0A9-E50E24DCCA9E")
-    static let batteryCharUUID       = CBUUID(string: "A0001006-B5A3-F393-E0A9-E50E24DCCA9E")
-    static let firmwareCharUUID      = CBUUID(string: "A0001007-B5A3-F393-E0A9-E50E24DCCA9E")
+/// BLE constants — nonisolated so they can be safely accessed from CBDelegate callbacks.
+private enum BLEConstants: Sendable {
+    nonisolated(unsafe) static let serviceUUID           = CBUUID(string: "A0001000-B5A3-F393-E0A9-E50E24DCCA9E")
+    nonisolated(unsafe) static let heartRateCharUUID     = CBUUID(string: "A0001001-B5A3-F393-E0A9-E50E24DCCA9E")
+    nonisolated(unsafe) static let spo2CharUUID          = CBUUID(string: "A0001002-B5A3-F393-E0A9-E50E24DCCA9E")
+    nonisolated(unsafe) static let temperatureCharUUID   = CBUUID(string: "A0001003-B5A3-F393-E0A9-E50E24DCCA9E")
+    nonisolated(unsafe) static let stepsCharUUID         = CBUUID(string: "A0001004-B5A3-F393-E0A9-E50E24DCCA9E")
+    nonisolated(unsafe) static let sleepStateCharUUID    = CBUUID(string: "A0001005-B5A3-F393-E0A9-E50E24DCCA9E")
+    nonisolated(unsafe) static let batteryCharUUID       = CBUUID(string: "A0001006-B5A3-F393-E0A9-E50E24DCCA9E")
+    nonisolated(unsafe) static let firmwareCharUUID      = CBUUID(string: "A0001007-B5A3-F393-E0A9-E50E24DCCA9E")
 
     static let restoreIdentifier = "com.bodysenseai.ring.central"
     static let savedRingUUIDKey  = "BodySenseRing_SavedPeripheralUUID"
@@ -105,8 +106,8 @@ final class BodySenseRingManager: NSObject {
 
         // Auto-stop after timeout
         scanTimer?.invalidate()
-        scanTimer = Timer.scheduledTimer(withTimeInterval: BLEConstants.scanTimeout, repeats: false) { [weak self] _ in
-            Task { @MainActor in
+        scanTimer = Timer.scheduledTimer(withTimeInterval: BLEConstants.scanTimeout, repeats: false) { _ in
+            Task { @MainActor [weak self] in
                 self?.stopScanning()
             }
         }
@@ -206,7 +207,7 @@ final class BodySenseRingManager: NSObject {
         lastSyncDate = now
 
         // Update wearable device in store
-        if let ringId = connectedRing?.id,
+        if connectedRing?.id != nil,
            let idx = store.wearableDevices.firstIndex(where: { $0.type == .bodySenseRing }) {
             store.wearableDevices[idx].lastSync = now
             store.wearableDevices[idx].batteryLevel = batteryLevel
@@ -268,8 +269,8 @@ final class BodySenseRingManager: NSObject {
 
     private func startPeriodicSync() {
         syncTimer?.invalidate()
-        syncTimer = Timer.scheduledTimer(withTimeInterval: BLEConstants.syncInterval, repeats: true) { [weak self] _ in
-            Task { @MainActor in
+        syncTimer = Timer.scheduledTimer(withTimeInterval: BLEConstants.syncInterval, repeats: true) { _ in
+            Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.syncDataToHealthStore(HealthStore.shared)
             }
@@ -278,9 +279,11 @@ final class BodySenseRingManager: NSObject {
 
     nonisolated private func parseCharacteristic(_ characteristic: CBCharacteristic) {
         guard let data = characteristic.value else { return }
+        let uuid = characteristic.uuid
 
-        Task { @MainActor in
-            switch characteristic.uuid {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            switch uuid {
             case BLEConstants.heartRateCharUUID:
                 if let byte = data.first {
                     let bpm = Int(byte)
@@ -345,31 +348,31 @@ final class BodySenseRingManager: NSObject {
 
 // MARK: - CBCentralManagerDelegate
 
-extension BodySenseRingManager: @preconcurrency CBCentralManagerDelegate {
+extension BodySenseRingManager: CBCentralManagerDelegate {
 
     // MARK: - BLE State Restoration (background reconnection after app kill)
 
     nonisolated func centralManager(_ central: CBCentralManager, willRestoreState dict: [String: Any]) {
-        Task { @MainActor in
-            if let peripherals = dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral] {
-                for peripheral in peripherals {
-                    if peripheral.state == .connected || peripheral.state == .connecting {
-                        self.connectedPeripheral = peripheral
-                        peripheral.delegate = self
-                        self.connectionState = .reconnecting
-                        self.logger.info("Restored BLE peripheral: \(peripheral.identifier)")
-                    }
-                }
-            }
+        guard let peripherals = dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral] else { return }
+        let restorable = peripherals.filter { $0.state == .connected || $0.state == .connecting }
+        guard let peripheral = restorable.first else { return }
+        let peripheralID = peripheral.identifier
+
+        MainActor.assumeIsolated {
+            self.connectedPeripheral = peripheral
+            peripheral.delegate = self
+            self.connectionState = .reconnecting
+            self.logger.info("Restored BLE peripheral: \(peripheralID)")
         }
     }
 
     nonisolated func centralManagerDidUpdateState(_ central: CBCentralManager) {
+        let state = central.state
         Task { @MainActor in
-            self.bluetoothState = central.state
-            self.logger.info("Bluetooth state: \(central.state.rawValue)")
+            self.bluetoothState = state
+            self.logger.info("Bluetooth state: \(state.rawValue)")
 
-            switch central.state {
+            switch state {
             case .poweredOn:
                 self.errorMessage = nil
                 self.attemptAutoReconnect()
@@ -389,13 +392,12 @@ extension BodySenseRingManager: @preconcurrency CBCentralManagerDelegate {
     }
 
     nonisolated func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral, advertisementData: [String: Any], rssi RSSI: NSNumber) {
-        let ring = DiscoveredRing(
-            id: peripheral.identifier,
-            name: peripheral.name ?? advertisementData[CBAdvertisementDataLocalNameKey] as? String ?? "BodySense Ring",
-            rssi: RSSI.intValue
-        )
+        let ringID = peripheral.identifier
+        let ringName = peripheral.name ?? advertisementData[CBAdvertisementDataLocalNameKey] as? String ?? "BodySense Ring"
+        let rssiValue = RSSI.intValue
 
         Task { @MainActor in
+            let ring = DiscoveredRing(id: ringID, name: ringName, rssi: rssiValue)
             // Update existing or add new
             if let idx = self.discoveredRings.firstIndex(where: { $0.id == ring.id }) {
                 self.discoveredRings[idx] = ring
@@ -407,13 +409,16 @@ extension BodySenseRingManager: @preconcurrency CBCentralManagerDelegate {
     }
 
     nonisolated func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
+        let peripheralID = peripheral.identifier
+        let peripheralName = peripheral.name ?? "BodySense Ring"
+
         Task { @MainActor in
             self.connectionState = .connected
             self.errorMessage = nil
 
             self.connectedRing = ConnectedRing(
-                id: peripheral.identifier,
-                name: peripheral.name ?? "BodySense Ring",
+                id: peripheralID,
+                name: peripheralName,
                 firmwareVersion: "",
                 batteryLevel: 0,
                 lastSyncDate: nil,
@@ -427,40 +432,37 @@ extension BodySenseRingManager: @preconcurrency CBCentralManagerDelegate {
             // Start periodic sync timer
             self.startPeriodicSync()
 
-            self.logger.info("Connected to ring: \(peripheral.name ?? "Unknown")")
+            self.logger.info("Connected to ring: \(peripheralName)")
         }
     }
 
     nonisolated func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: (any Error)?) {
+        let errorDesc = error?.localizedDescription ?? "Unknown error"
         Task { @MainActor in
             self.connectionState = .disconnected
-            self.errorMessage = "Failed to connect: \(error?.localizedDescription ?? "Unknown error")"
+            self.errorMessage = "Failed to connect: \(errorDesc)"
             self.connectedPeripheral = nil
-            self.logger.error("Failed to connect: \(error?.localizedDescription ?? "Unknown")")
+            self.logger.error("Failed to connect: \(errorDesc)")
         }
     }
 
     nonisolated func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: (any Error)?) {
+        let peripheralID = peripheral.identifier
+        let peripheralName = peripheral.name ?? "Unknown"
+
         Task { @MainActor in
-            self.logger.info("Disconnected from ring: \(peripheral.name ?? "Unknown")")
+            self.logger.info("Disconnected from ring: \(peripheralName)")
 
             // If we have a saved ring UUID, attempt automatic reconnection
             if let savedUUID = UserDefaults.standard.string(forKey: BLEConstants.savedRingUUIDKey),
-               peripheral.identifier.uuidString == savedUUID {
+               peripheralID.uuidString == savedUUID {
                 self.connectionState = .reconnecting
                 self.syncTimer?.invalidate()
                 self.syncTimer = nil
 
                 // Attempt reconnect after a brief delay
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                    if central.state == .poweredOn {
-                        central.connect(peripheral, options: [
-                            CBConnectPeripheralOptionNotifyOnConnectionKey: true,
-                            CBConnectPeripheralOptionNotifyOnDisconnectionKey: true
-                        ])
-                        self.logger.info("Attempting automatic reconnection...")
-                    }
-                }
+                try? await Task.sleep(for: .seconds(2))
+                self.attemptAutoReconnect()
             } else {
                 self.cleanUpConnection()
             }
@@ -470,7 +472,7 @@ extension BodySenseRingManager: @preconcurrency CBCentralManagerDelegate {
 
 // MARK: - CBPeripheralDelegate
 
-extension BodySenseRingManager: @preconcurrency CBPeripheralDelegate {
+extension BodySenseRingManager: CBPeripheralDelegate {
 
     nonisolated func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: (any Error)?) {
         guard error == nil else {
