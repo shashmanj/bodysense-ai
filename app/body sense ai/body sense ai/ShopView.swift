@@ -1523,7 +1523,7 @@ struct ProductDetailView2: View {
                 withAnimation { addedToCart = true }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { addedToCart = false }
             } label: {
-                Label(addedToCart ? "Added to Bag ✓" : "Add to Bag",
+                Label(addedToCart ? "Added to Bag" : "Add to Bag",
                       systemImage: addedToCart ? "checkmark.circle.fill" : "bag.badge.plus")
                     .frame(maxWidth: .infinity)
                     .padding()
@@ -2175,13 +2175,13 @@ struct SubscriptionsTab: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Feature Comparison").font(.headline)
             let features: [(String, String, String, String)] = [
-                ("Basic health tracking",     "✓", "✓", "✓"),
-                ("AI Health Coach",           "Limited", "✓", "✓"),
+                ("Basic health tracking",     "yes", "yes", "yes"),
+                ("AI Health Coach",           "Limited", "yes", "yes"),
                 ("Goals",                     "1",  "5",  "Unlimited"),
-                ("Reports & Export",          "✗",  "✓",  "✓"),
+                ("Reports & Export",          "no",  "yes",  "yes"),
                 ("Doctor consultations",      "Pay-per", "Pay-per", "Unlimited"),
-                ("Wearable sync",             "✗",  "✓",  "✓"),
-                ("Family sharing (5 members)","✗",  "✗",  "✓"),
+                ("Wearable sync",             "no",  "yes",  "yes"),
+                ("Family sharing (5 members)","no",  "no",  "yes"),
             ]
             VStack(spacing: 0) {
                 // Header
@@ -2197,9 +2197,9 @@ struct SubscriptionsTab: View {
                 ForEach(Array(features.enumerated()), id: \.offset) { idx, row in
                     HStack {
                         Text(row.0).font(.caption).frame(maxWidth: .infinity, alignment: .leading)
-                        Text(row.1).font(.caption).frame(width: 60, alignment: .center).foregroundColor(.secondary)
-                        Text(row.2).font(.caption).frame(width: 60, alignment: .center).foregroundColor(.brandTeal)
-                        Text(row.3).font(.caption).frame(width: 70, alignment: .center).foregroundColor(.brandPurple)
+                        featureCell(row.1, color: .secondary).frame(width: 60, alignment: .center)
+                        featureCell(row.2, color: .brandTeal).frame(width: 60, alignment: .center)
+                        featureCell(row.3, color: .brandPurple).frame(width: 70, alignment: .center)
                     }
                     .padding(.vertical, 8).padding(.horizontal, 12)
                     .background(idx % 2 == 0 ? Color(.systemBackground) : Color(.systemGray6).opacity(0.4))
@@ -2207,6 +2207,18 @@ struct SubscriptionsTab: View {
             }
             .cornerRadius(12)
             .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(.systemGray5)))
+        }
+    }
+
+    @ViewBuilder
+    private func featureCell(_ value: String, color: Color) -> some View {
+        switch value {
+        case "yes":
+            Image(systemName: "checkmark").font(.caption).fontWeight(.bold).foregroundColor(color)
+        case "no":
+            Image(systemName: "xmark").font(.caption).foregroundColor(.secondary.opacity(0.5))
+        default:
+            Text(value).font(.caption).foregroundColor(color)
         }
     }
 }

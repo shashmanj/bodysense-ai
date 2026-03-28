@@ -72,12 +72,61 @@ const CEO_CODE_HASH = "03795745ffbd9026bde41e991f91df7ebdee9a94268574601775325c8
 
 function requireCEO(req, res, next) {
   const code = req.headers["x-ceo-code"] || req.body?.ceoCode;
-  if (!code) return res.status(403).json({ error: "CEO access code required" });
+  if (!code) {
+    auditLog("ceo_access_denied", { reason: "no_code" }, req);
+    return res.status(403).json({ error: "CEO access code required" });
+  }
   const hash = crypto.createHash("sha256").update(code).digest("hex");
   if (hash !== CEO_CODE_HASH) {
+    auditLog("ceo_access_denied", { reason: "invalid_code" }, req);
     return res.status(403).json({ error: "Unauthorized — invalid CEO code" });
   }
+  auditLog("ceo_access_granted", { success: true }, req);
   next();
+}
+
+// ── Firebase Auth Middleware (validates ID tokens) ────────────────────────
+async function requireAuth(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    auditLog("auth_failure", { reason: "missing_token" }, req);
+    return res.status(401).json({ error: "Authentication required. Send Firebase ID token in Authorization header." });
+  }
+  try {
+    const admin = require("firebase-admin");
+    const token = authHeader.split("Bearer ")[1];
+    const decoded = await admin.auth().verifyIdToken(token);
+    req.authenticatedUser = decoded;
+    next();
+  } catch (err) {
+    auditLog("auth_failure", { reason: "invalid_token", error: err.message }, req);
+    return res.status(401).json({ error: "Invalid or expired authentication token" });
+  }
+}
+
+// ── CEO Rate Limiter (brute-force protection) ─────────────────────────────
+const ceoLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5,                    // 5 attempts per 15 min per IP
+  message: { error: "Too many CEO access attempts. Try again later." },
+  keyGenerator: (req) => req.ip
+});
+
+// ── Audit Logging ────────────────────────────────────────────────────────
+async function auditLog(action, details, req) {
+  const entry = {
+    action,
+    ip: req?.ip || "unknown",
+    userAgent: req?.headers?.["user-agent"] || "unknown",
+    timestamp: new Date().toISOString(),
+    ...details
+  };
+  console.log(`[AUDIT] ${action}:`, JSON.stringify(entry));
+  if (db) {
+    try {
+      await db.collection("auditLogs").add(entry);
+    } catch (e) { /* audit log failure should not break the request */ }
+  }
 }
 
 // ── Health check (enhanced) ──────────────────────────────────────────────
@@ -399,7 +448,7 @@ app.post("/submit-doctor-request", async (req, res) => {
 });
 
 // ── 7. CEO: Approve/Reject Doctor ───────────────────────────────────────
-app.post("/approve-doctor", requireCEO, async (req, res) => {
+app.post("/approve-doctor", ceoLimiter, requireCEO, async (req, res) => {
   if (!db) return res.json({ success: true, mode: "local" });
   try {
     const { requestId, approved } = req.body;
@@ -413,7 +462,7 @@ app.post("/approve-doctor", requireCEO, async (req, res) => {
 });
 
 // ── 8. CEO: Business Metrics Dashboard ──────────────────────────────────
-app.get("/ceo/metrics", requireCEO, async (req, res) => {
+app.get("/ceo/metrics", ceoLimiter, requireCEO, async (req, res) => {
   if (!db) return res.json({ totalUsers: 0, note: "Firebase not configured" });
   try {
     const [users, doctors, orders, appointments] = await Promise.all([
@@ -450,15 +499,23 @@ app.post("/send-notification", async (req, res) => {
 });
 
 // ── 10. GDPR: Data Export (Article 20 — Portability) ────────────────────
-app.post("/gdpr/export", async (req, res) => {
+// SECURED: Requires Firebase auth + email ownership verification
+app.post("/gdpr/export", requireAuth, async (req, res) => {
   if (!db) return res.json({ gdprBasis: "Article 20", note: "Data stored locally on device" });
   try {
     const { email } = req.body;
     if (!email) return res.status(400).json({ error: "Email required" });
 
+    // Ownership check: authenticated user can only export their own data
+    if (req.authenticatedUser.email !== email) {
+      auditLog("gdpr_export_denied", { requestedEmail: email, authenticatedEmail: req.authenticatedUser.email }, req);
+      return res.status(403).json({ error: "You can only export your own data" });
+    }
+
     const userDoc = await db.collection("users").doc(email).get();
     if (!userDoc.exists) return res.status(404).json({ error: "User not found" });
 
+    auditLog("gdpr_export", { email, success: true }, req);
     res.json({
       gdprBasis: "Article 20 — Right to Data Portability",
       exportDate: new Date().toISOString(),
@@ -468,11 +525,18 @@ app.post("/gdpr/export", async (req, res) => {
 });
 
 // ── 11. GDPR: Delete Account (Article 17 — Erasure) ────────────────────
-app.delete("/gdpr/delete", async (req, res) => {
+// SECURED: Requires Firebase auth + email ownership verification
+app.delete("/gdpr/delete", requireAuth, async (req, res) => {
   if (!db) return res.json({ success: true, note: "Delete from device only" });
   try {
     const { email } = req.body;
     if (!email) return res.status(400).json({ error: "Email required" });
+
+    // Ownership check: authenticated user can only delete their own data
+    if (req.authenticatedUser.email !== email) {
+      auditLog("gdpr_delete_denied", { requestedEmail: email, authenticatedEmail: req.authenticatedUser.email }, req);
+      return res.status(403).json({ error: "You can only delete your own data" });
+    }
 
     const batch = db.batch();
     batch.delete(db.collection("users").doc(email));
@@ -485,6 +549,7 @@ app.delete("/gdpr/delete", async (req, res) => {
     orders.forEach(doc => batch.delete(doc.ref));
 
     await batch.commit();
+    auditLog("gdpr_delete", { email, success: true }, req);
     res.json({
       success: true,
       gdprBasis: "Article 17 — Right to Erasure",
@@ -506,9 +571,9 @@ const AI_LIMITS = {
   ceo:     99999 // CEO: no limit
 };
 
-function getAILimit(subscription, email) {
-  if (email === "kiran.shashi47.sk@gmail.com") return AI_LIMITS.ceo;
+function getAILimit(subscription) {
   switch (subscription) {
+    case "ceo":     return AI_LIMITS.ceo;
     case "premium": return AI_LIMITS.premium;
     case "pro":     return AI_LIMITS.pro;
     default:        return AI_LIMITS.free;
@@ -573,7 +638,7 @@ app.post("/ai/chat", aiLimiter, async (req, res) => {
     // ── Subscription-tier daily limit check ──
     const email = (userEmail || "anonymous").toLowerCase();
     const tier = (subscription || "free").toLowerCase();
-    const limit = getAILimit(tier, email);
+    const limit = getAILimit(tier);
     const usage = checkAndIncrementUsage(email, limit);
 
     if (!usage.allowed) {
@@ -713,11 +778,17 @@ app.post("/upload-doctor-document", upload.single("document"), async (req, res) 
       return res.status(400).json({ error: `Invalid documentType. Must be one of: ${validTypes.join(", ")}` });
     }
 
+    // Sanitize filename to prevent path traversal
+    const path = require("path");
+    const sanitizedName = path.basename(req.file.originalname)
+      .replace(/[^a-zA-Z0-9._-]/g, "_")
+      .substring(0, 100);
+
     // Save to Firebase Storage if available
     const admin = require("firebase-admin");
     if (admin.apps.length > 0) {
       const bucket = admin.storage().bucket();
-      const fileName = `doctor-applications/${userId}/documents/${documentType}/${Date.now()}_${req.file.originalname}`;
+      const fileName = `doctor-applications/${userId}/documents/${documentType}/${Date.now()}_${sanitizedName}`;
       const file = bucket.file(fileName);
 
       await file.save(req.file.buffer, {
@@ -755,16 +826,15 @@ app.post("/upload-doctor-document", upload.single("document"), async (req, res) 
     } else {
       // No Firebase — store locally (development fallback)
       const fs = require("fs");
-      const path = require("path");
       const dir = path.join(__dirname, "uploads", userId, documentType);
       fs.mkdirSync(dir, { recursive: true });
-      const filePath = path.join(dir, req.file.originalname);
+      const filePath = path.join(dir, sanitizedName);
       fs.writeFileSync(filePath, req.file.buffer);
 
       res.json({
         success: true,
         storagePath: filePath,
-        fileName: req.file.originalname,
+        fileName: sanitizedName,
         fileSize: req.file.size,
         mode: "local"
       });
@@ -833,11 +903,18 @@ async function processPendingTransfers(doctorId, connectedAccountId) {
 }
 
 // Create Stripe Connect Express account for a doctor
-app.post("/doctor/create-connect-account", async (req, res) => {
+// SECURED: Requires Firebase auth + ownership verification
+app.post("/doctor/create-connect-account", requireAuth, async (req, res) => {
   try {
     const { doctorId, email, firstName, lastName } = req.body;
     if (!doctorId || !email) {
       return res.status(400).json({ error: "doctorId and email are required" });
+    }
+
+    // Ownership: authenticated user must be the doctor requesting the account
+    if (req.authenticatedUser.email !== email) {
+      auditLog("connect_account_denied", { doctorId, requestedEmail: email, authenticatedEmail: req.authenticatedUser.email }, req);
+      return res.status(403).json({ error: "You can only create a connect account for yourself" });
     }
 
     // Check if account already exists
@@ -910,10 +987,15 @@ app.post("/doctor/create-connect-account", async (req, res) => {
 });
 
 // Refresh an expired onboarding link
-app.post("/doctor/refresh-onboarding-link", async (req, res) => {
+// SECURED: Requires Firebase auth + ownership verification
+app.post("/doctor/refresh-onboarding-link", requireAuth, async (req, res) => {
   try {
     const { doctorId } = req.body;
     if (!doctorId) return res.status(400).json({ error: "doctorId required" });
+
+    if (req.authenticatedUser.email !== doctorId) {
+      return res.status(403).json({ error: "You can only refresh your own onboarding link" });
+    }
 
     if (!db) return res.status(500).json({ error: "Firebase not configured" });
 
@@ -937,10 +1019,21 @@ app.post("/doctor/refresh-onboarding-link", async (req, res) => {
 });
 
 // Get doctor's payout status, balance, and recent transactions
-app.get("/doctor/payout-status/:doctorId", async (req, res) => {
+// SECURED: Requires Firebase auth + ownership verification (or CEO)
+app.get("/doctor/payout-status/:doctorId", requireAuth, async (req, res) => {
   try {
     const { doctorId } = req.params;
     if (!db) return res.status(500).json({ error: "Firebase not configured" });
+
+    // Ownership: only the doctor themselves or CEO can view payout status
+    const isCEOReq = (() => {
+      const code = req.headers["x-ceo-code"];
+      if (!code) return false;
+      return crypto.createHash("sha256").update(code).digest("hex") === CEO_CODE_HASH;
+    })();
+    if (req.authenticatedUser.email !== doctorId && !isCEOReq) {
+      return res.status(403).json({ error: "You can only view your own payout status" });
+    }
 
     // Get payout account info
     const payoutDoc = await db.collection("doctorPayouts").doc(doctorId).get();
@@ -984,11 +1077,18 @@ app.get("/doctor/payout-status/:doctorId", async (req, res) => {
 });
 
 // Doctor requests manual payout (min £10 = 1000 pence)
-app.post("/doctor/request-payout", async (req, res) => {
+// SECURED: Requires Firebase auth + ownership verification
+app.post("/doctor/request-payout", requireAuth, async (req, res) => {
   try {
     const { doctorId } = req.body;
     if (!doctorId) return res.status(400).json({ error: "doctorId required" });
     if (!db) return res.status(500).json({ error: "Firebase not configured" });
+
+    // Ownership: only the doctor themselves can request their payout
+    if (req.authenticatedUser.email !== doctorId) {
+      auditLog("payout_request_denied", { doctorId, authenticatedEmail: req.authenticatedUser.email }, req);
+      return res.status(403).json({ error: "You can only request your own payout" });
+    }
 
     const payoutDoc = await db.collection("doctorPayouts").doc(doctorId).get();
     if (!payoutDoc.exists || payoutDoc.data().payoutStatus !== "active") {
@@ -1006,7 +1106,7 @@ app.post("/doctor/request-payout", async (req, res) => {
 });
 
 // CEO: View all doctor payouts overview
-app.get("/ceo/payouts", requireCEO, async (req, res) => {
+app.get("/ceo/payouts", ceoLimiter, requireCEO, async (req, res) => {
   try {
     if (!db) return res.status(500).json({ error: "Firebase not configured" });
 
@@ -1054,7 +1154,7 @@ app.get("/ceo/payouts", requireCEO, async (req, res) => {
 });
 
 // CEO: Trigger pending transfers for all eligible doctors
-app.post("/ceo/trigger-pending-transfers", requireCEO, async (req, res) => {
+app.post("/ceo/trigger-pending-transfers", ceoLimiter, requireCEO, async (req, res) => {
   try {
     if (!db) return res.status(500).json({ error: "Firebase not configured" });
 
@@ -1261,18 +1361,18 @@ app.listen(PORT, () => {
   console.log(`    POST /approve-doctor (CEO)`);
   console.log(`    GET  /ceo/metrics (CEO)`);
   console.log(`    POST /send-notification`);
-  console.log(`    POST /gdpr/export`);
-  console.log(`    DELETE /gdpr/delete`);
+  console.log(`    POST /gdpr/export (AUTH)`);
+  console.log(`    DELETE /gdpr/delete (AUTH)`);
   console.log(`    POST /ai/chat (AI proxy → Anthropic)`);
   console.log(`    POST /ai/upload-patterns (Layer 6)`);
   console.log(`    GET  /ai/global-patterns (Layer 6)`);
   console.log(`    POST /verify-gmc (GMC live lookup)`);
   console.log(`    POST /upload-doctor-document (document upload)`);
   console.log(`    GET  /doctor-documents/:userId (CEO review)`);
-  console.log(`    POST /doctor/create-connect-account (Stripe Connect)`);
-  console.log(`    POST /doctor/refresh-onboarding-link`);
-  console.log(`    GET  /doctor/payout-status/:doctorId`);
-  console.log(`    POST /doctor/request-payout`);
+  console.log(`    POST /doctor/create-connect-account (AUTH)`);
+  console.log(`    POST /doctor/refresh-onboarding-link (AUTH)`);
+  console.log(`    GET  /doctor/payout-status/:doctorId (AUTH)`);
+  console.log(`    POST /doctor/request-payout (AUTH)`);
   console.log(`    GET  /ceo/payouts (CEO)`);
   console.log(`    POST /ceo/trigger-pending-transfers (CEO)`);
   console.log(`  AI: ${process.env.ANTHROPIC_API_KEY ? "Configured" : "Not configured (set ANTHROPIC_API_KEY)"}\n`);

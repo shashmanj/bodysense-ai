@@ -102,12 +102,14 @@ final class KeychainManager {
     // MARK: - Seed defaults (call once on first launch)
 
     func seedDefaultsIfNeeded() {
-        // Stripe sandbox key — move to Keychain from hardcoded source
+        // Stripe publishable key — test key only in DEBUG builds
+        #if DEBUG
         if !has(.stripePublishableKey) {
             save("pk_test_51SegUBAHlyZLnFkwhRkInZnvnpD0nTBknw6wS0lLpDKukCzfQ3PjUgifsU4SrqjSEDoTEK0JLTVV5nExslvCvYXN00zwbRXcB0", for: .stripePublishableKey)
         }
+        #endif
+        // Production: Stripe key must be set via CEO settings or backend config
         // Anthropic API key — user must set via CEO settings
-        // Don't seed a default — force manual entry
     }
 }
 

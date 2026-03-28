@@ -22,12 +22,10 @@ final class SSLPinningSessionDelegate: NSObject, URLSessionDelegate, @unchecked 
     /// Generate with: openssl s_client -connect api.anthropic.com:443 | openssl x509 -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | openssl enc -base64
     private let pinnedHashes: [String: [String]] = [
         "api.anthropic.com": [
-            // Add Anthropic's SPKI hash here when deploying to production
-            // "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB="
+            "60QDDZy98CjK1XTBTlPbInyzJzi+817KvW+usCk6r+o="
         ],
-        "api.bodysenseai.co.uk": [
-            // Add your backend's SPKI hash here
-            // "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC="
+        "body-sense-ai-production.up.railway.app": [
+            "i+9suBX/dDafsZIMvCHqAlFdC3WdC0Yu6JsC9yvlNLo="
         ]
     ]
 

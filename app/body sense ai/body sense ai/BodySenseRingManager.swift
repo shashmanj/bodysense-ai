@@ -75,7 +75,8 @@ final class BodySenseRingManager: NSObject {
             delegate: self,
             queue: nil,
             options: [
-                CBCentralManagerOptionShowPowerAlertKey: true
+                CBCentralManagerOptionShowPowerAlertKey: true,
+                CBCentralManagerOptionRestoreIdentifierKey: BLEConstants.restoreIdentifier
             ]
         )
     }
@@ -345,6 +346,23 @@ final class BodySenseRingManager: NSObject {
 // MARK: - CBCentralManagerDelegate
 
 extension BodySenseRingManager: @preconcurrency CBCentralManagerDelegate {
+
+    // MARK: - BLE State Restoration (background reconnection after app kill)
+
+    nonisolated func centralManager(_ central: CBCentralManager, willRestoreState dict: [String: Any]) {
+        Task { @MainActor in
+            if let peripherals = dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral] {
+                for peripheral in peripherals {
+                    if peripheral.state == .connected || peripheral.state == .connecting {
+                        self.connectedPeripheral = peripheral
+                        peripheral.delegate = self
+                        self.connectionState = .reconnecting
+                        self.logger.info("Restored BLE peripheral: \(peripheral.identifier)")
+                    }
+                }
+            }
+        }
+    }
 
     nonisolated func centralManagerDidUpdateState(_ central: CBCentralManager) {
         Task { @MainActor in

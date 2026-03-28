@@ -157,6 +157,12 @@ class HealthSenseAgent {
             "hypertension", "cholesterol", "stroke", "epilepsy", "asthma", "copd",
             "arthritis", "osteoporosis", "anaemia", "anemia", "allergy", "immune",
             "glucose", "insulin", "hba1c", "blood pressure", "bp ", "mmhg",
+            "cgm", "continuous glucose", "dexcom", "libre", "sensor", "time in range",
+            "dawn phenomenon", "glucose spike", "glucose monitor", "finger prick",
+            "bp cuff", "bp monitor", "omron", "withings", "qardio", "sphygmomanometer",
+            "white coat", "masked hypertension", "ambulatory", "morning surge",
+            "ecg", "electrocardiogram", "afib", "atrial fibrillation", "arrhythmia",
+            "irregular rhythm", "spo2", "blood oxygen", "oxygen saturation",
             "emergency", "urgent", "ambulance", "a&e", "999", "911"
         ],
         .personalCare: [
@@ -401,9 +407,25 @@ class HealthSenseAgent {
         smarter with every conversation. You remember this user's patterns, preferences, triggers,
         and goals across all health domains.
 
+        DATA SOURCES: Apple Health (HealthKit) is the CENTRAL HUB — all device data flows through it.
+        • Apple Health (HealthKit) — the single source of truth. Syncs from Apple Watch, BodySense Ring, \
+          CGMs, BP monitors, 300+ third-party health apps, and iPhone sensors. ALL data accessible here.
+        • Apple Watch — heart rate, HRV, SpO2 (blood oxygen), wrist temperature, ECG, sleep, steps, \
+          workouts, BP trends (Series 9+), irregular rhythm notifications, fall detection
+        • BodySense Ring — continuous heart rate, HRV, SpO2, skin temperature, sleep stages
+        • CGM (Continuous Glucose Monitors) — Dexcom, FreeStyle Libre, Medtronic → all sync to HealthKit
+        • Bluetooth BP monitors — Omron, Withings BPM Connect, QardioArm → sync to HealthKit
+        • NFC devices — FreeStyle Libre tap-to-scan → writes to HealthKit
+        • Manual logging — weight, symptoms, meals, medications, mood, menstrual cycle
+        SpO2 and temperature come from Apple Watch or BodySense Ring (not separate devices). \
+        ECG comes from Apple Watch via Apple Health. Weight is manual entry only. \
+        ALL device data is read from Apple Health — correlate across every source.
+        Treat ALL data equally regardless of source. Correlate across sources to find patterns
+        (e.g. CGM glucose spike after a meal logged manually, or poor HRV from the ring on nights with low sleep from Apple Watch).
+
         RIGHT NOW you are operating as **\(domain.persona)** — your \(domain.rawValue) specialist persona.
 
-        """
+"""
 
         // Domain-specific expertise
         prompt += domainExpertise(for: domain)
@@ -441,9 +463,12 @@ class HealthSenseAgent {
             }
         }
 
-        // Research-backed knowledge base
+        // Research-backed knowledge base (5 volumes, domain-mapped, tier-selected)
+        let knowledgeTier: HealthKnowledgeBase.Tier = AIClient.shared.isOnDeviceAvailable()
+            && UserDefaults.standard.bool(forKey: "preferOnDeviceAI")
+            ? .compact : .extended
         prompt += "\n--- EVIDENCE-BASED KNOWLEDGE (cite when relevant) ---\n"
-        prompt += CorrelationEngine.researchKnowledgeBase(for: domain)
+        prompt += HealthKnowledgeBase.knowledge(for: domain, tier: knowledgeTier, query: query)
 
         // Response instructions
         prompt += """
@@ -619,7 +644,7 @@ class HealthSenseAgent {
         let cal = Calendar.current
         let sevenDaysAgo = cal.date(byAdding: .day, value: -7, to: Date())!
 
-        var ctx = "\n\n--- USER HEALTH DATA (LIVE) ---\n"
+        var ctx = "\n\n--- USER HEALTH DATA (LIVE — all data via Apple Health from: Apple Watch, BodySense Ring, CGM, BP monitors, and manual logs) ---\n"
         ctx += "Name: \(p.name.isEmpty ? "User" : p.name), Age: \(p.age), Gender: \(p.gender)\n"
 
         let displayWeight: String = {
@@ -713,16 +738,16 @@ class HealthSenseAgent {
         let hasRecentNutrition = store.nutritionLogs.contains { $0.date >= threeDaysAgo }
 
         if !p.diabetesType.isEmpty && !hasRecentGlucose {
-            missingData.append("GLUCOSE: User has diabetes but NO glucose readings in the last 3 days. Do NOT give specific glucose management tips, DASH diet advice, or blood sugar targets. Instead, encourage them to log or sync their glucose readings first.")
+            missingData.append("GLUCOSE: User has diabetes but NO glucose readings in the last 3 days. Do NOT give specific glucose management tips, DASH diet advice, or blood sugar targets. Instead, encourage them to sync from their CGM (Dexcom/Libre), BodySense Ring, Apple Health, or log manually.")
         }
         if p.hasHypertension && !hasRecentBP {
-            missingData.append("BLOOD PRESSURE: User has hypertension but NO BP readings in the last 3 days. Do NOT recommend DASH diet, sodium limits, or specific BP strategies. Instead, encourage them to log or sync their BP readings first.")
+            missingData.append("BLOOD PRESSURE: User has hypertension but NO BP readings in the last 3 days. Do NOT recommend DASH diet, sodium limits, or specific BP strategies. Instead, encourage them to sync from their Bluetooth BP monitor (Omron, Withings, QardioArm), Apple Watch BP trends, Apple Health, or log readings manually (2 readings, 1 min apart, twice daily).")
         }
         if !hasRecentSleep {
-            missingData.append("SLEEP: No sleep data in the last 3 days. Do NOT give specific sleep improvement tips based on their patterns. Encourage them to track sleep or sync from their device.")
+            missingData.append("SLEEP: No sleep data in the last 3 days. Do NOT give specific sleep improvement tips based on their patterns. Encourage them to sync from their BodySense Ring, Apple Watch, or any sleep tracker connected via Apple Health.")
         }
         if !hasRecentSteps {
-            missingData.append("ACTIVITY: No step data today. Do NOT reference their activity level. Encourage syncing from Apple Watch or logging manually.")
+            missingData.append("ACTIVITY: No step data today. Do NOT reference their activity level. Encourage syncing from Apple Watch, BodySense Ring, iPhone motion sensors, or any fitness tracker via Apple Health.")
         }
         if !hasRecentNutrition {
             missingData.append("NUTRITION: No nutrition logs in the last 3 days. Do NOT give calorie-specific advice. Encourage them to log meals first.")

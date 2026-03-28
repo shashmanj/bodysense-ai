@@ -386,7 +386,7 @@ struct DoctorProfileDetailView: View {
                 }
                 if doctor.isVerified {
                     Divider().padding(.leading, 52)
-                    credRow("Status", value: "✓ Verified by BodySense AI", icon: "checkmark.shield.fill")
+                    credRow("Status", value: "Verified by BodySense AI", icon: "checkmark.shield.fill")
                 }
                 if !doctor.certifications.isEmpty {
                     Divider().padding(.leading, 52)
@@ -891,7 +891,7 @@ struct BookAppointmentView: View {
                         .background((scanData != nil ? Color.brandGreen : Color.brandAmber).opacity(0.12))
                         .cornerRadius(10)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(scanData != nil ? "Scan attached ✓" : "Tap to upload a photo")
+                        Text(scanData != nil ? "Scan attached" : "Tap to upload a photo")
                             .font(.subheadline).fontWeight(.medium)
                             .foregroundColor(scanData != nil ? .brandGreen : .primary)
                         Text("X-ray, MRI, blood test, or any report image")
