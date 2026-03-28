@@ -62,6 +62,7 @@ struct PatientProfileView: View {
     @State private var showAgentTeam      = false
     @State private var showCEOCodeEntry   = false
     @State private var showDoctorRegistration = false
+    @State private var showDietaryPreferences = false
     @State private var ceoTapCount        = 0
     @AppStorage("biometricLockEnabled") private var biometricLockEnabled = false
     @AppStorage("appearanceMode") private var appearanceMode: String = AppearanceMode.system.rawValue
@@ -72,6 +73,7 @@ struct PatientProfileView: View {
             List {
                 profileHeaderSection
                 accountSection
+                dietNutritionSection
                 aiSection
                 healthDataSection
                 devicesSection
@@ -156,6 +158,29 @@ struct PatientProfileView: View {
                     .foregroundColor(.primary)
                 }
             }
+        }
+    }
+
+    private var dietNutritionSection: some View {
+        Section("Diet & Nutrition") {
+            Button { showDietaryPreferences = true } label: {
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Dietary Preferences")
+                        let diet = store.userProfile.dietaryProfile
+                        Text(diet.isConfigured ? diet.base.rawValue : "Not configured")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                } icon: {
+                    SettingsIcon(systemName: "leaf.fill", color: .brandGreen)
+                }
+                .foregroundColor(.primary)
+            }
+        }
+        .sheet(isPresented: $showDietaryPreferences) {
+            DietaryPreferencesView()
+                .environment(store)
         }
     }
 
@@ -1592,10 +1617,22 @@ struct SubscriptionPlansSheet: View {
                                 dismiss()
                             }
                         } else {
-                            // Fallback: if StoreKit products not loaded yet
-                            store.subscription = plan
-                            store.save()
-                            dismiss()
+                            // StoreKit products not loaded — reload and retry
+                            await storeKit.loadProducts()
+                            let retryProduct: StoreKit.Product?
+                            switch plan {
+                            case .pro:     retryProduct = storeKit.proMonthly
+                            case .premium: retryProduct = storeKit.premiumMonthly
+                            case .free:    retryProduct = nil
+                            }
+                            if let retryProduct {
+                                let success = await storeKit.purchase(retryProduct)
+                                if success {
+                                    storeKit.syncToHealthStore(store)
+                                    dismiss()
+                                }
+                            }
+                            // If still nil, show error — NEVER grant without payment
                         }
                     }
                 } label: {

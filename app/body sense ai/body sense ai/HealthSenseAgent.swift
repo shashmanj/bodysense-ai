@@ -574,6 +574,18 @@ class HealthSenseAgent {
             • Shopping lists and ingredient management
             CRITICAL: Always factor in the user's health conditions, medications, allergies, and goals when suggesting food.
 
+            DIETARY SAFETY (MANDATORY — check before EVERY recipe):
+            • Check the user's dietary profile before suggesting ANY recipe or ingredient
+            • NEVER include excluded ingredients (excluded meats, allergens, animal products for vegans, etc.)
+            • For non-meat days (flexitarian schedule), create plant-based meals ONLY
+            • Tag every recipe: [Vegetarian] [Vegan] [Halal] [Gluten-Free] [Dairy-Free] based on actual ingredients
+            • Provide substitution suggestions: "Instead of chicken, try paneer/tofu/chickpeas"
+            • For religious diets: halal = no pork, halal-prepared meat; kosher = no mixing meat+dairy; Hindu = no beef; Jain = no root veg
+            • For CKD: limit high-potassium foods (bananas, oranges, potatoes, tomatoes), limit phosphorus (dairy, nuts, cola)
+            • For BP/hypertension: reduce salt, avoid processed meats, use herbs+spices instead
+            • For diabetes: prefer low-GI ingredients, control portion carbs, pair carbs with protein/fat
+            • For transition goals: gradually introduce alternatives — don't make drastic changes overnight
+
             """
 
         case .sleep:
@@ -665,6 +677,22 @@ class HealthSenseAgent {
         if p.hasHypertension { conditions.append("Hypertension") }
         ctx += "Conditions: \(conditions.isEmpty ? "None" : conditions.joined(separator: ", "))\n"
         ctx += "Goals: \(p.selectedGoals.isEmpty ? "Not set" : p.selectedGoals.joined(separator: ", "))\n"
+
+        // ── Dietary Identity ──
+        let diet = p.dietaryProfile
+        if diet.isConfigured {
+            ctx += "\n--- DIETARY IDENTITY (CRITICAL — respect in ALL food/meal suggestions) ---\n"
+            ctx += diet.contextSummary + "\n"
+            if diet.base == .flexitarian || diet.meatSchedule.allowedDays.count < 7 {
+                ctx += "TODAY: Meat is \(diet.isMeatAllowedNow ? "ALLOWED" : "NOT ALLOWED") (schedule-based)\n"
+            }
+            if !diet.allergens.isEmpty {
+                ctx += "SAFETY: NEVER suggest foods containing: \(diet.allergens.map { $0.rawValue }.joined(separator: ", "))\n"
+            }
+            ctx += "RULE: NEVER suggest foods that violate the above. If unsure, ASK.\n"
+        } else {
+            ctx += "\nDiet preferences: Not yet configured. Ask about dietary preferences if giving meal/food advice.\n"
+        }
         ctx += "Targets: Glucose \(HealthStore.glucoseMmol(p.targetGlucoseMin))-\(HealthStore.glucoseMmol(p.targetGlucoseMax)) mmol/L, BP <\(p.targetSystolic)/\(p.targetDiastolic), Steps \(p.targetSteps)/day, Sleep \(String(format: "%.1f", p.targetSleep))hrs\n"
 
         // Medications
@@ -723,6 +751,19 @@ class HealthSenseAgent {
         if !recentNutrition.isEmpty {
             let avgCal = recentNutrition.map { $0.calories }.reduce(0, +) / recentNutrition.count
             ctx += "Nutrition 7d: ~\(avgCal) kcal/day avg\n"
+        }
+
+        // ── Streaks & Consistency ──
+        let streakText = store.streakSummary
+        if !streakText.isEmpty {
+            ctx += "\nStreaks: \(streakText)\n"
+            ctx += "RULE: Acknowledge and celebrate the user's consistency streaks. Encourage them to keep going.\n"
+        }
+        let missing = store.missingTodayLogs
+        if !missing.isEmpty {
+            let missingNames = missing.map { $0.rawValue }.joined(separator: ", ")
+            ctx += "NOT LOGGED TODAY: \(missingNames)\n"
+            ctx += "If relevant to the conversation, gently remind them to log these.\n"
         }
 
         // ── Data-sufficiency check ──────────────────────────────────────
@@ -868,6 +909,36 @@ class HealthSenseAgent {
                     useCount: 1,
                     isActive: true
                 ))
+            }
+        }
+
+        // Dietary declarations (reactive learning from conversation)
+        let dietaryPatterns = [
+            "i'm vegetarian", "i am vegetarian", "i'm vegan", "i am vegan",
+            "i'm pescatarian", "i am pescatarian", "i'm flexitarian", "i am flexitarian",
+            "i don't eat pork", "i don't eat beef", "i don't eat meat", "i don't eat fish",
+            "i'm halal", "i am halal", "i'm kosher", "i am kosher", "i'm hindu",
+            "i'm trying to cut", "cutting down on meat", "reducing meat",
+            "going vegetarian", "going vegan", "plant based", "plant-based",
+            "no gluten", "gluten free", "dairy free", "no dairy", "lactose intolerant",
+            "nut allergy", "peanut allergy", "shellfish allergy",
+            "i'm jain", "sattvic diet", "buddhist diet",
+            "i only eat meat on", "meat free", "meatless"
+        ]
+        for pattern in dietaryPatterns {
+            if text.contains(pattern) {
+                insights.append(UserInsight(
+                    id: UUID().uuidString,
+                    domain: domain,
+                    category: .preference,
+                    content: "DIETARY: " + query.trimmingCharacters(in: .whitespacesAndNewlines),
+                    confidence: 0.9,
+                    learnedAt: Date(),
+                    lastUsed: Date(),
+                    useCount: 1,
+                    isActive: true
+                ))
+                break // One dietary insight per message is enough
             }
         }
 

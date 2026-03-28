@@ -798,6 +798,9 @@ struct PatientOnboardingView: View {
     @State private var heightUnit   : HeightUnit = .cm
     @State private var locationManager = CLLocationManager()
     @State private var isDetectingLocation = false
+    @State private var nameError    = ""
+    @State private var emailError   = ""
+    @State private var hasPrefilled = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -872,9 +875,23 @@ struct PatientOnboardingView: View {
                         }
                         .padding().background(Color.white.opacity(0.15)).cornerRadius(12)
                         .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.3)))
+                        // Validation errors
+                        if !nameError.isEmpty {
+                            Text(nameError)
+                                .font(.caption).foregroundColor(.red)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 4)
+                        }
+                        if !emailError.isEmpty {
+                            Text(emailError)
+                                .font(.caption).foregroundColor(.red)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 4)
+                        }
                     })
-                } next: { withAnimation { page = 1 } }
+                } next: { validateAndProceed() }
                 .tag(0)
+                .onAppear { prefillFromAuth() }
 
                 // Page 1: Health Goals (new)
                 GoalPickerPage(
@@ -1036,6 +1053,61 @@ struct PatientOnboardingView: View {
         } else {
             isDetectingLocation = false
         }
+    }
+
+    /// Pre-fill name and email from Firebase/Google Sign-In if available.
+    func prefillFromAuth() {
+        guard !hasPrefilled else { return }
+        hasPrefilled = true
+
+        let firebase = FirebaseAuthManager.shared
+        if let googleName = firebase.displayName, !googleName.isEmpty, name.isEmpty {
+            name = googleName
+        }
+        if let googleEmail = firebase.email, !googleEmail.isEmpty, email.isEmpty {
+            email = googleEmail
+        }
+
+        // Also try legacy AuthService as fallback
+        let auth = AuthService.shared
+        if name.isEmpty, let authName = auth.userName, !authName.isEmpty {
+            name = authName
+        }
+        if email.isEmpty, let authEmail = auth.userEmail, !authEmail.isEmpty {
+            email = authEmail
+        }
+    }
+
+    /// Validate name and email before moving to next page.
+    func validateAndProceed() {
+        nameError = ""
+        emailError = ""
+
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Name is required
+        if trimmedName.isEmpty {
+            nameError = "Please enter your name so the AI can personalise your experience."
+            return
+        }
+        if trimmedName.count < 2 {
+            nameError = "Name must be at least 2 characters."
+            return
+        }
+
+        // Email is required
+        if trimmedEmail.isEmpty {
+            emailError = "Please enter your email address."
+            return
+        }
+        // Basic email format check
+        if !trimmedEmail.contains("@") || !trimmedEmail.contains(".") {
+            emailError = "Please enter a valid email address."
+            return
+        }
+
+        withAnimation { page = 1 }
     }
 
     func completePatientOnboarding() {

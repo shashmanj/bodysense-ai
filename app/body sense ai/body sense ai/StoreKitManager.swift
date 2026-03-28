@@ -3,7 +3,7 @@
 //  body sense ai
 //
 //  Native StoreKit 2 subscription manager for in-app purchases.
-//  Handles Pro (£3.99/mo) and Premium (£8.99/mo) auto-renewable subscriptions.
+//  Handles Pro (£4.99/mo) and Premium (£8.99/mo) auto-renewable subscriptions.
 //  100% Apple-native — no third-party payment SDKs.
 //
 

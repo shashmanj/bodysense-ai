@@ -138,6 +138,20 @@ class MealPlanEngine {
             }
         }
 
+        // ── Dietary profile context ──
+        let diet = p.dietaryProfile
+        if diet.isConfigured {
+            ctx += "\n--- DIETARY IDENTITY (MANDATORY) ---\n"
+            ctx += diet.contextSummary + "\n"
+            if diet.base == .flexitarian || diet.meatSchedule.allowedDays.count < 7 {
+                ctx += "TODAY: Meat is \(diet.isMeatAllowedNow ? "ALLOWED" : "NOT ALLOWED") (schedule-based)\n"
+            }
+            if !diet.allergens.isEmpty {
+                ctx += "ALLERGENS (SAFETY): \(diet.allergens.map { $0.rawValue }.joined(separator: ", "))\n"
+            }
+            ctx += "Generate meals ONLY compatible with the above dietary identity.\n"
+        }
+
         // Learned food preferences from memory
         let foodInsights = memory.allInsights.filter {
             ($0.category == .preference || $0.category == .dislike || $0.category == .allergy) &&
@@ -467,5 +481,69 @@ class MealPlanEngine {
         case 10000..<15000: return 1.725 // Very active
         default:          return 1.9   // Extra active
         }
+    }
+
+    // MARK: - Dietary Compatibility Filter
+
+    /// Check if a meal suggestion is compatible with the user's dietary profile.
+    func isDietaryCompatible(mealName: String, ingredients: [String]) -> Bool {
+        let diet = store.userProfile.dietaryProfile
+        guard diet.isConfigured else { return true } // No profile = everything allowed
+
+        let allText = (ingredients + [mealName]).joined(separator: " ").lowercased()
+
+        // Base diet check
+        let meatWords = ["chicken", "beef", "steak", "pork", "lamb", "turkey", "bacon", "ham", "sausage", "mince"]
+        let fishWords = ["salmon", "tuna", "cod", "prawns", "shrimp", "fish", "mackerel", "sardine"]
+        let animalWords = meatWords + fishWords + ["egg", "milk", "cheese", "yogurt", "cream", "butter", "honey", "ghee", "whey"]
+
+        switch diet.base {
+        case .vegan:
+            if animalWords.contains(where: { allText.contains($0) }) { return false }
+        case .vegetarian:
+            if (meatWords + fishWords).contains(where: { allText.contains($0) }) { return false }
+        case .pescatarian:
+            if meatWords.contains(where: { allText.contains($0) }) { return false }
+        case .flexitarian, .omnivore:
+            if !diet.isMeatAllowedNow && meatWords.contains(where: { allText.contains($0) }) { return false }
+        }
+
+        // Excluded meats
+        let meatMap: [MeatType: [String]] = [
+            .beef: ["beef", "steak", "mince", "burger"],
+            .pork: ["pork", "bacon", "ham", "sausage", "pepperoni"],
+            .lamb: ["lamb", "mutton"],
+            .chicken: ["chicken"],
+            .turkey: ["turkey"],
+            .goat: ["goat"],
+            .fish: fishWords,
+            .shellfish: ["prawns", "shrimp", "crab", "lobster", "mussel", "oyster"]
+        ]
+        for excluded in diet.excludedMeats {
+            if let kw = meatMap[excluded], kw.contains(where: { allText.contains($0) }) { return false }
+        }
+
+        // Allergen check
+        let allergenMap: [AllergenType: [String]] = [
+            .gluten: ["bread", "wheat", "flour", "pasta", "oat", "barley", "rye", "naan", "couscous"],
+            .dairy: ["milk", "cheese", "yogurt", "cream", "butter", "ghee", "paneer", "whey"],
+            .eggs: ["egg", "omelette", "mayonnaise"],
+            .nuts: ["walnut", "almond", "cashew", "pecan", "hazelnut", "pistachio"],
+            .peanuts: ["peanut", "groundnut"],
+            .soy: ["soy", "soya", "tofu", "tempeh", "edamame", "miso"],
+            .shellfish: ["prawns", "shrimp", "crab", "lobster"],
+            .fish: fishWords,
+            .sesame: ["sesame", "tahini"],
+            .mustard: ["mustard"],
+            .celery: ["celery", "celeriac"],
+            .lupin: ["lupin"],
+            .molluscs: ["mussel", "oyster", "squid", "octopus"],
+            .sulphites: ["wine", "dried fruit"]
+        ]
+        for allergen in diet.allergens {
+            if let kw = allergenMap[allergen], kw.contains(where: { allText.contains($0) }) { return false }
+        }
+
+        return true
     }
 }

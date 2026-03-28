@@ -827,6 +827,8 @@ enum StreakType: String, Codable, CaseIterable {
     case medication    = "Medication"
     case sleep         = "Sleep Tracking"
     case steps         = "Step Goal"
+    case nutrition     = "Meal Logging"
+    case water         = "Water Intake"
     var icon: String {
         switch self {
         case .dailyCheckIn:  return "checkmark.circle.fill"
@@ -835,6 +837,8 @@ enum StreakType: String, Codable, CaseIterable {
         case .medication:    return "pill.fill"
         case .sleep:         return "bed.double.fill"
         case .steps:         return "figure.walk"
+        case .nutrition:     return "fork.knife"
+        case .water:         return "drop.circle.fill"
         }
     }
 }
@@ -1415,11 +1419,11 @@ enum SubscriptionPlan: String, Codable, CaseIterable, Comparable {
 
     /// Base price in GBP
     var basePriceGBP: Double {
-        switch self { case .free: return 0; case .pro: return 3.99; case .premium: return 8.99 }
+        switch self { case .free: return 0; case .pro: return 4.99; case .premium: return 8.99 }
     }
     /// Legacy price string (GBP)
     var price: String {
-        switch self { case .free: return "Free"; case .pro: return "£3.99/mo"; case .premium: return "£8.99/mo" }
+        switch self { case .free: return "Free"; case .pro: return "£4.99/mo"; case .premium: return "£8.99/mo" }
     }
     /// Localized price string
     func priceString(currencyCode: String) -> String {
@@ -2039,6 +2043,281 @@ struct NotificationPreferences: Codable, Equatable {
     var waterReminderInterval: Int  = 120  // minutes
 }
 
+// MARK: - Dietary Identity System
+
+/// Base dietary type — what kind of eater the user is.
+enum DietaryBase: String, Codable, CaseIterable, Identifiable {
+    case omnivore     = "Omnivore"
+    case pescatarian  = "Pescatarian"
+    case vegetarian   = "Vegetarian"
+    case vegan        = "Vegan"
+    case flexitarian  = "Flexitarian"
+
+    var id: String { rawValue }
+
+    var description: String {
+        switch self {
+        case .omnivore:    return "Eats all food groups"
+        case .pescatarian: return "No meat, but eats fish and seafood"
+        case .vegetarian:  return "No meat or fish"
+        case .vegan:       return "No animal products"
+        case .flexitarian: return "Mostly plant-based, occasional meat"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .omnivore:    return "fork.knife"
+        case .pescatarian: return "fish.fill"
+        case .vegetarian:  return "leaf.fill"
+        case .vegan:       return "leaf.circle.fill"
+        case .flexitarian: return "arrow.triangle.swap"
+        }
+    }
+}
+
+/// Specific meat types that can be individually excluded.
+enum MeatType: String, Codable, CaseIterable, Identifiable, Hashable {
+    case beef     = "Beef"
+    case pork     = "Pork"
+    case lamb     = "Lamb"
+    case chicken  = "Chicken"
+    case turkey   = "Turkey"
+    case goat     = "Goat"
+    case fish     = "Fish"
+    case shellfish = "Shellfish"
+
+    var id: String { rawValue }
+}
+
+/// Religious or cultural dietary rules.
+enum ReligiousDiet: String, Codable, CaseIterable, Identifiable {
+    case none      = "None"
+    case halal     = "Halal"
+    case kosher    = "Kosher"
+    case hindu     = "Hindu Vegetarian"
+    case jain      = "Jain"
+    case buddhist  = "Buddhist"
+    case sattvic   = "Sattvic"
+
+    var id: String { rawValue }
+}
+
+/// UK's 14 major allergens (Food Information Regulations 2014).
+enum AllergenType: String, Codable, CaseIterable, Identifiable, Hashable {
+    case gluten    = "Gluten"
+    case dairy     = "Dairy"
+    case eggs      = "Eggs"
+    case nuts      = "Tree Nuts"
+    case peanuts   = "Peanuts"
+    case soy       = "Soy"
+    case shellfish = "Shellfish"
+    case fish      = "Fish"
+    case sesame    = "Sesame"
+    case mustard   = "Mustard"
+    case celery    = "Celery"
+    case lupin     = "Lupin"
+    case molluscs  = "Molluscs"
+    case sulphites = "Sulphites"
+
+    var id: String { rawValue }
+}
+
+/// What the user is actively working towards diet-wise.
+enum DietaryTransitionGoal: String, Codable, CaseIterable, Identifiable {
+    case none               = "None"
+    case reducingMeat       = "Reducing Meat"
+    case goingVegetarian    = "Moving to Vegetarian"
+    case goingVegan         = "Moving to Vegan"
+    case increasingProtein  = "Increasing Plant Protein"
+    case cuttingSugar       = "Cutting Down Sugar"
+    case cuttingProcessed   = "Cutting Processed Foods"
+
+    var id: String { rawValue }
+
+    var description: String {
+        switch self {
+        case .none:              return "No dietary transition in progress"
+        case .reducingMeat:      return "Gradually reducing meat consumption"
+        case .goingVegetarian:   return "Transitioning to a vegetarian diet"
+        case .goingVegan:        return "Transitioning to a fully vegan diet"
+        case .increasingProtein: return "Building muscle with plant-based protein"
+        case .cuttingSugar:      return "Reducing sugar intake for better health"
+        case .cuttingProcessed:  return "Eliminating ultra-processed foods"
+        }
+    }
+}
+
+/// Which days of the week meat is allowed (for flexitarian or partial schedules).
+struct MeatSchedule: Codable, Equatable {
+    /// Days when meat is allowed. 1 = Sunday, 2 = Monday ... 7 = Saturday (Calendar.weekday).
+    var allowedDays: Set<Int> = Set(1...7)
+
+    func isMeatAllowedToday() -> Bool {
+        let weekday = Calendar.current.component(.weekday, from: Date())
+        return allowedDays.contains(weekday)
+    }
+
+    var summaryText: String {
+        if allowedDays.count == 7 { return "Every day" }
+        if allowedDays.isEmpty { return "No days" }
+        let dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+        let sorted = allowedDays.sorted()
+        return sorted.map { dayNames[$0 - 1] }.joined(separator: ", ")
+    }
+}
+
+/// The user's complete dietary identity — diet type, restrictions, allergies, schedule, and goals.
+/// Stored encrypted on-device only. Never sent to the backend.
+struct DietaryProfile: Codable, Equatable {
+    var base: DietaryBase = .omnivore
+    var religiousDiet: ReligiousDiet = .none
+    var excludedMeats: Set<MeatType> = []
+    var allergens: Set<AllergenType> = []
+    var intolerances: [String] = []
+    var dislikedFoods: [String] = []
+    var meatSchedule: MeatSchedule = MeatSchedule()
+    var transitionGoal: DietaryTransitionGoal = .none
+    var additionalNotes: String = ""
+    var lastUpdated: Date = Date()
+    var isConfigured: Bool = false
+
+    // MARK: - Computed Helpers
+
+    /// Whether meat is currently allowed based on base diet + day schedule.
+    var isMeatAllowedNow: Bool {
+        switch base {
+        case .vegetarian, .vegan: return false
+        case .pescatarian: return false  // land meat never, fish always
+        case .flexitarian: return meatSchedule.isMeatAllowedToday()
+        case .omnivore:
+            return meatSchedule.allowedDays.count == 7 || meatSchedule.isMeatAllowedToday()
+        }
+    }
+
+    /// Whether fish is allowed (pescatarian and omnivore can eat fish).
+    var isFishAllowed: Bool {
+        switch base {
+        case .vegetarian, .vegan: return false
+        case .pescatarian, .omnivore, .flexitarian: return !excludedMeats.contains(.fish)
+        }
+    }
+
+    /// Human-readable summary for AI context injection.
+    var contextSummary: String {
+        var parts: [String] = []
+        parts.append("Diet type: \(base.rawValue)")
+
+        if religiousDiet != .none {
+            parts.append("Religious/cultural diet: \(religiousDiet.rawValue)")
+        }
+        if !excludedMeats.isEmpty {
+            parts.append("Excluded meats: \(excludedMeats.map(\.rawValue).sorted().joined(separator: ", "))")
+        }
+        if (base == .flexitarian || base == .omnivore), meatSchedule.allowedDays.count < 7 {
+            parts.append("Meat days: \(meatSchedule.summaryText)")
+        }
+        if !allergens.isEmpty {
+            parts.append("ALLERGIES (SAFETY-CRITICAL): \(allergens.map(\.rawValue).sorted().joined(separator: ", "))")
+        }
+        if !intolerances.isEmpty {
+            parts.append("Intolerances: \(intolerances.joined(separator: ", "))")
+        }
+        if !dislikedFoods.isEmpty {
+            parts.append("Dislikes: \(dislikedFoods.joined(separator: ", "))")
+        }
+        if transitionGoal != .none {
+            parts.append("Transition goal: \(transitionGoal.description)")
+        }
+        if !additionalNotes.isEmpty {
+            parts.append("Notes: \(additionalNotes)")
+        }
+        return parts.joined(separator: "\n")
+    }
+
+    /// Returns a warning string if a food conflicts with this dietary profile, or nil if safe.
+    func conflictWarning(for foodName: String) -> String? {
+        let name = foodName.lowercased()
+        var warnings: [String] = []
+
+        // Meat keywords
+        let meatWords = ["chicken", "beef", "steak", "mince", "pork", "bacon", "ham", "sausage",
+                         "lamb", "mutton", "turkey", "goat"]
+        let fishWords = ["fish", "salmon", "tuna", "cod", "haddock", "mackerel", "sardine"]
+        let shellfishWords = ["prawn", "shrimp", "crab", "lobster", "mussel", "oyster", "squid"]
+        let animalWords = meatWords + fishWords + shellfishWords +
+            ["egg", "milk", "cheese", "yogurt", "cream", "butter", "honey", "whey", "ghee"]
+
+        // Base diet check
+        switch base {
+        case .vegan:
+            if animalWords.contains(where: { name.contains($0) }) {
+                warnings.append("Contains animal products — does not match your vegan diet.")
+            }
+        case .vegetarian:
+            if (meatWords + fishWords + shellfishWords).contains(where: { name.contains($0) }) {
+                warnings.append("Contains meat or fish — does not match your vegetarian diet.")
+            }
+        case .pescatarian:
+            if meatWords.contains(where: { name.contains($0) }) {
+                warnings.append("Contains meat — does not match your pescatarian diet.")
+            }
+        case .flexitarian:
+            if !meatSchedule.isMeatAllowedToday() && meatWords.contains(where: { name.contains($0) }) {
+                warnings.append("Today is not a meat day on your schedule.")
+            }
+        case .omnivore:
+            if !meatSchedule.isMeatAllowedToday() && meatSchedule.allowedDays.count < 7 {
+                if meatWords.contains(where: { name.contains($0) }) {
+                    warnings.append("Today is not a meat day on your schedule.")
+                }
+            }
+        }
+
+        // Excluded meats check
+        let meatKeywordMap: [MeatType: [String]] = [
+            .beef: ["beef", "steak", "mince", "burger"],
+            .pork: ["pork", "bacon", "ham", "sausage", "pepperoni", "salami"],
+            .lamb: ["lamb", "mutton"],
+            .chicken: ["chicken"],
+            .turkey: ["turkey"],
+            .goat: ["goat"],
+            .fish: fishWords,
+            .shellfish: shellfishWords
+        ]
+        for excluded in excludedMeats {
+            if let keywords = meatKeywordMap[excluded], keywords.contains(where: { name.contains($0) }) {
+                warnings.append("Contains \(excluded.rawValue.lowercased()) — excluded from your diet.")
+            }
+        }
+
+        // Allergen check (SAFETY-CRITICAL)
+        let allergenKeywordMap: [AllergenType: [String]] = [
+            .gluten: ["bread", "wheat", "flour", "pasta", "oat", "barley", "rye", "couscous", "naan"],
+            .dairy: ["milk", "cheese", "yogurt", "cream", "butter", "ghee", "paneer", "whey"],
+            .eggs: ["egg", "omelette", "mayonnaise", "meringue"],
+            .nuts: ["walnut", "almond", "cashew", "pecan", "hazelnut", "pistachio", "macadamia"],
+            .peanuts: ["peanut", "groundnut"],
+            .soy: ["soy", "soya", "tofu", "tempeh", "edamame", "miso"],
+            .shellfish: shellfishWords,
+            .fish: fishWords,
+            .sesame: ["sesame", "tahini"],
+            .mustard: ["mustard"],
+            .celery: ["celery", "celeriac"],
+            .lupin: ["lupin"],
+            .molluscs: ["mussel", "oyster", "squid", "octopus", "snail"],
+            .sulphites: ["wine", "dried fruit", "vinegar"]
+        ]
+        for allergen in allergens {
+            if let keywords = allergenKeywordMap[allergen], keywords.contains(where: { name.contains($0) }) {
+                warnings.append("WARNING: You have a \(allergen.rawValue) allergy. This food may contain \(allergen.rawValue.lowercased()).")
+            }
+        }
+
+        return warnings.isEmpty ? nil : warnings.joined(separator: " ")
+    }
+}
+
 // MARK: - User Profile
 
 struct UserProfile: Codable {
@@ -2101,6 +2380,9 @@ struct UserProfile: Codable {
     var dailySugarGoal   : Double = 30    // NHS max
     var dailySaltGoal    : Double = 6     // NHS max
     var nutritionGoalType: String = "maintain" // "lose", "gain", "muscle", "maintain"
+
+    // ── Dietary Identity ──
+    var dietaryProfile: DietaryProfile = DietaryProfile()
 
     // ── Fitness / Activity level ──
     var activityLevel    : String = "moderate" // "sedentary", "light", "moderate", "active", "veryActive"
@@ -3145,6 +3427,119 @@ class HealthStore {
         defaults.set(totalXP,  forKey: "totalXP")
         defaults.set(dailyAIMessagesUsed, forKey: "dailyAIMessagesUsed")
         enc(lastAIMessageDate, key: "lastAIMessageDate")
+    }
+
+    // MARK: - Streak Calculator
+
+    /// Updates all streaks based on current data. Call after any data logging.
+    func updateStreaks() {
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+
+        func updateStreak(type: StreakType, hasDataForDay: (Date) -> Bool) {
+            var streak = userStreaks.first(where: { $0.type == type }) ?? UserStreak(type: type)
+
+            // Count consecutive days backwards from today
+            var count = 0
+            var checkDate = today
+            while hasDataForDay(checkDate) {
+                count += 1
+                guard let prev = cal.date(byAdding: .day, value: -1, to: checkDate) else { break }
+                checkDate = prev
+            }
+
+            streak.currentCount = count
+            if count > streak.longestCount { streak.longestCount = count }
+            streak.lastUpdated = Date()
+
+            if let idx = userStreaks.firstIndex(where: { $0.type == type }) {
+                userStreaks[idx] = streak
+            } else {
+                userStreaks.append(streak)
+            }
+        }
+
+        // Nutrition logging streak — at least 1 meal logged that day
+        updateStreak(type: .nutrition) { day in
+            let nextDay = cal.date(byAdding: .day, value: 1, to: day)!
+            return nutritionLogs.contains { $0.date >= day && $0.date < nextDay }
+        }
+
+        // Water intake streak — at least 1 water entry that day
+        updateStreak(type: .water) { day in
+            let nextDay = cal.date(byAdding: .day, value: 1, to: day)!
+            return waterEntries.contains { $0.date >= day && $0.date < nextDay }
+        }
+
+        // Glucose logging streak
+        updateStreak(type: .glucose) { day in
+            let nextDay = cal.date(byAdding: .day, value: 1, to: day)!
+            return glucoseReadings.contains { $0.date >= day && $0.date < nextDay }
+        }
+
+        // BP logging streak
+        updateStreak(type: .bloodPressure) { day in
+            let nextDay = cal.date(byAdding: .day, value: 1, to: day)!
+            return bpReadings.contains { $0.date >= day && $0.date < nextDay }
+        }
+
+        // Sleep tracking streak
+        updateStreak(type: .sleep) { day in
+            let nextDay = cal.date(byAdding: .day, value: 1, to: day)!
+            return sleepEntries.contains { $0.date >= day && $0.date < nextDay }
+        }
+
+        // Step goal streak
+        updateStreak(type: .steps) { day in
+            let nextDay = cal.date(byAdding: .day, value: 1, to: day)!
+            let daySteps = stepEntries.filter { $0.date >= day && $0.date < nextDay }
+            let totalSteps = daySteps.map { $0.steps }.reduce(0, +)
+            return totalSteps >= userProfile.targetSteps
+        }
+
+        // Daily check-in streak — logged ANY health data that day
+        updateStreak(type: .dailyCheckIn) { day in
+            let nextDay = cal.date(byAdding: .day, value: 1, to: day)!
+            let hasAny = nutritionLogs.contains { $0.date >= day && $0.date < nextDay }
+                || waterEntries.contains { $0.date >= day && $0.date < nextDay }
+                || glucoseReadings.contains { $0.date >= day && $0.date < nextDay }
+                || bpReadings.contains { $0.date >= day && $0.date < nextDay }
+                || sleepEntries.contains { $0.date >= day && $0.date < nextDay }
+                || symptomLogs.contains { $0.date >= day && $0.date < nextDay }
+            return hasAny
+        }
+    }
+
+    /// Summary of active streaks for AI context injection.
+    var streakSummary: String {
+        let active = userStreaks.filter { $0.currentCount > 0 }
+            .sorted { $0.currentCount > $1.currentCount }
+        guard !active.isEmpty else { return "" }
+        return active.map { "\($0.type.rawValue): \($0.currentCount) day\($0.currentCount == 1 ? "" : "s")" }
+            .joined(separator: ", ")
+    }
+
+    /// Types the user hasn't logged today — used for smart reminders.
+    var missingTodayLogs: [StreakType] {
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        let tomorrow = cal.date(byAdding: .day, value: 1, to: today)!
+        var missing: [StreakType] = []
+
+        if !nutritionLogs.contains(where: { $0.date >= today && $0.date < tomorrow }) {
+            missing.append(.nutrition)
+        }
+        if !waterEntries.contains(where: { $0.date >= today && $0.date < tomorrow }) {
+            missing.append(.water)
+        }
+        if userProfile.hasHypertension && !bpReadings.contains(where: { $0.date >= today && $0.date < tomorrow }) {
+            missing.append(.bloodPressure)
+        }
+        if !userProfile.diabetesType.isEmpty && userProfile.diabetesType != "General Wellness" &&
+            !glucoseReadings.contains(where: { $0.date >= today && $0.date < tomorrow }) {
+            missing.append(.glucose)
+        }
+        return missing
     }
 
     // MARK: - Reset (Account Deletion)

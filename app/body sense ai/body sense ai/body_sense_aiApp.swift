@@ -20,6 +20,7 @@ struct body_sense_aiApp: App {
     @AppStorage("appearanceMode") private var appearanceMode: String = AppearanceMode.system.rawValue
     @AppStorage("biometricLockEnabled") private var biometricLockEnabled = false
     @State private var isUnlocked = false
+    @State private var showSplash = true
     @State private var showJailbreakWarning = false
 
     private var resolvedScheme: ColorScheme? {
@@ -29,12 +30,24 @@ struct body_sense_aiApp: App {
     var body: some Scene {
         WindowGroup {
             Group {
-                if biometricLockEnabled && !isUnlocked {
+                if showSplash {
+                    SplashScreenView {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            showSplash = false
+                        }
+                    }
+                } else if biometricLockEnabled && !isUnlocked {
                     BiometricLockScreen(isUnlocked: $isUnlocked)
                 } else {
                     ContentView()
                         .task {
                             await AuthService.shared.checkCredentialState()
+                        }
+                        .task {
+                            // Verify subscription status against StoreKit on every launch
+                            // This ensures locally-stored subscription matches actual Apple entitlements
+                            let storeKit = StoreKitManager.shared
+                            await storeKit.updateSubscriptionStatus()
                         }
                         .task {
                             try? await Task.sleep(for: .seconds(2.0))
@@ -47,6 +60,14 @@ struct body_sense_aiApp: App {
                             // Auto-sync from iCloud on launch
                             try? await Task.sleep(for: .seconds(3.0))
                             await CloudSyncService.shared.autoSyncOnLaunch(store: HealthStore.shared)
+                        }
+                        .task {
+                            // Update streaks and schedule smart reminders
+                            try? await Task.sleep(for: .seconds(4.0))
+                            let store = HealthStore.shared
+                            store.updateStreaks()
+                            store.save()
+                            NotificationService.shared.scheduleSmartReminders(store: store)
                         }
                 }
             }
@@ -443,5 +464,122 @@ final class NotificationService {
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
         let request = UNNotificationRequest(identifier: id, content: content, trigger: trigger)
         center.add(request)
+    }
+
+    // MARK: - Smart Health Logging Reminders
+
+    /// Schedule adaptive reminders based on what the user hasn't logged today.
+    /// Call this periodically (e.g. from app launch or background task).
+    func scheduleSmartReminders(store: HealthStore) {
+        let missing = store.missingTodayLogs
+        guard !missing.isEmpty else {
+            // User has logged everything — cancel pending smart reminders
+            cancelSmartReminders()
+            return
+        }
+
+        let hour = Calendar.current.component(.hour, from: Date())
+
+        // ── Meal logging reminders — timed around typical meal times ──
+        if missing.contains(.nutrition) {
+            switch hour {
+            case 0..<11:
+                scheduleSmartNotification(
+                    id: "smart_nutrition_lunch",
+                    title: "Log your lunch",
+                    body: "Keep your nutrition streak going! What did you have for lunch?",
+                    hour: 12, minute: 30
+                )
+            case 11..<16:
+                scheduleSmartNotification(
+                    id: "smart_nutrition_dinner",
+                    title: "Log your meals",
+                    body: "You haven't logged any meals today. Your streak is at risk!",
+                    hour: 19, minute: 0
+                )
+            case 16..<22:
+                let streakText = streakMessage(store: store, type: .nutrition)
+                scheduleSmartNotification(
+                    id: "smart_nutrition_evening",
+                    title: "Don't forget to log dinner",
+                    body: "Log today's meals to keep your \(streakText)",
+                    hour: min(hour + 2, 21), minute: 0
+                )
+            default:
+                break
+            }
+        }
+
+        // ── Water intake reminders — during the day ──
+        if missing.contains(.water) && hour >= 9 && hour <= 20 {
+            scheduleSmartNotification(
+                id: "smart_water",
+                title: "Stay hydrated",
+                body: "You haven't logged any water today. Tap to log your intake.",
+                hour: min(hour + 2, 20), minute: 0
+            )
+        }
+
+        // ── BP logging for hypertension users ──
+        if missing.contains(.bloodPressure) {
+            if hour < 10 {
+                scheduleSmartNotification(
+                    id: "smart_bp",
+                    title: "Morning BP check",
+                    body: "Take your morning blood pressure reading. Consistency helps track your progress.",
+                    hour: 9, minute: 0
+                )
+            } else if hour < 20 {
+                scheduleSmartNotification(
+                    id: "smart_bp",
+                    title: "Evening BP reading",
+                    body: "Log your blood pressure before bed. Two readings a day gives the best picture.",
+                    hour: 20, minute: 0
+                )
+            }
+        }
+
+        // ── Glucose logging for diabetes users ──
+        if missing.contains(.glucose) && hour >= 7 && hour <= 21 {
+            scheduleSmartNotification(
+                id: "smart_glucose",
+                title: "Log your glucose",
+                body: "No glucose readings today. Check your CGM or log a reading to maintain your streak.",
+                hour: min(hour + 1, 21), minute: 30
+            )
+        }
+    }
+
+    /// Cancel all smart health logging reminders.
+    func cancelSmartReminders() {
+        let ids = ["smart_nutrition_lunch", "smart_nutrition_dinner", "smart_nutrition_evening",
+                   "smart_water", "smart_bp", "smart_glucose"]
+        center.removePendingNotificationRequests(withIdentifiers: ids)
+    }
+
+    private func scheduleSmartNotification(id: String, title: String, body: String, hour: Int, minute: Int) {
+        center.removePendingNotificationRequests(withIdentifiers: [id])
+
+        let content       = UNMutableNotificationContent()
+        content.title     = title
+        content.body      = body
+        content.sound     = .default
+        content.badge     = 1
+        content.userInfo  = ["type": "smartReminder", "reminderId": id]
+
+        var comps         = DateComponents()
+        comps.hour        = hour
+        comps.minute      = minute
+
+        let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
+        let request = UNNotificationRequest(identifier: id, content: content, trigger: trigger)
+        center.add(request)
+    }
+
+    private func streakMessage(store: HealthStore, type: StreakType) -> String {
+        if let streak = store.userStreaks.first(where: { $0.type == type }), streak.currentCount > 0 {
+            return "\(streak.currentCount)-day \(type.rawValue) streak!"
+        }
+        return "streak going!"
     }
 }

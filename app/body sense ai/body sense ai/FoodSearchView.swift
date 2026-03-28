@@ -753,12 +753,22 @@ struct EmbeddedFoodSearchView: View {
 
     @State private var searchText = ""
     @State private var selectedFood: FoodItem? = nil
+    @State private var apiResults: [FoodItem] = []
+    @State private var isSearchingAPI = false
+    @State private var apiSearchTask: Task<Void, Never>? = nil
+    @State private var showBarcodeScanner = false
     @FocusState private var searchFocused: Bool
 
     private let db = FoodDatabase.shared
 
-    var searchResults: [FoodItem] {
+    var localResults: [FoodItem] {
         db.search(searchText)
+    }
+
+    /// Combined results: local DB first, then API results
+    var searchResults: [FoodItem] {
+        if !localResults.isEmpty { return localResults }
+        return apiResults
     }
 
     // Dynamic popular searches based on time of day
@@ -783,8 +793,17 @@ struct EmbeddedFoodSearchView: View {
                 // Results
                 if searchText.isEmpty {
                     emptyState
-                } else if searchResults.isEmpty {
+                } else if searchResults.isEmpty && !isSearchingAPI {
                     noResultsView
+                } else if searchResults.isEmpty && isSearchingAPI {
+                    VStack(spacing: 16) {
+                        Spacer()
+                        ProgressView()
+                            .scaleEffect(1.2)
+                        Text("Searching 3 million+ products...")
+                            .font(.subheadline).foregroundColor(.secondary)
+                        Spacer()
+                    }
                 } else {
                     resultsList
                 }
@@ -792,6 +811,22 @@ struct EmbeddedFoodSearchView: View {
         }
         .navigationDestination(item: $selectedFood) { food in
             FoodNutritionDetailView(food: food, embedded: true, onFoodLogged: onFoodLogged)
+        }
+        .sheet(isPresented: $showBarcodeScanner) {
+            BarcodeScannerView(onFoodLogged: onFoodLogged)
+                .environment(store)
+        }
+        .onChange(of: searchText) { _, newValue in
+            // When local results are empty and user has typed 3+ chars, search API
+            apiResults = []
+            apiSearchTask?.cancel()
+            let query = newValue.trimmingCharacters(in: .whitespaces)
+            guard query.count >= 3, db.search(query).isEmpty else { return }
+            apiSearchTask = Task {
+                try? await Task.sleep(for: .seconds(0.6)) // Debounce
+                guard !Task.isCancelled else { return }
+                await searchFoodAPI(query: query)
+            }
         }
         .onAppear { searchFocused = true }
     }
@@ -814,12 +849,85 @@ struct EmbeddedFoodSearchView: View {
                 }
                 .accessibilityLabel("Clear search")
             }
+            // Barcode scanner button
+            Button { showBarcodeScanner = true } label: {
+                Image(systemName: "barcode.viewfinder")
+                    .font(.title3)
+                    .foregroundColor(.brandPurple)
+            }
+            .accessibilityLabel("Scan barcode")
+            .accessibilityHint("Open camera to scan a food product barcode")
         }
         .padding(12)
         .background(Color(.systemBackground))
         .cornerRadius(12)
         .shadow(color: .black.opacity(0.05), radius: 4)
         .padding(.horizontal).padding(.top, 8)
+    }
+
+    // MARK: - API Food Search
+
+    @MainActor
+    func searchFoodAPI(query: String) async {
+        isSearchingAPI = true
+        defer { isSearchingAPI = false }
+
+        guard let url = URL(string: "https://body-sense-ai-production.up.railway.app/food-search") else { return }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 10
+
+        let body: [String: Any] = ["query": query, "page": 1, "pageSize": 20]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else { return }
+
+            struct APIResponse: Codable {
+                let count: Int
+                let foods: [APIFood]
+            }
+            struct APIFood: Codable {
+                let name: String
+                let brand: String
+                let per100g: Per100g
+
+                struct Per100g: Codable {
+                    let calories: Int
+                    let protein: Double
+                    let carbs: Double
+                    let fat: Double
+                    let fiber: Double
+                    let sugar: Double
+                    let salt: Double
+                }
+            }
+
+            let decoded = try JSONDecoder().decode(APIResponse.self, from: data)
+
+            // Convert API results to FoodItem for display
+            apiResults = decoded.foods.map { f in
+                FoodItem(
+                    name: f.name,
+                    category: .prepared,
+                    brand: f.brand,
+                    defaultServingGrams: 100,
+                    caloriesPer100g: Double(f.per100g.calories),
+                    proteinPer100g: f.per100g.protein,
+                    carbsPer100g: f.per100g.carbs,
+                    fatPer100g: f.per100g.fat,
+                    fiberPer100g: f.per100g.fiber,
+                    sugarPer100g: f.per100g.sugar,
+                    saltPer100g: f.per100g.salt
+                )
+            }
+        } catch {
+            #if DEBUG
+            print("Food API search failed: \(error)")
+            #endif
+        }
     }
 
     var emptyState: some View {
@@ -873,50 +981,86 @@ struct EmbeddedFoodSearchView: View {
                 .foregroundColor(.secondary.opacity(0.5))
             Text("No results for \"\(searchText)\"")
                 .font(.headline).foregroundColor(.secondary)
-            Text("Try a different spelling or search term")
+            Text("Not in our local database")
                 .font(.subheadline).foregroundColor(.secondary.opacity(0.7))
+
+            // Offer to search online
+            Button {
+                Task { await searchFoodAPI(query: searchText) }
+            } label: {
+                Label("Search 3M+ products online", systemImage: "globe")
+                    .font(.subheadline).fontWeight(.medium)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Color.brandPurple)
+                    .cornerRadius(12)
+            }
+            .padding(.horizontal, 40)
+
+            // Offer barcode scan
+            Button { showBarcodeScanner = true } label: {
+                Label("Scan barcode instead", systemImage: "barcode.viewfinder")
+                    .font(.subheadline)
+                    .foregroundColor(.brandPurple)
+            }
+
             Spacer()
         }
     }
 
     var resultsList: some View {
-        List(searchResults.prefix(20)) { food in
-            Button {
-                selectedFood = food
-            } label: {
-                HStack(spacing: 12) {
-                    Text(food.category.icon)
-                        .font(.title2)
-                        .frame(width: 36)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(food.name)
-                            .font(.body).fontWeight(.medium)
-                            .foregroundColor(.primary)
-                        HStack(spacing: 8) {
-                            Text("\(Int(food.caloriesPer100g)) kcal/100g")
-                                .font(.caption)
-                                .foregroundColor(.brandAmber)
-                            if !food.brand.isEmpty {
-                                Text(food.brand)
-                                    .font(.caption2)
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 6).padding(.vertical, 2)
-                                    .background(Color.brandTeal)
-                                    .cornerRadius(4)
+        let isFromAPI = localResults.isEmpty && !apiResults.isEmpty
+        return VStack(spacing: 0) {
+            if isFromAPI {
+                HStack(spacing: 6) {
+                    Image(systemName: "globe").font(.caption)
+                    Text("Results from Open Food Facts (3M+ products)")
+                        .font(.caption)
+                    Spacer()
+                }
+                .foregroundColor(.brandTeal)
+                .padding(.horizontal).padding(.vertical, 8)
+                .background(Color.brandTeal.opacity(0.08))
+            }
+            List(searchResults.prefix(20)) { food in
+                Button {
+                    selectedFood = food
+                } label: {
+                    HStack(spacing: 12) {
+                        Text(food.category.icon)
+                            .font(.title2)
+                            .frame(width: 36)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(food.name)
+                                .font(.body).fontWeight(.medium)
+                                .foregroundColor(.primary)
+                            HStack(spacing: 8) {
+                                Text("\(Int(food.caloriesPer100g)) kcal/100g")
+                                    .font(.caption)
+                                    .foregroundColor(.brandAmber)
+                                if !food.brand.isEmpty {
+                                    Text(food.brand)
+                                        .font(.caption2)
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 6).padding(.vertical, 2)
+                                        .background(Color.brandTeal)
+                                        .cornerRadius(4)
+                                }
                             }
                         }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption).foregroundColor(.secondary)
                     }
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.caption).foregroundColor(.secondary)
+                    .padding(.vertical, 4)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("\(food.name)\(food.brand.isEmpty ? "" : " by \(food.brand)"), \(Int(food.caloriesPer100g)) calories per 100 grams")
+                    .accessibilityHint("View full nutritional breakdown")
                 }
-                .padding(.vertical, 4)
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel("\(food.name)\(food.brand.isEmpty ? "" : " by \(food.brand)"), \(Int(food.caloriesPer100g)) calories per 100 grams")
-                .accessibilityHint("View full nutritional breakdown")
             }
+            .listStyle(.plain)
         }
-        .listStyle(.plain)
     }
 }
 
@@ -1067,6 +1211,9 @@ struct FoodNutritionDetailView: View {
                 .background(Color(.systemGray6))
                 .cornerRadius(12).padding(.horizontal)
 
+                // ── Dietary conflict warning ──
+                dietaryWarningBanner
+
                 // Log to nutrition section
                 VStack(spacing: 12) {
                     Text("Log This Food").font(.headline)
@@ -1100,6 +1247,30 @@ struct FoodNutritionDetailView: View {
         .background(Color.brandBg)
         .navigationTitle("Nutrition Info")
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    // MARK: - Dietary Warning Banner
+
+    @ViewBuilder
+    var dietaryWarningBanner: some View {
+        let diet = store.userProfile.dietaryProfile
+        if diet.isConfigured, let warning = diet.conflictWarning(for: food.name) {
+            let isAllergen = warning.contains("WARNING")
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: isAllergen ? "exclamationmark.triangle.fill" : "info.circle.fill")
+                    .foregroundColor(isAllergen ? .red : .brandAmber)
+                    .font(.title3)
+                Text(warning)
+                    .font(.caption)
+                    .foregroundColor(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(isAllergen ? Color.red.opacity(0.12) : Color.brandAmber.opacity(0.12))
+            .cornerRadius(12)
+            .padding(.horizontal)
+        }
     }
 
     // MARK: - Tip Banners

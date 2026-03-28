@@ -2014,8 +2014,25 @@ struct SubscriptionsTab: View {
                 subtitle: isYearly ? "Yearly — save 17%" : "Monthly — cancel anytime",
                 amountGBP: isYearly ? selectedPlan.basePriceGBP * 10 : selectedPlan.basePriceGBP
             ) { intentId, method in
-                store.subscription = selectedPlan
-                store.save()
+                // Subscriptions must go through StoreKit 2 for App Store compliance.
+                // Apple Pay is for physical products (Ring) only.
+                // Route through StoreKit instead.
+                Task {
+                    let storeKit = StoreKitManager.shared
+                    await storeKit.loadProducts()
+                    let product: StoreKit.Product?
+                    switch selectedPlan {
+                    case .pro:     product = isYearly ? storeKit.proYearly : storeKit.proMonthly
+                    case .premium: product = isYearly ? storeKit.premiumYearly : storeKit.premiumMonthly
+                    case .free:    product = nil
+                    }
+                    if let product {
+                        let success = await storeKit.purchase(product)
+                        if success {
+                            storeKit.syncToHealthStore(store)
+                        }
+                    }
+                }
                 showPayment = false
             } onCancel: {
                 showPayment = false

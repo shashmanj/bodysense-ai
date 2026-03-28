@@ -39,6 +39,11 @@ app.use("/create-", apiLimiter);
 app.use("/book-", apiLimiter);
 app.use("/gdpr/", apiLimiter);
 app.use("/ai/", apiLimiter);
+app.use("/food-", apiLimiter);
+app.use("/barcode-", apiLimiter);
+
+// Helper: round to 2 decimal places
+function round2(val) { return Math.round((val || 0) * 100) / 100; }
 
 // JSON body (except webhooks which need raw)
 app.use((req, res, next) => {
@@ -1346,6 +1351,99 @@ app.get("/ai/global-patterns", async (req, res) => {
   }
 });
 
+// ── Food Search (Open Food Facts) ──────────────────────────────────────
+app.post("/food-search", async (req, res) => {
+  try {
+    const { query, page = 1, pageSize = 20 } = req.body;
+    if (!query || query.trim().length < 2) {
+      return res.status(400).json({ error: "Query must be at least 2 characters" });
+    }
+
+    const searchURL = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(query)}&search_simple=1&action=process&json=1&page=${page}&page_size=${pageSize}&fields=product_name,brands,nutriments,serving_size,categories_tags,allergens_tags,code,image_front_small_url`;
+
+    const response = await fetch(searchURL);
+    if (!response.ok) throw new Error("Open Food Facts API error");
+
+    const data = await response.json();
+
+    const foods = (data.products || [])
+      .filter(p => p.product_name && p.nutriments)
+      .map(p => ({
+        name: p.product_name,
+        brand: p.brands || "",
+        barcode: p.code || "",
+        imageURL: p.image_front_small_url || "",
+        servingSize: p.serving_size || "100g",
+        categories: (p.categories_tags || []).slice(0, 3).map(c => c.replace("en:", "")),
+        allergens: (p.allergens_tags || []).map(a => a.replace("en:", "")),
+        per100g: {
+          calories: Math.round(p.nutriments["energy-kcal_100g"] || p.nutriments["energy-kcal"] || 0),
+          protein: round2(p.nutriments.proteins_100g || 0),
+          carbs: round2(p.nutriments.carbohydrates_100g || 0),
+          fat: round2(p.nutriments.fat_100g || 0),
+          fiber: round2(p.nutriments.fiber_100g || 0),
+          sugar: round2(p.nutriments.sugars_100g || 0),
+          salt: round2(p.nutriments.salt_100g || 0),
+          saturatedFat: round2(p.nutriments["saturated-fat_100g"] || 0)
+        }
+      }));
+
+    res.json({ count: data.count || 0, page, foods });
+  } catch (err) {
+    console.error("Food search error:", err.message);
+    res.status(500).json({ error: "Food search failed. Please try again." });
+  }
+});
+
+// ── Barcode Lookup (Open Food Facts) ───────────────────────────────────
+app.post("/barcode-lookup", async (req, res) => {
+  try {
+    const { barcode } = req.body;
+    if (!barcode || barcode.trim().length < 4) {
+      return res.status(400).json({ error: "Invalid barcode" });
+    }
+
+    const url = `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(barcode.trim())}.json?fields=product_name,brands,nutriments,serving_size,categories_tags,allergens_tags,code,image_front_small_url,nutriscore_grade,nova_group`;
+
+    const response = await fetch(url);
+    if (!response.ok) throw new Error("Open Food Facts API error");
+
+    const data = await response.json();
+
+    if (data.status !== 1 || !data.product) {
+      return res.status(404).json({ error: "Product not found. Try searching by name instead." });
+    }
+
+    const p = data.product;
+    const food = {
+      name: p.product_name || "Unknown Product",
+      brand: p.brands || "",
+      barcode: p.code || barcode,
+      imageURL: p.image_front_small_url || "",
+      servingSize: p.serving_size || "100g",
+      nutriScore: p.nutriscore_grade || null,
+      novaGroup: p.nova_group || null,
+      categories: (p.categories_tags || []).slice(0, 3).map(c => c.replace("en:", "")),
+      allergens: (p.allergens_tags || []).map(a => a.replace("en:", "")),
+      per100g: {
+        calories: Math.round(p.nutriments?.["energy-kcal_100g"] || p.nutriments?.["energy-kcal"] || 0),
+        protein: round2(p.nutriments?.proteins_100g || 0),
+        carbs: round2(p.nutriments?.carbohydrates_100g || 0),
+        fat: round2(p.nutriments?.fat_100g || 0),
+        fiber: round2(p.nutriments?.fiber_100g || 0),
+        sugar: round2(p.nutriments?.sugars_100g || 0),
+        salt: round2(p.nutriments?.salt_100g || 0),
+        saturatedFat: round2(p.nutriments?.["saturated-fat_100g"] || 0)
+      }
+    };
+
+    res.json({ found: true, food });
+  } catch (err) {
+    console.error("Barcode lookup error:", err.message);
+    res.status(500).json({ error: "Barcode lookup failed. Please try again." });
+  }
+});
+
 // ── Start ─────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`\nBodySense AI backend listening on port ${PORT}`);
@@ -1375,5 +1473,7 @@ app.listen(PORT, () => {
   console.log(`    POST /doctor/request-payout (AUTH)`);
   console.log(`    GET  /ceo/payouts (CEO)`);
   console.log(`    POST /ceo/trigger-pending-transfers (CEO)`);
+  console.log(`    POST /food-search (Open Food Facts)`);
+  console.log(`    POST /barcode-lookup (Open Food Facts)`);
   console.log(`  AI: ${process.env.ANTHROPIC_API_KEY ? "Configured" : "Not configured (set ANTHROPIC_API_KEY)"}\n`);
 });

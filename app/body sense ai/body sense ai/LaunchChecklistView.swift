@@ -209,7 +209,7 @@ struct LaunchChecklistView: View {
         // Stripe
         LaunchItem(category: "Stripe Setup", title: "Stripe account verified", detail: "Business verification, bank account linked for GBP payouts", priority: .critical),
         LaunchItem(category: "Stripe Setup", title: "Live API keys generated", detail: "Switch from pk_test_ / sk_test_ to pk_live_ / sk_live_", priority: .critical),
-        LaunchItem(category: "Stripe Setup", title: "Products & Prices created", detail: "Pro (£3.99/mo) and Premium (£8.99/mo) — copy Price IDs to app", priority: .critical),
+        LaunchItem(category: "Stripe Setup", title: "Products & Prices created", detail: "Pro (£4.99/mo) and Premium (£8.99/mo) — copy Price IDs to app", priority: .critical),
         LaunchItem(category: "Stripe Setup", title: "Webhook endpoint configured", detail: "api.bodysenseai.co.uk/webhook — listen for payment events", priority: .important),
         LaunchItem(category: "Stripe Setup", title: "Apple Pay domain verified", detail: "Stripe Dashboard → Settings → Apple Pay → Verify domain", priority: .important),
 
