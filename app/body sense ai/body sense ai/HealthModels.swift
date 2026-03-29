@@ -2632,6 +2632,115 @@ struct ChatMessageRecord: Codable, Identifiable {
     var chips           : [String] = []
 }
 
+// MARK: - Proactive Intelligence Models
+
+enum NutrientDepletionSeverity: String, Codable { case low, moderate, high }
+enum BPEscalationTier: String, Codable { case green, amber, red, critical }
+enum GPBridgeUrgency: String, Codable, Comparable {
+    case routine, soon, urgent
+    static func < (lhs: GPBridgeUrgency, rhs: GPBridgeUrgency) -> Bool {
+        let order: [GPBridgeUrgency] = [.routine, .soon, .urgent]
+        return (order.firstIndex(of: lhs) ?? 0) < (order.firstIndex(of: rhs) ?? 0)
+    }
+}
+enum SmartNotificationType: String, Codable {
+    case drugNutrient, bpPattern, glucoseTrend, mealTiming, achievement, gpSuggestion
+}
+enum LifestylePillar: String, Codable, CaseIterable {
+    case nutrition, exercise, sleep, stress, socialConnection, avoidance
+}
+
+struct NutrientDepletion: Codable {
+    let nutrient: String
+    let mechanism: String
+    let mitigation: String
+    let severity: NutrientDepletionSeverity
+}
+
+struct DrugNutrientInteraction: Codable {
+    let genericName: String
+    let depletedNutrients: [NutrientDepletion]
+    let dietaryRestrictions: [String]
+    let timingAdvice: String
+    let monitoringNeeded: [String]
+}
+
+struct RedFlagSymptom: Identifiable, Codable {
+    var id: String { "\(condition)_\(symptom)" }
+    let condition: String
+    let symptom: String
+    let urgency: GPBridgeUrgency
+    let action: String
+}
+
+struct BPEscalationResponse: Codable {
+    let tier: BPEscalationTier
+    let message: String
+    let actions: [String]
+    let shouldNotify: Bool
+    let shouldSuggestGP: Bool
+}
+
+struct GPBridgeReport: Codable {
+    let reason: String
+    let urgency: GPBridgeUrgency
+    let dataToShare: [String]
+    let suggestedQuestions: [String]
+}
+
+struct PlannedMeal: Codable {
+    let type: String          // e.g. "Breakfast", "Lunch", "Dinner", "Snack"
+    let name: String          // e.g. "Scrambled Eggs with Spinach on Rye"
+    let description: String   // e.g. "Low-GI breakfast with protein-rich eggs..."
+    let calories: Int
+    let protein: Double
+    let carbs: Double
+    let fat: Double
+    let reasoning: String
+    let drugFoodWarnings: [String]
+    let ingredients: [String]
+}
+
+struct TomorrowFoodPlan: Codable {
+    let date: Date
+    let meals: [PlannedMeal]
+    let totalCalories: Int
+    let totalProtein: Double
+    let reasoning: String
+    let drugFoodWarnings: [String]
+}
+
+struct SmartHealthNotification: Identifiable, Codable {
+    let id: UUID
+    let type: SmartNotificationType
+    let title: String
+    let message: String
+    let scheduledFor: Date
+    let priority: Int
+
+    init(type: SmartNotificationType, title: String, message: String, scheduledFor: Date, priority: Int) {
+        self.id = UUID()
+        self.type = type
+        self.title = title
+        self.message = message
+        self.scheduledFor = scheduledFor
+        self.priority = priority
+    }
+}
+
+struct LifestylePillarScore: Codable {
+    let pillar: LifestylePillar
+    let score: Double        // 0.0–1.0
+    let label: String        // e.g. "Good", "Needs Attention"
+    let tip: String
+}
+
+struct LifestylePillarScores: Codable {
+    let scores: [LifestylePillarScore]
+    let overallScore: Double
+    let generatedAt: Date
+}
+
 // MARK: - HealthStore (shared observable state)
 
 @Observable
@@ -2708,6 +2817,13 @@ class HealthStore {
     // ── AI Learning Layer 6 & 7 ───────────────────────────────────────────────
     var agentCustomPrompts: [String: String] = [:]  // agentType -> CEO custom prompt addition
     var cachedGlobalPatterns: [AnonymisedHealthPattern] = []  // Downloaded global patterns
+
+    // ── Proactive Intelligence ────────────────────────────────────────────────
+    var tomorrowFoodPlan     : TomorrowFoodPlan?       = nil
+    var gpBridgeReport       : GPBridgeReport?         = nil
+    var lifestylePillarScores: LifestylePillarScores?  = nil
+    var lastBPEscalation     : BPEscalationResponse?   = nil
+    var smartNotifications   : [SmartHealthNotification] = []
 
     // ── Profile ───────────────────────────────────────────────────────────────
     var userProfile      : UserProfile       = UserProfile()

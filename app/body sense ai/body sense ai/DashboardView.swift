@@ -29,6 +29,18 @@ struct DashboardView: View {
                         gettingToKnowYouCard
                         healthScoreCardCollecting
                     }
+                    // BP Escalation banner
+                    if let bpEsc = store.lastBPEscalation, bpEsc.tier != .green {
+                        bpEscalationBanner(bpEsc)
+                    }
+                    // GP Bridge suggestion
+                    if let gpReport = store.gpBridgeReport {
+                        gpBridgeCard(gpReport)
+                    }
+                    // Tomorrow's Food Plan
+                    if let plan = store.tomorrowFoodPlan {
+                        tomorrowFoodPlanCard(plan)
+                    }
                     if !store.unreadAlerts.isEmpty { alertsCard }
                     quickStatsRow
                     calorieNutritionCard
@@ -70,6 +82,111 @@ struct DashboardView: View {
         .sheet(isPresented: $showChat)        { ChatView() }
         .sheet(isPresented: $showHealthScore) { HealthScoreDetailView() }
         .sheet(isPresented: $showNutrition)   { NutritionLogSheet() }
+        .task {
+            // Compute lifestyle pillar scores
+            store.lifestylePillarScores = LifestylePillarKnowledge.computeScores(store: store)
+
+            // Generate tomorrow's food plan (if stale or missing)
+            if store.tomorrowFoodPlan == nil ||
+               store.tomorrowFoodPlan!.date.timeIntervalSinceNow < -12 * 3600 {
+                store.tomorrowFoodPlan = TomorrowFoodPlanEngine.generate(store: store)
+            }
+
+            // Check GP Bridge
+            store.gpBridgeReport = GPBridgeProtocol.shouldSuggestGP(store: store)
+
+            store.save()
+        }
+    }
+
+    // MARK: - BP Escalation Banner
+
+    private func bpEscalationBanner(_ esc: BPEscalationResponse) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: esc.tier == .critical ? "exclamationmark.triangle.fill" :
+                        esc.tier == .red ? "heart.fill" : "heart.text.square")
+                    .foregroundColor(esc.tier == .critical ? .red : esc.tier == .red ? .orange : .yellow)
+                Text(esc.tier == .critical ? "Critical BP Alert" :
+                        esc.tier == .red ? "High BP Alert" : "Elevated BP")
+                    .font(.headline)
+                Spacer()
+            }
+            Text(esc.message)
+                .font(.subheadline).foregroundColor(.secondary)
+            ForEach(esc.actions.prefix(3), id: \.self) { action in
+                Label(action, systemImage: "arrow.right.circle")
+                    .font(.caption).foregroundColor(.primary)
+            }
+        }
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(esc.tier == .critical ? Color.red.opacity(0.12) :
+                        esc.tier == .red ? Color.orange.opacity(0.12) : Color.yellow.opacity(0.12))
+        )
+    }
+
+    // MARK: - GP Bridge Card
+
+    private func gpBridgeCard(_ report: GPBridgeReport) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: "stethoscope").foregroundColor(.brandPurple)
+                Text("Consider a GP Visit").font(.headline)
+                Spacer()
+                Text(report.urgency == .urgent ? "Urgent" : report.urgency == .soon ? "Soon" : "Routine")
+                    .font(.caption).fontWeight(.medium)
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(
+                        Capsule().fill(report.urgency == .urgent ? Color.red.opacity(0.12) :
+                                        report.urgency == .soon ? Color.orange.opacity(0.12) : Color.blue.opacity(0.12))
+                    )
+            }
+            Text(report.reason)
+                .font(.subheadline).foregroundColor(.secondary)
+                .lineLimit(3)
+            if !report.suggestedQuestions.isEmpty {
+                Text("Ask your GP:").font(.caption).fontWeight(.medium).padding(.top, 2)
+                ForEach(report.suggestedQuestions.prefix(2), id: \.self) { q in
+                    Text("• \(q)").font(.caption).foregroundColor(.secondary)
+                }
+            }
+        }
+        .padding()
+        .background(Color(.secondarySystemBackground))
+        .cornerRadius(16)
+        .shadow(color: .black.opacity(0.06), radius: 8, y: 2)
+    }
+
+    // MARK: - Tomorrow's Food Plan Card
+
+    private func tomorrowFoodPlanCard(_ plan: TomorrowFoodPlan) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: "fork.knife").foregroundColor(.green)
+                Text("Tomorrow's Meal Plan").font(.headline)
+                Spacer()
+                Text("\(plan.totalCalories) kcal").font(.caption).foregroundColor(.secondary)
+            }
+            ForEach(plan.meals, id: \.type) { meal in
+                HStack(alignment: .top) {
+                    Text(meal.type).font(.caption).fontWeight(.medium).frame(width: 70, alignment: .leading)
+                    Text(meal.name).font(.caption).foregroundColor(.secondary)
+                }
+            }
+            if !plan.drugFoodWarnings.isEmpty {
+                Divider()
+                ForEach(plan.drugFoodWarnings, id: \.self) { warning in
+                    Label(warning, systemImage: "exclamationmark.circle")
+                        .font(.caption2).foregroundColor(.orange)
+                }
+            }
+        }
+        .padding()
+        .background(Color(.secondarySystemBackground))
+        .cornerRadius(16)
+        .shadow(color: .black.opacity(0.06), radius: 8, y: 2)
     }
 
     private var timeOfDayGreeting: String {

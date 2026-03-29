@@ -229,6 +229,8 @@ struct AddBPSheet: View {
     @State private var pulse     = ""
     @State private var notes     = ""
     @State private var date      = Date()
+    @State private var escalation: BPEscalationResponse?
+    @State private var showEscalation = false
 
     var isValid: Bool { Int(systolic) != nil && Int(diastolic) != nil && Int(pulse) != nil }
 
@@ -255,6 +257,28 @@ struct AddBPSheet: View {
                         .fontWeight(.semibold)
                 }
             }
+            .alert(
+                escalation?.tier == .critical ? "Critically High BP" :
+                escalation?.tier == .red ? "High Blood Pressure" :
+                escalation?.tier == .amber ? "Elevated Blood Pressure" : "Blood Pressure Logged",
+                isPresented: $showEscalation
+            ) {
+                if escalation?.tier == .critical {
+                    Button("Call 999", role: .destructive) {
+                        if let url = URL(string: "tel://999") { UIApplication.shared.open(url) }
+                    }
+                    Button("Call NHS 111") {
+                        if let url = URL(string: "tel://111") { UIApplication.shared.open(url) }
+                    }
+                    Button("I Understand") { dismiss() }
+                } else {
+                    Button("OK") { dismiss() }
+                }
+            } message: {
+                if let esc = escalation {
+                    Text(esc.message + "\n\n" + esc.actions.map { "• \($0)" }.joined(separator: "\n"))
+                }
+            }
         }
     }
 
@@ -269,9 +293,23 @@ struct AddBPSheet: View {
 
     func save() {
         guard let s = Int(systolic), let d = Int(diastolic), let p = Int(pulse) else { return }
-        store.bpReadings.append(BPReading(systolic: s, diastolic: d, pulse: p, date: date, notes: notes))
+        let reading = BPReading(systolic: s, diastolic: d, pulse: p, date: date, notes: notes)
+        store.bpReadings.append(reading)
         store.save()
-        dismiss()
+
+        // BP Escalation — evaluate and show alert for amber/red/critical
+        let response = BPEscalationEngine.evaluate(
+            systolic: s, diastolic: d,
+            recentReadings: store.bpReadings
+        )
+        store.lastBPEscalation = response
+
+        if response.tier == .green {
+            dismiss()
+        } else {
+            escalation = response
+            showEscalation = true
+        }
     }
 }
 

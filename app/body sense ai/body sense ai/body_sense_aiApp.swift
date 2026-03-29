@@ -68,6 +68,9 @@ struct body_sense_aiApp: App {
                             store.updateStreaks()
                             store.save()
                             NotificationService.shared.scheduleSmartReminders(store: store)
+
+                            // Schedule intelligent health notifications (drug-nutrient, BP trends, glucose, etc.)
+                            SmartNotificationEngine.scheduleSmartNotifications(store: store)
                         }
                 }
             }
