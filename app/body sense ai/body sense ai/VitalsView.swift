@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UserNotifications
 
 struct VitalsView: View {
     @Environment(HealthStore.self) var store
@@ -230,55 +231,264 @@ struct AddBPSheet: View {
     @State private var notes     = ""
     @State private var date      = Date()
     @State private var escalation: BPEscalationResponse?
-    @State private var showEscalation = false
+    @State private var saved     = false
 
     var isValid: Bool { Int(systolic) != nil && Int(diastolic) != nil && Int(pulse) != nil }
 
+    /// Was the previous reading (before this one) also elevated?
+    private var isFollowUp: Bool {
+        let recent = store.bpReadings.sorted { $0.date > $1.date }
+        guard recent.count >= 2 else { return false }
+        let prev = recent[1] // the one before the latest
+        return prev.systolic >= 140 || prev.diastolic >= 90
+    }
+
+    /// Previous elevated reading for comparison
+    private var previousReading: BPReading? {
+        let recent = store.bpReadings.sorted { $0.date > $1.date }
+        guard recent.count >= 2 else { return nil }
+        let prev = recent[1]
+        return (prev.systolic >= 140 || prev.diastolic >= 90) ? prev : nil
+    }
+
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Blood Pressure") {
-                    row("Systolic",  $systolic,  "e.g. 120", "mmHg")
-                    row("Diastolic", $diastolic, "e.g. 80",  "mmHg")
-                    row("Pulse",     $pulse,     "e.g. 72",  "bpm")
-                    DatePicker("Date & Time", selection: $date)
+            ScrollView {
+                VStack(spacing: 16) {
+                    // Input form
+                    bpInputCard
+
+                    // Escalation banner (appears after saving a high reading)
+                    if let esc = escalation, saved {
+                        bpEscalationCard(esc)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
                 }
-                Section("Notes (optional)") {
-                    TextField("Any notes…", text: $notes, axis: .vertical).lineLimit(3)
-                }
+                .padding()
             }
+            .background(Color(.systemGroupedBackground))
             .navigationTitle("Log Blood Pressure")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { save() }
-                        .disabled(!isValid)
-                        .fontWeight(.semibold)
+                    if saved {
+                        Button("Done") { dismiss() }.fontWeight(.semibold)
+                    } else {
+                        Button("Save") { save() }
+                            .disabled(!isValid)
+                            .fontWeight(.semibold)
+                    }
                 }
             }
-            .alert(
-                escalation?.tier == .critical ? "Critically High BP" :
-                escalation?.tier == .red ? "High Blood Pressure" :
-                escalation?.tier == .amber ? "Elevated Blood Pressure" : "Blood Pressure Logged",
-                isPresented: $showEscalation
-            ) {
-                if escalation?.tier == .critical {
-                    Button("Call 999", role: .destructive) {
-                        if let url = URL(string: "tel://999") { UIApplication.shared.open(url) }
-                    }
-                    Button("Call NHS 111") {
-                        if let url = URL(string: "tel://111") { UIApplication.shared.open(url) }
-                    }
-                    Button("I Understand") { dismiss() }
-                } else {
-                    Button("OK") { dismiss() }
+            .animation(.spring(duration: 0.4), value: saved)
+        }
+    }
+
+    // MARK: - Input Card
+
+    private var bpInputCard: some View {
+        VStack(spacing: 0) {
+            Group {
+                row("Systolic",  $systolic,  "e.g. 120", "mmHg")
+                Divider().padding(.leading)
+                row("Diastolic", $diastolic, "e.g. 80",  "mmHg")
+                Divider().padding(.leading)
+                row("Pulse",     $pulse,     "e.g. 72",  "bpm")
+                Divider().padding(.leading)
+                DatePicker("Date & Time", selection: $date)
+                    .padding(.horizontal).padding(.vertical, 8)
+                Divider().padding(.leading)
+                HStack {
+                    Text("Notes").foregroundColor(.primary)
+                    TextField("Optional notes…", text: $notes, axis: .vertical)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.trailing)
                 }
-            } message: {
-                if let esc = escalation {
-                    Text(esc.message + "\n\n" + esc.actions.map { "• \($0)" }.joined(separator: "\n"))
+                .padding(.horizontal).padding(.vertical, 8)
+            }
+            .disabled(saved)
+            .opacity(saved ? 0.6 : 1)
+        }
+        .background(Color(.secondarySystemBackground))
+        .cornerRadius(16)
+    }
+
+    // MARK: - Escalation Card
+
+    private func bpEscalationCard(_ esc: BPEscalationResponse) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Header with tier badge
+            HStack(spacing: 10) {
+                Image(systemName: esc.tier == .critical ? "exclamationmark.triangle.fill" :
+                        esc.tier == .red ? "heart.fill" : "heart.text.square.fill")
+                    .font(.title2)
+                    .foregroundColor(tierColor(esc.tier))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(esc.message)
+                        .font(.subheadline).fontWeight(.semibold)
+                    Text("Reading saved successfully")
+                        .font(.caption).foregroundColor(.secondary)
+                }
+                Spacer()
+            }
+
+            Divider()
+
+            // Follow-up comparison (if this is a re-check)
+            if isFollowUp, let prev = previousReading,
+               let s = Int(systolic), let d = Int(diastolic) {
+                followUpComparison(prev: prev, newSys: s, newDia: d, tier: esc.tier)
+                Divider()
+            }
+
+            // Quick tips
+            VStack(alignment: .leading, spacing: 8) {
+                Text(isFollowUp ? "Still elevated? Here's what to do:" : "Try these before re-checking:")
+                    .font(.caption).fontWeight(.semibold).foregroundColor(.secondary)
+
+                tipRow(icon: "wind", color: .blue,
+                       text: "4-7-8 breathing — inhale 4s, hold 7s, exhale 8s. Repeat 4 times.")
+                tipRow(icon: "drop.fill", color: .cyan,
+                       text: "Drink a glass of water. Dehydration can raise BP temporarily.")
+                tipRow(icon: "figure.seated", color: .green,
+                       text: "Sit quietly for 5 minutes with feet flat on the floor.")
+
+                if esc.tier == .red || esc.tier == .critical {
+                    tipRow(icon: "pills.fill", color: .orange,
+                           text: "Check if you've taken your BP medication today.")
+                    tipRow(icon: "cup.and.saucer.fill", color: .brown,
+                           text: "Avoid caffeine and salty food for the rest of the day.")
                 }
             }
+
+            // GP / emergency section
+            if esc.tier == .critical {
+                Divider()
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("This reading needs medical attention")
+                        .font(.caption).fontWeight(.semibold).foregroundColor(.red)
+                    Text("If you have chest pain, severe headache, or vision changes:")
+                        .font(.caption).foregroundColor(.secondary)
+                    HStack(spacing: 12) {
+                        Button {
+                            if let url = URL(string: "tel://999") { UIApplication.shared.open(url) }
+                        } label: {
+                            Label("Call 999", systemImage: "phone.fill")
+                                .font(.subheadline).fontWeight(.semibold)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 10)
+                                .background(Color.red)
+                                .foregroundColor(.white)
+                                .cornerRadius(12)
+                        }
+                        Button {
+                            if let url = URL(string: "tel://111") { UIApplication.shared.open(url) }
+                        } label: {
+                            Label("NHS 111", systemImage: "phone")
+                                .font(.subheadline).fontWeight(.semibold)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 10)
+                                .background(Color.orange)
+                                .foregroundColor(.white)
+                                .cornerRadius(12)
+                        }
+                    }
+                }
+            } else if esc.shouldSuggestGP {
+                Divider()
+                HStack {
+                    Image(systemName: "stethoscope").foregroundColor(.brandPurple)
+                    Text("Consider booking a GP appointment to review your blood pressure.")
+                        .font(.caption).foregroundColor(.secondary)
+                }
+            }
+
+            // Re-check reminder
+            Divider()
+            HStack(spacing: 8) {
+                Image(systemName: "bell.badge.fill").foregroundColor(.brandPurple)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("We'll remind you in 1 hour to re-check")
+                        .font(.caption).fontWeight(.medium)
+                    Text("Rest, hydrate, and breathe — then take another reading to see if it's improved.")
+                        .font(.caption2).foregroundColor(.secondary)
+                }
+            }
+        }
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(tierColor(esc.tier).opacity(0.08))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .strokeBorder(tierColor(esc.tier).opacity(0.3), lineWidth: 1)
+                )
+        )
+    }
+
+    // MARK: - Follow-Up Comparison
+
+    private func followUpComparison(prev: BPReading, newSys: Int, newDia: Int, tier: BPEscalationTier) -> some View {
+        let sysDiff = newSys - prev.systolic
+        let diaDiff = newDia - prev.diastolic
+        let improved = sysDiff < 0 && diaDiff <= 0
+
+        return VStack(alignment: .leading, spacing: 6) {
+            Text("Compared to your last reading:").font(.caption).fontWeight(.semibold).foregroundColor(.secondary)
+            HStack(spacing: 16) {
+                VStack(spacing: 2) {
+                    Text("Before").font(.caption2).foregroundColor(.secondary)
+                    Text("\(prev.systolic)/\(prev.diastolic)")
+                        .font(.subheadline).fontWeight(.semibold).foregroundColor(.orange)
+                }
+                Image(systemName: "arrow.right").foregroundColor(.secondary)
+                VStack(spacing: 2) {
+                    Text("Now").font(.caption2).foregroundColor(.secondary)
+                    Text("\(newSys)/\(newDia)")
+                        .font(.subheadline).fontWeight(.semibold)
+                        .foregroundColor(improved ? .green : tierColor(tier))
+                }
+                Spacer()
+                Text(improved ? "Improving" : sysDiff == 0 ? "Unchanged" : "Still high")
+                    .font(.caption).fontWeight(.medium)
+                    .padding(.horizontal, 10).padding(.vertical, 4)
+                    .background(
+                        Capsule().fill(improved ? Color.green.opacity(0.12) : Color.orange.opacity(0.12))
+                    )
+                    .foregroundColor(improved ? .green : .orange)
+            }
+            if improved && tier == .green {
+                Text("Your BP has come down — well done! Keep up the good habits.")
+                    .font(.caption).foregroundColor(.green)
+            } else if !improved && tier != .green {
+                Text("Still elevated after resting. Consider speaking with your GP this week.")
+                    .font(.caption).foregroundColor(.orange)
+            }
+        }
+    }
+
+    // MARK: - Helpers
+
+    private func tipRow(icon: String, color: Color, text: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: icon)
+                .font(.caption)
+                .foregroundColor(color)
+                .frame(width: 20)
+            Text(text)
+                .font(.caption)
+                .foregroundColor(.primary)
+        }
+    }
+
+    private func tierColor(_ tier: BPEscalationTier) -> Color {
+        switch tier {
+        case .green:    return .green
+        case .amber:    return .yellow
+        case .red:      return .orange
+        case .critical: return .red
         }
     }
 
@@ -289,6 +499,7 @@ struct AddBPSheet: View {
             Spacer()
             Text(unit).foregroundColor(.secondary)
         }
+        .padding(.horizontal).padding(.vertical, 8)
     }
 
     func save() {
@@ -297,7 +508,7 @@ struct AddBPSheet: View {
         store.bpReadings.append(reading)
         store.save()
 
-        // BP Escalation — evaluate and show alert for amber/red/critical
+        // BP Escalation — evaluate and show inline banner for amber/red/critical
         let response = BPEscalationEngine.evaluate(
             systolic: s, diastolic: d,
             recentReadings: store.bpReadings
@@ -305,10 +516,36 @@ struct AddBPSheet: View {
         store.lastBPEscalation = response
 
         if response.tier == .green {
-            dismiss()
+            // Check if this was a follow-up that improved
+            if isFollowUp {
+                escalation = response
+                saved = true
+            } else {
+                dismiss()
+            }
         } else {
             escalation = response
-            showEscalation = true
+            saved = true
+            // Schedule 1-hour follow-up notification
+            scheduleBPFollowUpReminder(systolic: s, diastolic: d)
+        }
+    }
+
+    /// Schedule a local notification in 1 hour to re-check BP
+    private func scheduleBPFollowUpReminder(systolic: Int, diastolic: Int) {
+        let content = UNMutableNotificationContent()
+        content.title = "Time to re-check your BP"
+        content.body = "Your last reading was \(systolic)/\(diastolic). After resting and hydrating, take another reading to see if it's improved."
+        content.sound = .default
+        content.userInfo = ["type": "bpFollowUp", "previousSystolic": systolic, "previousDiastolic": diastolic]
+
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 3600, repeats: false)
+        let request = UNNotificationRequest(identifier: "bp_followup_\(UUID().uuidString)", content: content, trigger: trigger)
+
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error {
+                print("[BPFollowUp] Failed to schedule: \(error.localizedDescription)")
+            }
         }
     }
 }
