@@ -215,6 +215,8 @@ struct HealthPermissionsView: View {
                                 // Enable HealthKit sync in profile
                                 HealthStore.shared.userProfile.healthKitEnabled = true
                                 HealthStore.shared.save()
+                                // Start live observer queries for CGM, HR, steps, BP, SpO2
+                                HealthKitManager.shared.startObserving(store: HealthStore.shared)
                             }
 
                             // ── Notifications ──
@@ -1025,12 +1027,12 @@ struct PatientOnboardingView: View {
         if let location = locationManager.location {
             Task {
                 do {
-                    let request = MKReverseGeocodingRequest(coordinate: location.coordinate)
-                    let results = try await request.start()
+                    let geocoder = CLGeocoder()
+                    let placemarks = try await geocoder.reverseGeocodeLocation(location)
+                    let results = placemarks
                     await MainActor.run {
                         isDetectingLocation = false
-                        if let mapItem = results.first {
-                            let placemark = mapItem.placemark
+                        if let placemark = results.first {
                             if let detectedCountry = placemark.country {
                                 let mapped = CurrencyService.supportedCountries.first {
                                     detectedCountry.contains($0) || $0.contains(detectedCountry)

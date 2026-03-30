@@ -144,24 +144,33 @@ struct BPReading: Codable, Identifiable, Equatable {
     var notes     : String = ""
 
     var category: BPCategory {
-        if systolic < 120 && diastolic < 80 { return .normal }
-        if systolic < 130 && diastolic < 80 { return .elevated }
-        if systolic < 140 || diastolic < 90 { return .high1 }
-        return .high2
+        // NICE CG127 — blood pressure classification
+        // Crisis: ≥180 systolic OR ≥110 diastolic
+        if systolic >= 180 || diastolic >= 110 { return .crisis }
+        // Stage 2: ≥140 systolic OR ≥90 diastolic
+        if systolic >= 140 || diastolic >= 90  { return .stage2 }
+        // Stage 1: 130–139 systolic OR 80–89 diastolic
+        if systolic >= 130 || diastolic > 80   { return .stage1 }
+        // Elevated: 120–129 systolic AND ≤80 diastolic
+        if systolic >= 120                     { return .elevated }
+        // Normal: <120 AND ≤80 (120/80 = Normal)
+        return .normal
     }
 }
 
 enum BPCategory: String {
     case normal   = "Normal"
     case elevated = "Elevated"
-    case high1    = "High (Stage 1)"
-    case high2    = "High (Stage 2)"
+    case stage1   = "High (Stage 1)"
+    case stage2   = "High (Stage 2)"
+    case crisis   = "Crisis"
     var color: Color {
         switch self {
         case .normal:   return .brandGreen
         case .elevated: return .brandAmber
-        case .high1:    return .orange
-        case .high2:    return .brandCoral
+        case .stage1:   return .orange
+        case .stage2:   return .brandCoral
+        case .crisis:   return .red
         }
     }
 }
@@ -2708,6 +2717,29 @@ struct TomorrowFoodPlan: Codable {
     let totalProtein: Double
     let reasoning: String
     let drugFoodWarnings: [String]
+    let generatedAt: Date
+
+    init(date: Date, meals: [PlannedMeal], totalCalories: Int, totalProtein: Double, reasoning: String, drugFoodWarnings: [String], generatedAt: Date = Date()) {
+        self.date = date
+        self.meals = meals
+        self.totalCalories = totalCalories
+        self.totalProtein = totalProtein
+        self.reasoning = reasoning
+        self.drugFoodWarnings = drugFoodWarnings
+        self.generatedAt = generatedAt
+    }
+
+    /// Backwards-compatible decoding: if `generatedAt` is missing (old data), fall back to `date`.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        date = try container.decode(Date.self, forKey: .date)
+        meals = try container.decode([PlannedMeal].self, forKey: .meals)
+        totalCalories = try container.decode(Int.self, forKey: .totalCalories)
+        totalProtein = try container.decode(Double.self, forKey: .totalProtein)
+        reasoning = try container.decode(String.self, forKey: .reasoning)
+        drugFoodWarnings = try container.decode([String].self, forKey: .drugFoodWarnings)
+        generatedAt = try container.decodeIfPresent(Date.self, forKey: .generatedAt) ?? date
+    }
 }
 
 struct SmartHealthNotification: Identifiable, Codable {
@@ -2730,15 +2762,16 @@ struct SmartHealthNotification: Identifiable, Codable {
 
 struct LifestylePillarScore: Codable {
     let pillar: LifestylePillar
-    let score: Double        // 0.0–1.0
-    let label: String        // e.g. "Good", "Needs Attention"
-    let tip: String
+    let score: Double              // 0–100
+    let trend: String              // "improving", "stable", "declining", "unknown"
+    let topInsight: String
+    let recommendation: String
 }
 
 struct LifestylePillarScores: Codable {
     let scores: [LifestylePillarScore]
     let overallScore: Double
-    let generatedAt: Date
+    var generatedAt: Date = Date()
 }
 
 // MARK: - HealthStore (shared observable state)
@@ -3540,6 +3573,8 @@ class HealthStore {
         enc(chatHistories,     key: "chatHistories")
         enc(agentCustomPrompts, key: "agentCustomPrompts")
         enc(cachedGlobalPatterns, key: "cachedGlobalPatterns")
+        enc(lastBPEscalation,    key: "lastBPEscalation")
+        enc(tomorrowFoodPlan,    key: "tomorrowFoodPlan")
         defaults.set(totalXP,  forKey: "totalXP")
         defaults.set(dailyAIMessagesUsed, forKey: "dailyAIMessagesUsed")
         enc(lastAIMessageDate, key: "lastAIMessageDate")
@@ -3785,6 +3820,8 @@ class HealthStore {
         chatHistories     = dec([ChatHistoryRecord].self,   key: "chatHistories")   ?? []
         agentCustomPrompts = dec([String: String].self,       key: "agentCustomPrompts") ?? [:]
         cachedGlobalPatterns = dec([AnonymisedHealthPattern].self, key: "cachedGlobalPatterns") ?? []
+        lastBPEscalation     = dec(BPEscalationResponse.self,    key: "lastBPEscalation")
+        tomorrowFoodPlan     = dec(TomorrowFoodPlan.self,        key: "tomorrowFoodPlan")
         totalXP           = defaults.integer(forKey: "totalXP")
         dailyAIMessagesUsed = defaults.integer(forKey: "dailyAIMessagesUsed")
         lastAIMessageDate   = dec(Date.self, key: "lastAIMessageDate")

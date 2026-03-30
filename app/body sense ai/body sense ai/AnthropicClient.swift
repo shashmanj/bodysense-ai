@@ -172,20 +172,31 @@ actor AIClient {
 
         // Check user preference for on-device AI
         let preferOnDevice = UserDefaults.standard.object(forKey: "preferOnDeviceAI") as? Bool ?? true
+        let onDeviceAvailability = SystemLanguageModel.default.availability
+
+        #if DEBUG
+        print("🧠 [AIClient] preferOnDevice=\(preferOnDevice), availability=\(onDeviceAvailability)")
+        #endif
 
         // Strategy 1: Try on-device if available and preferred
-        if preferOnDevice, case .available = SystemLanguageModel.default.availability {
+        if preferOnDevice, case .available = onDeviceAvailability {
             do {
+                #if DEBUG
+                print("🧠 [AIClient] Trying on-device generation...")
+                #endif
                 return try await generateOnDevice(system: system, history: history, userMessage: userMessage)
             } catch {
                 #if DEBUG
-                print("On-device AI failed, falling back to cloud: \(error.localizedDescription)")
+                print("🧠 [AIClient] On-device FAILED: \(error.localizedDescription), falling back to cloud")
                 #endif
                 // Fall through to cloud fallback
             }
         }
 
-        // Strategy 2: Cloud fallback via OnDeviceAIManager
+        // Strategy 2: Cloud fallback via Railway
+        #if DEBUG
+        print("🌐 [AIClient] Using cloud (Railway) fallback")
+        #endif
         return try await generateViaCloud(system: system, history: history, userMessage: userMessage)
     }
 
@@ -240,7 +251,7 @@ actor AIClient {
     private func generateViaCloud(system: String,
                                    history: [(role: String, content: String)],
                                    userMessage: String) async throws -> String {
-        guard let url = URL(string: "\(backendURL)/ai-chat") else {
+        guard let url = URL(string: "\(backendURL)/ai/chat") else {
             throw AIError.cloudError("Invalid backend URL")
         }
 
@@ -262,32 +273,64 @@ actor AIClient {
         request.timeoutInterval = 30
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        #if DEBUG
+        print("🌐 [AIClient] POST \(url.absoluteString)")
+        #endif
 
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw AIError.cloudError("Invalid server response")
+        // Retry once on network-level failures (Railway cold starts can take 5-15s)
+        var lastError: Error?
+        for attempt in 1...2 {
+            do {
+                let (data, response) = try await URLSession.shared.data(for: request)
+
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    throw AIError.cloudError("Invalid server response")
+                }
+
+                #if DEBUG
+                print("🌐 [AIClient] HTTP \(httpResponse.statusCode) — \(data.count) bytes")
+                if !(200...299).contains(httpResponse.statusCode) {
+                    let errorBody = String(data: data, encoding: .utf8) ?? "(no body)"
+                    print("🌐 [AIClient] ERROR body: \(errorBody)")
+                }
+                #endif
+
+                guard (200...299).contains(httpResponse.statusCode) else {
+                    let errorBody = String(data: data, encoding: .utf8) ?? "Unknown error"
+                    throw AIError.cloudError("Server error \(httpResponse.statusCode): \(errorBody)")
+                }
+
+                // Parse response
+                guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                    throw AIError.cloudError("Failed to parse AI response")
+                }
+
+                if let content = json["response"] as? String { return content }
+                if let content = json["content"] as? String { return content }
+                if let choices = json["choices"] as? [[String: Any]],
+                   let first = choices.first,
+                   let message = first["message"] as? [String: String],
+                   let content = message["content"] {
+                    return content
+                }
+
+                throw AIError.cloudError("Unexpected response format from cloud AI")
+            } catch let error as URLError where attempt == 1 {
+                // Network-level failure on first attempt — retry after delay for Railway cold start
+                #if DEBUG
+                print("🌐 [AIClient] Attempt 1 failed: \(error.localizedDescription), retrying...")
+                #endif
+                lastError = error
+                try await Task.sleep(for: .seconds(2))
+                continue
+            } catch {
+                // Non-URLError (e.g. HTTP 4xx/5xx wrapped in AIError) or second attempt — propagate
+                throw error
+            }
         }
 
-        guard (200...299).contains(httpResponse.statusCode) else {
-            let errorBody = String(data: data, encoding: .utf8) ?? "Unknown error"
-            throw AIError.cloudError("Server error \(httpResponse.statusCode): \(errorBody)")
-        }
-
-        // Parse response
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw AIError.cloudError("Failed to parse AI response")
-        }
-
-        if let content = json["response"] as? String { return content }
-        if let content = json["content"] as? String { return content }
-        if let choices = json["choices"] as? [[String: Any]],
-           let first = choices.first,
-           let message = first["message"] as? [String: String],
-           let content = message["content"] {
-            return content
-        }
-
-        throw AIError.cloudError("Unexpected response format from cloud AI")
+        // Should not reach here, but satisfy compiler
+        throw lastError ?? AIError.cloudError("Request failed after retries")
     }
 }
 

@@ -20,6 +20,13 @@ class HealthKitManager {
     var lastSyncTime: Date?
     var latestSpO2: Double?
 
+    /// Active observer queries — stored to prevent deallocation.
+    private var observerQueries: [HKObserverQuery] = []
+    private var isObserving = false
+
+    /// Weak reference to HealthStore for observer callbacks.
+    private weak var observerHealthStore: HealthStore?
+
     var isAvailable: Bool { HKHealthStore.isHealthDataAvailable() }
 
     // MARK: - Read Types (40+ Health Data Types)
@@ -142,6 +149,147 @@ class HealthKitManager {
             print("⚕️ HealthKit auth error: \(error.localizedDescription)")
             #endif
         }
+    }
+
+    // MARK: - Live Observer Queries
+
+    /// Sets up HKObserverQuery for critical real-time health types so CGM data,
+    /// heart rate, steps, BP, and SpO2 from external devices are detected immediately
+    /// without waiting for the next app launch.
+    /// Call once after authorization succeeds.
+    func startObserving(store: HealthStore) {
+        guard isAuthorized, !isObserving else { return }
+        isObserving = true
+        observerHealthStore = store
+
+        // Critical types to observe in real time
+        let observedTypes: [(HKQuantityTypeIdentifier, HKUpdateFrequency)] = [
+            (.bloodGlucose,          .immediate),  // CGM — Dexcom, Libre
+            (.heartRate,             .hourly),      // Apple Watch
+            (.stepCount,             .hourly),      // Live step counting
+            (.bloodPressureSystolic, .hourly),      // BP monitors
+            (.oxygenSaturation,      .hourly)       // SpO2
+        ]
+
+        for (identifier, frequency) in observedTypes {
+            guard let sampleType = HKQuantityType.quantityType(forIdentifier: identifier) else { continue }
+
+            // Enable background delivery so iOS wakes the app for new samples
+            hkStore.enableBackgroundDelivery(for: sampleType, frequency: frequency) { success, error in
+                #if DEBUG
+                if let error = error {
+                    print("⚕️ Background delivery error for \(identifier.rawValue): \(error.localizedDescription)")
+                } else if success {
+                    print("⚕️ Background delivery enabled for \(identifier.rawValue)")
+                }
+                #endif
+            }
+
+            // Create observer query that fires when new samples arrive
+            let query = HKObserverQuery(sampleType: sampleType, predicate: nil) { [weak self] _, completionHandler, error in
+                guard let self = self, error == nil else {
+                    completionHandler()
+                    return
+                }
+
+                #if DEBUG
+                print("⚕️ Observer fired for \(identifier.rawValue)")
+                #endif
+
+                // Re-fetch the specific data type and update the store
+                Task { @MainActor [weak self] in
+                    guard let self = self, let store = self.observerHealthStore else {
+                        completionHandler()
+                        return
+                    }
+                    await self.handleObserverUpdate(for: identifier, store: store)
+                    completionHandler()
+                }
+            }
+
+            hkStore.execute(query)
+            observerQueries.append(query)
+        }
+
+        #if DEBUG
+        print("⚕️ Live observer queries started for \(observedTypes.count) critical types")
+        #endif
+    }
+
+    /// Handles a single observer callback — re-fetches only the changed type and updates HealthStore.
+    @MainActor
+    private func handleObserverUpdate(for identifier: HKQuantityTypeIdentifier, store: HealthStore) async {
+        let cal = Calendar.current
+        let now = Date()
+
+        switch identifier {
+        case .bloodGlucose:
+            if let glu = await fetchLatestBloodGlucose(), glu > 0 {
+                let alreadyRecent = store.glucoseReadings.first.map {
+                    abs($0.date.timeIntervalSince(now)) < 300  // skip if last reading < 5 min ago
+                } ?? false
+                if !alreadyRecent {
+                    store.glucoseReadings.insert(GlucoseReading(value: glu, date: now, context: .random), at: 0)
+                    store.save()
+                }
+            }
+
+        case .heartRate:
+            if let hr = await fetchLatestHeartRate() {
+                let alreadyToday = store.heartRateReadings.contains { cal.isDateInToday($0.date) && $0.context == .rest }
+                if !alreadyToday {
+                    store.heartRateReadings.insert(HeartRateReading(value: hr, date: now, context: .rest), at: 0)
+                    store.save()
+                }
+            }
+
+        case .stepCount:
+            let steps = await fetchTodaySteps()
+            let distance = await fetchTodayDistance()
+            let calories = await fetchTodayCaloriesBurned()
+            let exercise = await fetchTodayExerciseMinutes()
+            if let idx = store.stepEntries.firstIndex(where: { cal.isDateInToday($0.date) && $0.source == "healthkit" }) {
+                store.stepEntries[idx].steps = steps
+                store.stepEntries[idx].distance = distance
+                store.stepEntries[idx].calories = calories
+                store.stepEntries[idx].activeMinutes = exercise
+                store.save()
+            } else if steps > 0 || distance > 0 || calories > 0 {
+                store.stepEntries.append(StepEntry(
+                    date: now, steps: steps, distance: distance,
+                    calories: calories, activeMinutes: exercise, source: "healthkit"
+                ))
+                store.save()
+            }
+
+        case .bloodPressureSystolic:
+            if let bp = await fetchLatestBloodPressure(), bp.systolic > 0 {
+                let alreadyToday = store.bpReadings.contains { cal.isDateInToday($0.date) }
+                if !alreadyToday {
+                    let hr = await fetchLatestHeartRate()
+                    store.bpReadings.insert(BPReading(
+                        systolic: bp.systolic, diastolic: bp.diastolic,
+                        pulse: hr ?? 72, date: now
+                    ), at: 0)
+                    store.save()
+                }
+            }
+
+        case .oxygenSaturation:
+            if let spo2 = await fetchLatestSpO2(), spo2 > 0 {
+                let alreadyToday = store.spo2Readings.contains { cal.isDateInToday($0.date) }
+                if !alreadyToday {
+                    store.spo2Readings.insert(SpO2Reading(value: spo2, date: now), at: 0)
+                    latestSpO2 = spo2
+                    store.save()
+                }
+            }
+
+        default:
+            break
+        }
+
+        lastSyncTime = Date()
     }
 
     // MARK: - Date Helpers

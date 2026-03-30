@@ -114,7 +114,8 @@ enum TomorrowFoodPlanEngine {
             totalCalories: totalCalories,
             totalProtein: totalProtein,
             reasoning: reasoning,
-            drugFoodWarnings: Array(Set(drugFoodWarnings))
+            drugFoodWarnings: Array(Set(drugFoodWarnings)),
+            generatedAt: Date()
         )
     }
 

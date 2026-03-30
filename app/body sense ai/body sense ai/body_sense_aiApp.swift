@@ -54,6 +54,7 @@ struct body_sense_aiApp: App {
                             let store = HealthStore.shared
                             guard store.userProfile.healthKitEnabled else { return }
                             await HealthKitManager.shared.requestAuthorization()
+                            HealthKitManager.shared.startObserving(store: store)
                             await HealthKitManager.shared.syncAll(to: store)
                         }
                         .task {
@@ -173,6 +174,11 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         // ── Set notification delegate (permission is requested during onboarding) ──
         let center = UNUserNotificationCenter.current()
         center.delegate = self
+
+        // Request notification permission (ensure it's called before scheduling)
+        Task {
+            let _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound])
+        }
 
         // ── Daily morning health check-in — 8 AM ──
         scheduleDailyReminder(
