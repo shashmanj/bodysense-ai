@@ -813,7 +813,7 @@ struct EmbeddedFoodSearchView: View {
             FoodNutritionDetailView(food: food, embedded: true, onFoodLogged: onFoodLogged)
         }
         .sheet(isPresented: $showBarcodeScanner) {
-            BarcodeScannerView(onFoodLogged: onFoodLogged)
+            BarcodeScannerView()
                 .environment(store)
         }
         .onChange(of: searchText) { _, newValue in

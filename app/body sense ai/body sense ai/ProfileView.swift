@@ -219,6 +219,7 @@ struct PatientProfileView: View {
                     if newVal {
                         Task {
                             await HealthKitManager.shared.requestAuthorization()
+                            HealthKitManager.shared.startObserving(store: store)
                             await HealthKitManager.shared.syncAll(to: store)
                         }
                     }

@@ -29,6 +29,18 @@ struct DashboardView: View {
                         gettingToKnowYouCard
                         healthScoreCardCollecting
                     }
+                    // BP Escalation banner
+                    if let bpEsc = store.lastBPEscalation, bpEsc.tier != .green {
+                        bpEscalationBanner(bpEsc)
+                    }
+                    // GP Bridge suggestion
+                    if let gpReport = store.gpBridgeReport {
+                        gpBridgeCard(gpReport)
+                    }
+                    // Tomorrow's Food Plan
+                    if let plan = store.tomorrowFoodPlan {
+                        tomorrowFoodPlanCard(plan)
+                    }
                     if !store.unreadAlerts.isEmpty { alertsCard }
                     quickStatsRow
                     calorieNutritionCard
@@ -69,7 +81,112 @@ struct DashboardView: View {
         .sheet(isPresented: $showAlerts)      { AlertsView() }
         .sheet(isPresented: $showChat)        { ChatView() }
         .sheet(isPresented: $showHealthScore) { HealthScoreDetailView() }
-        .sheet(isPresented: $showNutrition)   { NutritionLogSheet() }
+        .sheet(isPresented: $showNutrition)   { NutritionDashboardView() }
+        .task {
+            // Compute lifestyle pillar scores
+            store.lifestylePillarScores = LifestylePillarKnowledge.computeScores(store: store)
+
+            // Generate tomorrow's food plan (if stale or missing)
+            if store.tomorrowFoodPlan == nil ||
+               store.tomorrowFoodPlan!.generatedAt.timeIntervalSinceNow < -12 * 3600 {
+                store.tomorrowFoodPlan = TomorrowFoodPlanEngine.generate(store: store)
+            }
+
+            // Check GP Bridge
+            store.gpBridgeReport = GPBridgeProtocol.shouldSuggestGP(store: store)
+
+            store.save()
+        }
+    }
+
+    // MARK: - BP Escalation Banner
+
+    private func bpEscalationBanner(_ esc: BPEscalationResponse) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: esc.tier == .critical ? "exclamationmark.triangle.fill" :
+                        esc.tier == .red ? "heart.fill" : "heart.text.square")
+                    .foregroundColor(esc.tier == .critical ? .red : esc.tier == .red ? .orange : .yellow)
+                Text(esc.tier == .critical ? "Critical BP Alert" :
+                        esc.tier == .red ? "High BP Alert" : "Elevated BP")
+                    .font(.headline)
+                Spacer()
+            }
+            Text(esc.message)
+                .font(.subheadline).foregroundColor(.secondary)
+            ForEach(esc.actions.prefix(3), id: \.self) { action in
+                Label(action, systemImage: "arrow.right.circle")
+                    .font(.caption).foregroundColor(.primary)
+            }
+        }
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(esc.tier == .critical ? Color.red.opacity(0.12) :
+                        esc.tier == .red ? Color.orange.opacity(0.12) : Color.yellow.opacity(0.12))
+        )
+    }
+
+    // MARK: - GP Bridge Card
+
+    private func gpBridgeCard(_ report: GPBridgeReport) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: "stethoscope").foregroundColor(.brandPurple)
+                Text("Consider a GP Visit").font(.headline)
+                Spacer()
+                Text(report.urgency == .urgent ? "Urgent" : report.urgency == .soon ? "Soon" : "Routine")
+                    .font(.caption).fontWeight(.medium)
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(
+                        Capsule().fill(report.urgency == .urgent ? Color.red.opacity(0.12) :
+                                        report.urgency == .soon ? Color.orange.opacity(0.12) : Color.blue.opacity(0.12))
+                    )
+            }
+            Text(report.reason)
+                .font(.subheadline).foregroundColor(.secondary)
+                .lineLimit(3)
+            if !report.suggestedQuestions.isEmpty {
+                Text("Ask your GP:").font(.caption).fontWeight(.medium).padding(.top, 2)
+                ForEach(report.suggestedQuestions.prefix(2), id: \.self) { q in
+                    Text("• \(q)").font(.caption).foregroundColor(.secondary)
+                }
+            }
+        }
+        .padding()
+        .background(Color(.secondarySystemBackground))
+        .cornerRadius(16)
+        .shadow(color: .black.opacity(0.06), radius: 8, y: 2)
+    }
+
+    // MARK: - Tomorrow's Food Plan Card
+
+    private func tomorrowFoodPlanCard(_ plan: TomorrowFoodPlan) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: "fork.knife").foregroundColor(.green)
+                Text("Tomorrow's Meal Plan").font(.headline)
+                Spacer()
+                Text("\(plan.totalCalories) kcal").font(.caption).foregroundColor(.secondary)
+            }
+            ForEach(plan.meals, id: \.type) { meal in
+                HStack(alignment: .top) {
+                    Text(meal.type).font(.caption).fontWeight(.medium).frame(width: 70, alignment: .leading)
+                    Text(meal.name).font(.caption).foregroundColor(.secondary)
+                }
+            }
+            if !plan.drugFoodWarnings.isEmpty {
+                Divider()
+                ForEach(plan.drugFoodWarnings, id: \.self) { warning in
+                    Label(warning, systemImage: "exclamationmark.circle")
+                        .font(.caption2).foregroundColor(.orange)
+                }
+            }
+        }
+        .padding()
+        .background(Color(.secondarySystemBackground))
+        .cornerRadius(16)
+        .shadow(color: .black.opacity(0.06), radius: 8, y: 2)
     }
 
     private var timeOfDayGreeting: String {
@@ -338,67 +455,70 @@ struct DashboardView: View {
     // MARK: - Calorie & Nutrition Card
     var calorieNutritionCard: some View {
         Button { showNutrition = true } label: {
-        BSCard {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                Label("Nutrition Today", systemImage: "fork.knife.circle.fill")
-                    .font(.subheadline.weight(.semibold)).foregroundColor(.brandAmber)
-                Spacer()
-                Image(systemName: "chevron.right").font(.caption).foregroundColor(.secondary)
-                }
-
-                let todayLogs = store.nutritionLogs.filter { Calendar.current.isDateInToday($0.date) }
-                let totalCals  = todayLogs.map { $0.calories }.reduce(0, +)
-                let totalCarbs = todayLogs.map { $0.carbs }.reduce(0, +)
-                let totalProt  = todayLogs.map { $0.protein }.reduce(0, +)
-                let totalFat   = todayLogs.map { $0.fat }.reduce(0, +)
-                let calorieGoal = 2000
-
-                if todayLogs.isEmpty {
-                    VStack(spacing: 8) {
-                        Image(systemName: "fork.knife")
-                            .font(.title2).foregroundColor(Color(.tertiaryLabel))
-                        Text("No meals logged today")
-                            .font(.subheadline).foregroundColor(.secondary)
-                        Text("Tap to log your nutrition")
-                            .font(.caption).foregroundColor(Color(.tertiaryLabel))
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 60)
-                } else {
+            BSCard {
+                VStack(alignment: .leading, spacing: 10) {
                     HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("\(totalCals) / \(calorieGoal) kcal")
-                                .font(.title2).fontWeight(.bold).foregroundColor(.brandAmber)
-                            Text("\(calorieGoal - totalCals > 0 ? "\(calorieGoal - totalCals) kcal remaining" : "Goal reached!")")
-                                .font(.caption).foregroundColor(.secondary)
-                        }
+                        Label("Nutrition Today", systemImage: "fork.knife.circle.fill")
+                            .font(.subheadline.weight(.semibold)).foregroundColor(.brandAmber)
                         Spacer()
-                        ZStack {
-                            Circle().stroke(Color.brandAmber.opacity(0.2), lineWidth: 8)
-                            Circle().trim(from: 0, to: min(Double(totalCals) / Double(calorieGoal), 1.0))
-                                .stroke(Color.brandAmber, style: StrokeStyle(lineWidth: 8, lineCap: .round))
-                                .rotationEffect(.degrees(-90))
-                            Text("\(min(Int(Double(totalCals) / Double(calorieGoal) * 100), 100))%")
-                                .font(.caption.bold()).foregroundColor(.brandAmber)
-                        }
-                        .frame(width: 56, height: 56)
+                        Image(systemName: "chevron.right").font(.caption).foregroundColor(.secondary)
                     }
 
-                    // Macro pills
-                    HStack(spacing: 10) {
-                        macroPill("Carbs", value: "\(Int(totalCarbs))g", color: .brandTeal)
-                        macroPill("Protein", value: "\(Int(totalProt))g", color: .brandPurple)
-                        macroPill("Fat", value: "\(Int(totalFat))g", color: .brandAmber)
-                        macroPill("Meals", value: "\(todayLogs.count)", color: .brandGreen)
+                    let todayLogs = store.nutritionLogs.filter { Calendar.current.isDateInToday($0.date) }
+                    let totalCals  = todayLogs.map(\.calories).reduce(0, +)
+                    let totalCarbs = todayLogs.map(\.carbs).reduce(0, +)
+                    let totalProt  = todayLogs.map(\.protein).reduce(0, +)
+                    let totalFat   = todayLogs.map(\.fat).reduce(0, +)
+                    let calGoal = store.userProfile.dailyCalorieGoal
+                    let left = max(calGoal - totalCals, 0)
+
+                    if todayLogs.isEmpty {
+                        VStack(spacing: 8) {
+                            Image(systemName: "fork.knife")
+                                .font(.title2).foregroundColor(Color(.tertiaryLabel))
+                            Text("No meals logged today")
+                                .font(.subheadline).foregroundColor(.secondary)
+                            Text("Tap to log your nutrition")
+                                .font(.caption).foregroundColor(Color(.tertiaryLabel))
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 60)
+                    } else {
+                        HStack(spacing: 16) {
+                            ZStack {
+                                NutritionRing(value: Double(totalCals), goal: Double(calGoal),
+                                              color: .brandAmber, size: 64, lineWidth: 7)
+                                VStack(spacing: 1) {
+                                    Text("\(left)")
+                                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                                    Text("left")
+                                        .font(.system(size: 8)).foregroundColor(.secondary)
+                                }
+                            }
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("\(totalCals) / \(calGoal) kcal")
+                                    .font(.headline).fontWeight(.bold).foregroundColor(.brandAmber)
+                                Text(left > 0 ? "\(left) kcal remaining" : "Goal reached!")
+                                    .font(.caption).foregroundColor(.secondary)
+                            }
+                            Spacer()
+                        }
+
+                        // Macro pills
+                        HStack(spacing: 10) {
+                            macroPill("Protein", value: "\(Int(totalProt))g", color: .brandTeal)
+                            macroPill("Carbs", value: "\(Int(totalCarbs))g", color: .brandCoral)
+                            macroPill("Fat", value: "\(Int(totalFat))g", color: .brandAmber)
+                            macroPill("Meals", value: "\(todayLogs.count)", color: .brandGreen)
+                        }
                     }
                 }
             }
         }
-        }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Nutrition today, \(todayCalories) calories consumed")
-        .accessibilityHint("View detailed nutrition log")
+        .accessibilityHint("View detailed nutrition dashboard")
     }
 
     func macroPill(_ label: String, value: String, color: Color) -> some View {

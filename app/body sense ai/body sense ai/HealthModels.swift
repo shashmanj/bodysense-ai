@@ -144,24 +144,33 @@ struct BPReading: Codable, Identifiable, Equatable {
     var notes     : String = ""
 
     var category: BPCategory {
-        if systolic < 120 && diastolic < 80 { return .normal }
-        if systolic < 130 && diastolic < 80 { return .elevated }
-        if systolic < 140 || diastolic < 90 { return .high1 }
-        return .high2
+        // NICE CG127 — blood pressure classification
+        // Crisis: ≥180 systolic OR ≥110 diastolic
+        if systolic >= 180 || diastolic >= 110 { return .crisis }
+        // Stage 2: ≥140 systolic OR ≥90 diastolic
+        if systolic >= 140 || diastolic >= 90  { return .stage2 }
+        // Stage 1: 130–139 systolic OR 80–89 diastolic
+        if systolic >= 130 || diastolic > 80   { return .stage1 }
+        // Elevated: 120–129 systolic AND ≤80 diastolic
+        if systolic >= 120                     { return .elevated }
+        // Normal: <120 AND ≤80 (120/80 = Normal)
+        return .normal
     }
 }
 
 enum BPCategory: String {
     case normal   = "Normal"
     case elevated = "Elevated"
-    case high1    = "High (Stage 1)"
-    case high2    = "High (Stage 2)"
+    case stage1   = "High (Stage 1)"
+    case stage2   = "High (Stage 2)"
+    case crisis   = "Crisis"
     var color: Color {
         switch self {
         case .normal:   return .brandGreen
         case .elevated: return .brandAmber
-        case .high1:    return .orange
-        case .high2:    return .brandCoral
+        case .stage1:   return .orange
+        case .stage2:   return .brandCoral
+        case .crisis:   return .red
         }
     }
 }
@@ -2632,6 +2641,139 @@ struct ChatMessageRecord: Codable, Identifiable {
     var chips           : [String] = []
 }
 
+// MARK: - Proactive Intelligence Models
+
+enum NutrientDepletionSeverity: String, Codable { case low, moderate, high }
+enum BPEscalationTier: String, Codable { case green, amber, red, critical }
+enum GPBridgeUrgency: String, Codable, Comparable {
+    case routine, soon, urgent
+    static func < (lhs: GPBridgeUrgency, rhs: GPBridgeUrgency) -> Bool {
+        let order: [GPBridgeUrgency] = [.routine, .soon, .urgent]
+        return (order.firstIndex(of: lhs) ?? 0) < (order.firstIndex(of: rhs) ?? 0)
+    }
+}
+enum SmartNotificationType: String, Codable {
+    case drugNutrient, bpPattern, glucoseTrend, mealTiming, achievement, gpSuggestion
+}
+enum LifestylePillar: String, Codable, CaseIterable {
+    case nutrition, exercise, sleep, stress, socialConnection, avoidance
+}
+
+struct NutrientDepletion: Codable {
+    let nutrient: String
+    let mechanism: String
+    let mitigation: String
+    let severity: NutrientDepletionSeverity
+}
+
+struct DrugNutrientInteraction: Codable {
+    let genericName: String
+    let depletedNutrients: [NutrientDepletion]
+    let dietaryRestrictions: [String]
+    let timingAdvice: String
+    let monitoringNeeded: [String]
+}
+
+struct RedFlagSymptom: Identifiable, Codable {
+    var id: String { "\(condition)_\(symptom)" }
+    let condition: String
+    let symptom: String
+    let urgency: GPBridgeUrgency
+    let action: String
+}
+
+struct BPEscalationResponse: Codable {
+    let tier: BPEscalationTier
+    let message: String
+    let actions: [String]
+    let shouldNotify: Bool
+    let shouldSuggestGP: Bool
+}
+
+struct GPBridgeReport: Codable {
+    let reason: String
+    let urgency: GPBridgeUrgency
+    let dataToShare: [String]
+    let suggestedQuestions: [String]
+}
+
+struct PlannedMeal: Codable {
+    let type: String          // e.g. "Breakfast", "Lunch", "Dinner", "Snack"
+    let name: String          // e.g. "Scrambled Eggs with Spinach on Rye"
+    let description: String   // e.g. "Low-GI breakfast with protein-rich eggs..."
+    let calories: Int
+    let protein: Double
+    let carbs: Double
+    let fat: Double
+    let reasoning: String
+    let drugFoodWarnings: [String]
+    let ingredients: [String]
+}
+
+struct TomorrowFoodPlan: Codable {
+    let date: Date
+    let meals: [PlannedMeal]
+    let totalCalories: Int
+    let totalProtein: Double
+    let reasoning: String
+    let drugFoodWarnings: [String]
+    let generatedAt: Date
+
+    init(date: Date, meals: [PlannedMeal], totalCalories: Int, totalProtein: Double, reasoning: String, drugFoodWarnings: [String], generatedAt: Date = Date()) {
+        self.date = date
+        self.meals = meals
+        self.totalCalories = totalCalories
+        self.totalProtein = totalProtein
+        self.reasoning = reasoning
+        self.drugFoodWarnings = drugFoodWarnings
+        self.generatedAt = generatedAt
+    }
+
+    /// Backwards-compatible decoding: if `generatedAt` is missing (old data), fall back to `date`.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        date = try container.decode(Date.self, forKey: .date)
+        meals = try container.decode([PlannedMeal].self, forKey: .meals)
+        totalCalories = try container.decode(Int.self, forKey: .totalCalories)
+        totalProtein = try container.decode(Double.self, forKey: .totalProtein)
+        reasoning = try container.decode(String.self, forKey: .reasoning)
+        drugFoodWarnings = try container.decode([String].self, forKey: .drugFoodWarnings)
+        generatedAt = try container.decodeIfPresent(Date.self, forKey: .generatedAt) ?? date
+    }
+}
+
+struct SmartHealthNotification: Identifiable, Codable {
+    let id: UUID
+    let type: SmartNotificationType
+    let title: String
+    let message: String
+    let scheduledFor: Date
+    let priority: Int
+
+    init(type: SmartNotificationType, title: String, message: String, scheduledFor: Date, priority: Int) {
+        self.id = UUID()
+        self.type = type
+        self.title = title
+        self.message = message
+        self.scheduledFor = scheduledFor
+        self.priority = priority
+    }
+}
+
+struct LifestylePillarScore: Codable {
+    let pillar: LifestylePillar
+    let score: Double              // 0–100
+    let trend: String              // "improving", "stable", "declining", "unknown"
+    let topInsight: String
+    let recommendation: String
+}
+
+struct LifestylePillarScores: Codable {
+    let scores: [LifestylePillarScore]
+    let overallScore: Double
+    var generatedAt: Date = Date()
+}
+
 // MARK: - HealthStore (shared observable state)
 
 @Observable
@@ -2708,6 +2850,13 @@ class HealthStore {
     // ── AI Learning Layer 6 & 7 ───────────────────────────────────────────────
     var agentCustomPrompts: [String: String] = [:]  // agentType -> CEO custom prompt addition
     var cachedGlobalPatterns: [AnonymisedHealthPattern] = []  // Downloaded global patterns
+
+    // ── Proactive Intelligence ────────────────────────────────────────────────
+    var tomorrowFoodPlan     : TomorrowFoodPlan?       = nil
+    var gpBridgeReport       : GPBridgeReport?         = nil
+    var lifestylePillarScores: LifestylePillarScores?  = nil
+    var lastBPEscalation     : BPEscalationResponse?   = nil
+    var smartNotifications   : [SmartHealthNotification] = []
 
     // ── Profile ───────────────────────────────────────────────────────────────
     var userProfile      : UserProfile       = UserProfile()
@@ -3424,6 +3573,8 @@ class HealthStore {
         enc(chatHistories,     key: "chatHistories")
         enc(agentCustomPrompts, key: "agentCustomPrompts")
         enc(cachedGlobalPatterns, key: "cachedGlobalPatterns")
+        enc(lastBPEscalation,    key: "lastBPEscalation")
+        enc(tomorrowFoodPlan,    key: "tomorrowFoodPlan")
         defaults.set(totalXP,  forKey: "totalXP")
         defaults.set(dailyAIMessagesUsed, forKey: "dailyAIMessagesUsed")
         enc(lastAIMessageDate, key: "lastAIMessageDate")
@@ -3669,6 +3820,8 @@ class HealthStore {
         chatHistories     = dec([ChatHistoryRecord].self,   key: "chatHistories")   ?? []
         agentCustomPrompts = dec([String: String].self,       key: "agentCustomPrompts") ?? [:]
         cachedGlobalPatterns = dec([AnonymisedHealthPattern].self, key: "cachedGlobalPatterns") ?? []
+        lastBPEscalation     = dec(BPEscalationResponse.self,    key: "lastBPEscalation")
+        tomorrowFoodPlan     = dec(TomorrowFoodPlan.self,        key: "tomorrowFoodPlan")
         totalXP           = defaults.integer(forKey: "totalXP")
         dailyAIMessagesUsed = defaults.integer(forKey: "dailyAIMessagesUsed")
         lastAIMessageDate   = dec(Date.self, key: "lastAIMessageDate")

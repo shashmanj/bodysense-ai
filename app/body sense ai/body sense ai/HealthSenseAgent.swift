@@ -127,6 +127,7 @@ struct AnonymisedHealthPattern: Codable, Identifiable {
 
 // MARK: - Health Sense Agent
 
+@MainActor
 @Observable
 class HealthSenseAgent {
 
@@ -270,7 +271,8 @@ class HealthSenseAgent {
 
             return (finalReply, domain, chips)
         } catch {
-            print("⚠️ HealthSenseAgent API error: \(error.localizedDescription)")
+            print("⚠️ HealthSenseAgent API error: \(error.localizedDescription) — full: \(error)")
+            print("⚠️ Falling back to local synthesised response for domain: \(domain)")
             isThinking = false
 
             // Intelligent fallback — synthesise from memory + health data
@@ -486,6 +488,14 @@ class HealthSenseAgent {
         • For emergencies: ALWAYS say "Call 999 / 911 immediately" first.
         • Never diagnose — educate thoroughly, then recommend seeing a doctor when appropriate.
         """
+
+        // Guard against excessive token usage (~2000 tokens safe for Haiku)
+        if prompt.count > 8000 {
+            #if DEBUG
+            print("⚠️ [HealthSenseAgent] System prompt too long (\(prompt.count) chars), trimming to 8000")
+            #endif
+            prompt = String(prompt.prefix(8000)) + "\n[Context trimmed for brevity]"
+        }
 
         return prompt
     }

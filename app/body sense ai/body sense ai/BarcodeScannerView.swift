@@ -206,7 +206,7 @@ final class BarcodeScannerCoordinator: NSObject, AVCaptureMetadataOutputObjectsD
 
 // MARK: - Camera Preview (UIViewRepresentable)
 
-struct CameraPreviewView: UIViewRepresentable {
+struct BarcodeCameraPreviewView: UIViewRepresentable {
     let session: AVCaptureSession
 
     func makeUIView(context: Context) -> UIView {
@@ -552,7 +552,7 @@ struct ScannedProductView: View {
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.orange)
 
-            FlowLayout(spacing: 6) {
+            BarcodeFlowLayout(spacing: 6) {
                 ForEach(allergenWarnings, id: \.self) { allergen in
                     Text(allergen.capitalized)
                         .font(.caption.weight(.medium))
@@ -668,7 +668,7 @@ struct ScannedProductView: View {
 
 // MARK: - Flow Layout (for allergen tags)
 
-private struct FlowLayout: Layout {
+private struct BarcodeFlowLayout: Layout {
     var spacing: CGFloat = 6
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
@@ -777,7 +777,7 @@ struct BarcodeScannerView: View {
 
     private var scannerView: some View {
         ZStack {
-            CameraPreviewView(session: coordinator.captureSession)
+            BarcodeCameraPreviewView(session: coordinator.captureSession)
                 .ignoresSafeArea()
 
             ScanningOverlayView()

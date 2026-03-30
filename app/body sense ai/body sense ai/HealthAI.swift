@@ -38,6 +38,7 @@ struct ChatMessage: Identifiable, Equatable {
 
 // MARK: - AI Engine
 
+@MainActor
 @Observable
 class HealthAIEngine {
 
@@ -726,10 +727,12 @@ class HealthAIEngine {
             reply += "✅ **Excellent BP control.** Keep up the low-sodium diet, regular exercise, and healthy weight.\n\n"
         case .elevated:
             reply += "🟡 **Slightly elevated.** Reduce salt (aim <2g/day), limit caffeine, and try 5 deep breaths. Re-check in 30 min.\n\n"
-        case .high1:
+        case .stage1:
             reply += "🟠 **Stage 1 hypertension.** If prescribed BP medication, check you've taken it. Avoid caffeine and salty foods today. Rest and re-check.\n\n"
-        case .high2:
+        case .stage2:
             reply += "🔴 **Stage 2 hypertension — act now.** Sit and rest. If you have a headache, chest pain, or visual changes, go to A&E immediately.\n\n"
+        case .crisis:
+            reply += "🚨 **Hypertensive crisis — seek immediate help.** Call 999 or go to A&E now if you have chest pain, severe headache, blurred vision, or breathlessness.\n\n"
         }
 
         reply += "**DASH Diet for BP (proven to lower by 8–14 mmHg):**\n"

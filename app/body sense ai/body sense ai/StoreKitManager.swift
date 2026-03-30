@@ -58,7 +58,7 @@ final class StoreKitManager {
     // MARK: - Transaction Listener
 
     /// Transaction listener task.
-    private var transactionListener: Task<Void, Error>?
+    nonisolated(unsafe) private var transactionListener: Task<Void, Error>?
 
     // MARK: - Init
 
