@@ -1,5 +1,5 @@
 // BodySense AI — Node.js Backend (Production-Ready)
-// Stripe payments + Firebase + GDPR + CEO Metrics + Push Notifications
+// Stripe payments + Firebase + GDPR + CEO Metrics + Push Notifications + Structured AI
 // Deploy to: Railway / Render / Heroku / VPS
 //
 // ── SETUP ──────────────────────────────────────────────────────────────────
