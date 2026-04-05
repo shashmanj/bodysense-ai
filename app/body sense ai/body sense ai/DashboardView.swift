@@ -25,6 +25,8 @@ struct DashboardView: View {
     @State private var showQuickBP      = false
     @State private var showQuickMeal    = false
     @State private var showQuickWater   = false
+    @State private var insightCards: [InsightCard] = []
+    @State private var isLoadingInsights = false
     @AppStorage("detailsExpanded") private var detailsExpanded = true
 
     var body: some View {
@@ -69,6 +71,13 @@ struct DashboardView: View {
 
                     // ── Quick Stats ──
                     quickStatsRow
+
+                    // ── AI Insight Feed ──
+                    if !insightCards.isEmpty {
+                        insightFeedSection
+                    } else if hasMinimumData {
+                        TipsCardView()
+                    }
 
                     // ── Today's Details (collapsible) ──
                     detailsSection
@@ -127,6 +136,21 @@ struct DashboardView: View {
             store.gpBridgeReport = GPBridgeProtocol.shouldSuggestGP(store: store)
 
             store.save()
+
+            // Generate proactive insight cards (async, non-blocking)
+            if insightCards.isEmpty {
+                isLoadingInsights = true
+                let cards = await ProactiveInsightEngine.dailySummary(store: store)
+                let now = Date()
+                insightCards = cards.filter { card in
+                    if let expires = card.expiresAt { return expires > now }
+                    return true
+                }
+                // Persist to store
+                store.insightCards = insightCards
+                store.save()
+                isLoadingInsights = false
+            }
         }
     }
 
@@ -295,6 +319,96 @@ struct DashboardView: View {
                 }
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
+        }
+    }
+
+    // MARK: - AI Insight Feed
+
+    private var insightFeedSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "brain.head.profile")
+                    .foregroundColor(.brandPurple)
+                Text("Health Intelligence")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                if isLoadingInsights {
+                    ProgressView()
+                        .scaleEffect(0.7)
+                }
+            }
+
+            ForEach(insightCards.filter { !$0.dismissed }) { card in
+                insightCardView(card)
+            }
+        }
+    }
+
+    private func insightCardView(_ card: InsightCard) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(severityColor(card.severity))
+                    .frame(width: 8, height: 8)
+                Text(card.title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+                Spacer()
+                Image(systemName: insightTypeIcon(card.type))
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Text(card.body)
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let evidence = card.evidence {
+                Text(evidence)
+                    .font(.caption2)
+                    .foregroundColor(Color(.tertiaryLabel))
+                    .italic()
+            }
+
+            if let action = card.action {
+                Button {
+                    // Deep link handling — can be extended
+                } label: {
+                    Text(action.label)
+                        .font(.caption.weight(.medium))
+                        .foregroundColor(.brandPurple)
+                }
+            }
+        }
+        .padding()
+        .background(severityColor(card.severity).opacity(0.06))
+        .cornerRadius(16)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(severityColor(card.severity).opacity(0.15), lineWidth: 1)
+        )
+    }
+
+    private func severityColor(_ severity: InsightSeverity) -> Color {
+        switch severity {
+        case .info: return .brandPurple
+        case .success: return .brandGreen
+        case .warning: return .orange
+        case .critical: return .red
+        }
+    }
+
+    private func insightTypeIcon(_ type: InsightCardType) -> String {
+        switch type {
+        case .insight: return "lightbulb.fill"
+        case .alert: return "exclamationmark.triangle.fill"
+        case .motivation: return "star.fill"
+        case .summary: return "chart.bar.fill"
+        case .mealFeedback: return "fork.knife"
+        case .labReview: return "flask.fill"
+        case .medicationReminder: return "pill.fill"
         }
     }
 

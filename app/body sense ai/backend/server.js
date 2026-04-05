@@ -900,6 +900,80 @@ After the <actions> block, write your normal conversational response. Be warm, k
   }
 });
 
+// ═══════════════════════════════════════════════════════════
+// POST /ai/insights — Proactive Health Intelligence Engine
+// ═══════════════════════════════════════════════════════════
+app.post('/ai/insights', async (req, res) => {
+  try {
+    const { patientContext, currentEvent, userEmail } = req.body;
+    if (!patientContext || !currentEvent) {
+      return res.status(400).json({ error: 'patientContext and currentEvent are required' });
+    }
+
+    const systemPrompt = `You are BodySense AI — a proactive health intelligence layer for UK chronic disease patients. You are NOT a chatbot. You receive a patient's full health context and a triggering event, then return structured InsightCard JSON.
+
+CLINICAL GUIDELINES (HARD CONSTRAINTS - UK NICE):
+- CKD CG182/NG203: Stage-appropriate protein, potassium, phosphorus, sodium limits
+- T2D NG28: HbA1c target 48 mmol/mol, fasting 4-7 mmol/L, post-meal <8.5 mmol/L
+- Hypertension NG136: Home BP <135/85, sodium <2300mg/day
+
+EMERGENCY ESCALATION (set emergencyFlag: true):
+- Glucose <3.5 or >20 mmol/L, BP >180/120, eGFR drop >25% in 3 months
+- Potassium >6.0, SpO2 <92%, HR >150 rest or <40
+- Always include: "Contact your GP, call NHS 111, or call 999 if you feel unwell."
+
+TONE: Warm, specific, data-driven. Reference actual values. 1-3 sentences per card body. Never generic.
+
+CULTURAL AWARENESS: Make food substitutions within the user's cultural cuisine. Respect religious fasting windows. Never tell a fasting user to eat.
+
+MEDICATION INTELLIGENCE: Flag food-drug interactions. Never suggest starting/stopping/changing doses.
+
+CORRELATION: Look for sleep↔glucose, steps↔BP, stress↔glucose, meal timing↔fasting glucose patterns.
+
+RESPOND WITH ONLY THIS JSON (no markdown, no explanation):
+{
+  "insightCards": [{
+    "id": "ins_{date}_{trigger}_{topic}",
+    "type": "insight|alert|motivation|summary|meal_feedback|lab_review|medication_reminder",
+    "severity": "info|success|warning|critical",
+    "title": "max 60 chars",
+    "body": "1-3 sentences, personalised, actionable",
+    "evidence": "NICE guideline reference or null",
+    "action": { "label": "string", "deepLink": "string" } or null,
+    "expiresAt": "ISO 8601",
+    "relatedMetrics": ["string array"]
+  }],
+  "updatedTargets": null,
+  "emergencyFlag": false
+}
+
+Return 1-4 cards per trigger. For hourly sweeps with nothing to report: { "insightCards": [], "updatedTargets": null, "emergencyFlag": false }
+In daily_summary cards append: "This guidance supports your care plan. Always consult your healthcare team before making changes to medication or treatment."`;
+
+    const userMessage = JSON.stringify({ patientContext, currentEvent });
+
+    const response = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1500,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userMessage }]
+    });
+
+    const text = response.content[0]?.text || '{}';
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      parsed = { insightCards: [], updatedTargets: null, emergencyFlag: false };
+    }
+
+    res.json(parsed);
+  } catch (err) {
+    console.error('Insight generation error:', err.message);
+    res.status(500).json({ error: 'Insight generation failed' });
+  }
+});
+
 // ── GMC Live Verification ──────────────────────────────────────────────
 app.post("/verify-gmc", async (req, res) => {
   try {
@@ -1656,6 +1730,7 @@ app.listen(PORT, () => {
   console.log(`    DELETE /gdpr/delete (AUTH)`);
   console.log(`    POST /ai/chat (AI proxy → Anthropic)`);
   console.log(`    POST /ai/structured-chat (Claude as Brain)`);
+  console.log('    POST /ai/insights          (Proactive Health Intelligence)');
   console.log(`    POST /ai/upload-patterns (Layer 6)`);
   console.log(`    GET  /ai/global-patterns (Layer 6)`);
   console.log(`    POST /verify-gmc (GMC live lookup)`);
