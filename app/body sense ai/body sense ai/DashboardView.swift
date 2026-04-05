@@ -21,6 +21,11 @@ struct DashboardView: View {
     @State private var currentMood: HealthMood?
     @State private var showNudge       = false
     @State private var nudgeText: String?
+    @State private var showQuickGlucose = false
+    @State private var showQuickBP      = false
+    @State private var showQuickMeal    = false
+    @State private var showQuickWater   = false
+    @AppStorage("detailsExpanded") private var detailsExpanded = true
 
     var body: some View {
         NavigationStack {
@@ -37,34 +42,36 @@ struct DashboardView: View {
                         mascotNudgeCard(nudge)
                     }
 
+                    // ── Quick Actions Bar ──
+                    quickActionsBar
+
+                    // ── Priority Cards ──
+                    if let bpEsc = store.lastBPEscalation, bpEsc.tier != .green {
+                        bpEscalationBanner(bpEsc)
+                    }
+                    if let gpReport = store.gpBridgeReport {
+                        gpBridgeCard(gpReport)
+                    }
+                    if !store.unreadAlerts.isEmpty { alertsCard }
+
+                    // ── Health Score ──
                     if hasMinimumData {
                         healthScoreCard
-                        TipsCardView()
                     } else {
                         gettingToKnowYouCard
                         healthScoreCardCollecting
                     }
-                    // BP Escalation banner
-                    if let bpEsc = store.lastBPEscalation, bpEsc.tier != .green {
-                        bpEscalationBanner(bpEsc)
-                    }
-                    // GP Bridge suggestion
-                    if let gpReport = store.gpBridgeReport {
-                        gpBridgeCard(gpReport)
-                    }
-                    // Tomorrow's Food Plan
+
+                    // ── Tomorrow's Food Plan ──
                     if let plan = store.tomorrowFoodPlan {
                         tomorrowFoodPlanCard(plan)
                     }
-                    if !store.unreadAlerts.isEmpty { alertsCard }
+
+                    // ── Quick Stats ──
                     quickStatsRow
-                    calorieNutritionCard
-                    glucoseCard
-                    bpCard
-                    hrvCard
-                    streaksRow
-                    todayMedsCard
-                    challengesCard
+
+                    // ── Today's Details (collapsible) ──
+                    detailsSection
                 }
                 .padding(.horizontal)
                 .padding(.top, 8)
@@ -90,12 +97,16 @@ struct DashboardView: View {
                 }
             }
         }
-        .sheet(isPresented: $showAlerts)      { AlertsView() }
-        .sheet(isPresented: $showHealthScore) { HealthScoreDetailView() }
-        .sheet(isPresented: $showNutrition)   { NutritionDashboardView() }
-        .sheet(isPresented: $showHRVDetail)   { HRVDetailSheet(store: store) }
-        .sheet(isPresented: $showStreaks)      { StreaksDetailSheet(store: store) }
-        .sheet(isPresented: $showChallenges)  { ChallengesDetailSheet(store: store) }
+        .sheet(isPresented: $showAlerts)       { AlertsView() }
+        .sheet(isPresented: $showHealthScore)  { HealthScoreDetailView() }
+        .sheet(isPresented: $showNutrition)    { NutritionDashboardView() }
+        .sheet(isPresented: $showHRVDetail)    { HRVDetailSheet(store: store) }
+        .sheet(isPresented: $showStreaks)       { StreaksDetailSheet(store: store) }
+        .sheet(isPresented: $showChallenges)   { ChallengesDetailSheet(store: store) }
+        .sheet(isPresented: $showQuickGlucose) { NavigationStack { AddGlucoseSheet() } }
+        .sheet(isPresented: $showQuickBP)      { NavigationStack { AddBPSheet() } }
+        .sheet(isPresented: $showQuickMeal)    { NavigationStack { UnifiedAddFoodSheet() } }
+        .sheet(isPresented: $showQuickWater)   { NavigationStack { AddWaterSheet() } }
         .task {
             // Compute health mood
             currentMood = HealthMoodEngine.computeMood(store: store)
@@ -216,6 +227,75 @@ struct DashboardView: View {
         .padding()
         .background(Color.brandPurple.opacity(0.06))
         .cornerRadius(16)
+    }
+
+    // MARK: - Quick Actions Bar
+
+    private var quickActionsBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                quickActionPill(icon: "drop.fill", label: "Glucose", color: .brandTeal) { showQuickGlucose = true }
+                quickActionPill(icon: "heart.fill", label: "BP", color: .brandCoral) { showQuickBP = true }
+                quickActionPill(icon: "fork.knife", label: "Meal", color: .orange) { showQuickMeal = true }
+                quickActionPill(icon: "drop.circle.fill", label: "Water", color: Color(hex: "#4fc3f7")) { showQuickWater = true }
+            }
+            .padding(.horizontal, 2)
+        }
+    }
+
+    private func quickActionPill(icon: String, label: String, color: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.subheadline)
+                Text(label)
+                    .font(.subheadline.weight(.medium))
+            }
+            .foregroundColor(color)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(color.opacity(0.1))
+            .cornerRadius(100)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Log \(label)")
+    }
+
+    // MARK: - Collapsible Details Section
+
+    private var detailsSection: some View {
+        VStack(spacing: 0) {
+            Button {
+                withAnimation(.spring(response: 0.35)) { detailsExpanded.toggle() }
+            } label: {
+                HStack {
+                    Text("Today's Details")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.primary)
+                    Spacer()
+                    Image(systemName: "chevron.down")
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(.secondary)
+                        .rotationEffect(.degrees(detailsExpanded ? 0 : -90))
+                }
+                .padding(.vertical, 8)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(detailsExpanded ? "Collapse today's details" : "Expand today's details")
+
+            if detailsExpanded {
+                VStack(spacing: 16) {
+                    calorieNutritionCard
+                    glucoseCard
+                    bpCard
+                    hrvCard
+                    streaksRow
+                    todayMedsCard
+                    challengesCard
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
     }
 
     private func moodLabel(_ level: HealthMoodLevel) -> String {
