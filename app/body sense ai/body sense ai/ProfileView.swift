@@ -314,16 +314,6 @@ struct PatientProfileView: View {
                 } icon: { SettingsIcon(systemName: "bag.fill", color: .brandPurple) }
                     .foregroundColor(.primary)
             }
-            Button { showCommunity = true } label: {
-                Label {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Community")
-                        Text("Groups, challenges & support")
-                            .font(.caption).foregroundColor(.secondary)
-                    }
-                } icon: { SettingsIcon(systemName: "person.3.fill", color: .brandTeal) }
-                    .foregroundColor(.primary)
-            }
         }
     }
 

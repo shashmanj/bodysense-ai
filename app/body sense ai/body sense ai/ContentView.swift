@@ -62,9 +62,20 @@ struct MainTabView: View {
                 .tabItem { Label("Chat", systemImage: "bubble.left.and.bubble.right.fill") }
                 .tag(2)
 
+            // ── Groups: doctors get their own view; patients get community ──
+            Group {
+                if showDoctorHome {
+                    DoctorGroupsView()
+                } else {
+                    CommunityView()
+                }
+            }
+            .tabItem { Label("Groups", systemImage: "person.3.fill") }
+            .tag(3)
+
             ProfileView()
                 .tabItem { Label("Profile", systemImage: "person.crop.circle.fill") }
-                .tag(3)
+                .tag(4)
         }
         .tint(showDoctorHome ? .brandTeal : .brandPurple)
         .toolbarBackground(.ultraThinMaterial, for: .tabBar)
