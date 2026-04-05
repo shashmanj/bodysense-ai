@@ -2428,6 +2428,16 @@ struct UserProfile: Codable {
     // ── Dietary Identity ──
     var dietaryProfile: DietaryProfile = DietaryProfile()
 
+    // ── Health conditions ──
+    var healthConditions: [HealthCondition] = []
+    var isOnDialysis: Bool = false
+    var ckdStage: CKDStage? = nil
+    var labResults: [LabResult] = []
+    var hasCKD: Bool { healthConditions.contains(.ckd) || healthConditions.contains(.chronicKidneyDisease) || ckdStage != nil }
+
+    // ── Cultural profile ──
+    var culturalProfile: CulturalProfile = CulturalProfile()
+
     // ── Fitness / Activity level ──
     var activityLevel    : String = "moderate" // "sedentary", "light", "moderate", "active", "veryActive"
 
@@ -2451,6 +2461,463 @@ struct UserProfile: Codable {
     var isCEO: Bool {
         CEOAccessManager.isActivated
     }
+}
+
+// MARK: - Health Condition
+
+enum HealthCondition: String, Codable, CaseIterable, Identifiable {
+    case type1Diabetes         = "Type 1 Diabetes"
+    case type2Diabetes         = "Type 2 Diabetes"
+    case hypertension          = "Hypertension"
+    case obesity               = "Obesity"
+    case cardiovascularDisease = "Cardiovascular Disease"
+    case ckd                   = "Chronic Kidney Disease"
+    case chronicKidneyDisease  = "CKD"
+    case heartFailure          = "Heart Failure"
+    case respiratory           = "Respiratory"
+    case osteoporosis          = "Osteoporosis"
+    case pcos                  = "PCOS"
+    case thyroid               = "Thyroid Disorder"
+    case asthma                = "Asthma"
+    case mentalHealth          = "Mental Health"
+    case musculoskeletal       = "Musculoskeletal"
+    case sleepApnoea           = "Sleep Apnoea"
+    case anaemia               = "Anaemia"
+    case generalWellness       = "General Wellness"
+
+    var id: String { rawValue }
+}
+
+// MARK: - Warning Severity
+
+enum WarningSeverity: String, Codable {
+    case critical = "critical"
+    case high     = "high"
+    case moderate = "moderate"
+    case info     = "info"
+}
+
+// MARK: - Drug-Condition Warning
+
+struct DrugConditionWarning: Codable, Identifiable {
+    var id: UUID = UUID()
+    var drug: String
+    var condition: String
+    var severity: WarningSeverity
+    var mechanism: String
+    var warning: String
+    var action: String
+}
+
+// MARK: - Condition Pair Insight
+
+struct ConditionPairInsight: Codable, Identifiable {
+    var id: UUID = UUID()
+    var condition1: String
+    var condition2: String
+    var insight: String
+    var dietaryNote: String?
+    var monitoringNote: String
+}
+
+// MARK: - Religion
+
+enum Religion: String, Codable, CaseIterable, Identifiable {
+    case none          = "None"
+    case preferNotToSay = "Prefer not to say"
+    case hindu         = "Hindu"
+    case jain          = "Jain"
+    case muslim        = "Muslim"
+    case jewish        = "Jewish"
+    case christian     = "Christian"
+    case buddhist      = "Buddhist"
+    case sikh          = "Sikh"
+
+    var id: String { rawValue }
+}
+
+// MARK: - Fasting Type
+
+enum FastingType: String, Codable {
+    case none    = "None"
+    case wet     = "Wet Fast"
+    case dry     = "Dry Fast"
+    case partial = "Partial Fast"
+}
+
+// MARK: - Festival Event
+
+struct FestivalEvent: Codable, Identifiable {
+    var id: UUID = UUID()
+    var name: String
+    var religion: Religion
+    var fastingType: FastingType
+    var durationHours: Int
+    var approximateMonth: Int
+    var warningDaysBefore: Int
+    var medicationAdjustmentNeeded: Bool
+    var appWarning: String
+}
+
+// MARK: - Cycle Phase
+
+enum CyclePhase: String, Codable, CaseIterable {
+    case menstrual  = "Menstrual"
+    case follicular = "Follicular"
+    case ovulation  = "Ovulation"
+    case luteal     = "Luteal"
+    case unknown    = "Unknown"
+}
+
+// MARK: - Cycle Intelligence
+
+struct CycleIntelligence {
+    let phase: CyclePhase
+    let currentDay: Int
+    let latestCycle: CycleEntry?
+    let daysUntilNextPeriod: Int?
+
+    /// Compute current cycle phase from cycle history.
+    static func compute(from cycles: [CycleEntry]) -> CycleIntelligence? {
+        guard let latest = cycles.sorted(by: { $0.startDate > $1.startDate }).first else { return nil }
+
+        let cal = Calendar.current
+        let daysSinceStart = cal.dateComponents([.day], from: latest.startDate, to: Date()).day ?? 0
+        guard daysSinceStart >= 0 else { return nil }
+
+        // Average cycle length from history or default 28
+        let avgLength: Int
+        if cycles.count >= 2 {
+            let sorted = cycles.sorted { $0.startDate < $1.startDate }
+            let gaps = zip(sorted, sorted.dropFirst()).map {
+                cal.dateComponents([.day], from: $0.0.startDate, to: $0.1.startDate).day ?? 28
+            }
+            avgLength = gaps.isEmpty ? 28 : gaps.reduce(0, +) / gaps.count
+        } else {
+            avgLength = 28
+        }
+
+        let currentDay = daysSinceStart + 1
+        let daysUntilNext = max(0, avgLength - daysSinceStart)
+
+        // Determine phase based on day in cycle
+        let phase: CyclePhase
+        switch currentDay {
+        case 1...5:                       phase = .menstrual
+        case 6...(avgLength / 2 - 2):     phase = .follicular
+        case (avgLength / 2 - 1)...(avgLength / 2 + 1): phase = .ovulation
+        case (avgLength / 2 + 2)...avgLength:            phase = .luteal
+        default:                          phase = .unknown
+        }
+
+        return CycleIntelligence(
+            phase: phase,
+            currentDay: currentDay,
+            latestCycle: latest,
+            daysUntilNextPeriod: daysUntilNext > 0 ? daysUntilNext : nil
+        )
+    }
+}
+
+// MARK: - Lab Result
+
+enum LabSource: String, Codable {
+    case manual
+    case scan
+    case healthKit
+}
+
+struct LabResult: Codable, Identifiable, Equatable {
+    var id: UUID = UUID()
+    var testName: String
+    var value: Double
+    var unit: String
+    var date: Date
+    var source: LabSource = .manual
+    var isAbnormal: Bool = false
+    var referenceRange: String = ""
+
+    /// Auto-flag abnormal based on known reference ranges.
+    mutating func autoFlagAbnormal() {
+        let ref = LabResult.referenceRangeFor(testName)
+        if !ref.range.isEmpty {
+            referenceRange = ref.range
+            isAbnormal = value < ref.low || value > ref.high
+        }
+    }
+
+    /// Returns (displayRange, low, high) for common UK lab tests.
+    static func referenceRangeFor(_ testName: String) -> (range: String, low: Double, high: Double) {
+        switch testName.lowercased() {
+        case "hba1c":       return ("20–42 mmol/mol", 20, 42)
+        case "egfr":        return (">90 mL/min/1.73m²", 90, 999)
+        case "creatinine":  return ("45–84 µmol/L", 45, 84)
+        case "potassium":   return ("3.5–5.0 mmol/L", 3.5, 5.0)
+        case "sodium":      return ("136–145 mmol/L", 136, 145)
+        case "phosphorus", "phosphate": return ("0.8–1.5 mmol/L", 0.8, 1.5)
+        case "calcium":     return ("2.2–2.6 mmol/L", 2.2, 2.6)
+        case "albumin":     return ("35–50 g/L", 35, 50)
+        case "haemoglobin": return ("120–170 g/L", 120, 170)
+        case "urea":        return ("2.5–7.8 mmol/L", 2.5, 7.8)
+        default:            return ("", 0, 0)
+        }
+    }
+}
+
+// MARK: - CKD Stage
+
+enum CKDStage: Int, Codable, Comparable {
+    case stage1  = 1
+    case stage2  = 2
+    case stage3a = 3
+    case stage3b = 4
+    case stage4  = 5
+    case stage5  = 6
+
+    static func < (lhs: CKDStage, rhs: CKDStage) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+
+    var displayName: String {
+        switch self {
+        case .stage1:  return "Stage 1"
+        case .stage2:  return "Stage 2"
+        case .stage3a: return "Stage 3a"
+        case .stage3b: return "Stage 3b"
+        case .stage4:  return "Stage 4"
+        case .stage5:  return "Stage 5"
+        }
+    }
+
+    /// Derive CKD stage from eGFR (mL/min/1.73m²) per KDIGO 2012.
+    static func from(eGFR: Double) -> CKDStage {
+        switch eGFR {
+        case 90...:      return .stage1
+        case 60..<90:    return .stage2
+        case 45..<60:    return .stage3a
+        case 30..<45:    return .stage3b
+        case 15..<30:    return .stage4
+        default:         return .stage5
+        }
+    }
+
+    /// Protein target range (g/kg/day) per KDOQI.
+    var proteinTarget: ClosedRange<Double> {
+        switch self {
+        case .stage1, .stage2:       return 0.8...1.0
+        case .stage3a, .stage3b:     return 0.6...0.8
+        case .stage4, .stage5:       return 0.6...0.8
+        }
+    }
+
+    /// Dialysis patients need higher protein (1.0–1.2 g/kg/day).
+    static var dialysisProteinTarget: ClosedRange<Double> { 1.0...1.2 }
+}
+
+// MARK: - CKD Nutrition Profile
+
+struct CKDNutritionProfile: Codable {
+    var stage: CKDStage
+    var potassiumLimit: Double      // mg/day
+    var phosphorusLimit: Double     // mg/day
+    var sodiumLimit: Double         // mg/day
+    var proteinPerKgLow: Double     // g/kg/day lower bound
+    var proteinPerKgHigh: Double    // g/kg/day upper bound
+    var fluidLimitMl: Double?       // mL/day (nil = no restriction)
+    var isHyperkalemic: Bool
+    var isHyperphosphatemic: Bool
+    var isOnDialysis: Bool
+
+    var contextSummary: String {
+        var parts: [String] = []
+        parts.append("CKD \(stage.displayName)")
+        if isOnDialysis { parts.append("ON DIALYSIS") }
+        if isHyperkalemic { parts.append("HYPERKALEMIC — restrict potassium") }
+        if isHyperphosphatemic { parts.append("HYPERPHOSPHATEMIC — restrict phosphorus") }
+        parts.append("Potassium limit: \(Int(potassiumLimit)) mg/day")
+        parts.append("Phosphorus limit: \(Int(phosphorusLimit)) mg/day")
+        parts.append("Sodium limit: \(Int(sodiumLimit)) mg/day")
+        if let fluid = fluidLimitMl {
+            parts.append("Fluid limit: \(Int(fluid)) mL/day")
+        }
+        return parts.joined(separator: "\n")
+    }
+}
+
+// MARK: - Insight Agent
+
+enum InsightAgent: String, Codable, CaseIterable {
+    case alex      = "alex"
+    case zen       = "zen"
+    case sage      = "sage"
+    case drSage    = "drSage"
+    case maya      = "maya"
+    case luna      = "luna"
+    case chef      = "chef"
+    case coach     = "coach"
+    case bodySense = "bodySense"
+    case cara      = "cara"
+}
+
+// MARK: - Insight Category
+
+enum InsightCategory2: String, Codable, CaseIterable {
+    case celebration  = "celebration"
+    case milestone    = "milestone"
+    case observation  = "observation"
+    case suggestion   = "suggestion"
+    case reminder     = "reminder"
+    case correlation  = "correlation"
+    case morning      = "morning"
+    case question     = "question"
+    case alert        = "alert"
+}
+
+// MARK: - Insight Priority
+
+enum InsightPriority: String, Codable {
+    case low    = "low"
+    case normal = "normal"
+    case high   = "high"
+    case urgent = "urgent"
+}
+
+// MARK: - Insight Action
+
+struct InsightAction: Codable {
+    enum ActionType: String, Codable {
+        case viewData
+        case chat
+        case logMeal
+        case logMedication
+        case logWater
+        case dismiss
+    }
+    var label: String
+    var type: ActionType
+}
+
+// MARK: - Vital Snapshot
+
+struct VitalSnapshot: Codable {
+    var heartRate: Double?
+    var glucose: Double?
+    var steps: Int?
+    var activeMinutes: Int?
+    var bp: (Int, Int)?
+    var sleepHours: Double?
+    var spo2: Double?
+    var caloriesBurned: Double?
+
+    // Non-Codable tuple — manual coding
+    enum CodingKeys: String, CodingKey {
+        case heartRate, glucose, steps, activeMinutes, bpSystolic, bpDiastolic, sleepHours, spo2, caloriesBurned
+    }
+    init(heartRate: Double? = nil, glucose: Double? = nil, steps: Int? = nil, activeMinutes: Int? = nil,
+         bp: (Int, Int)? = nil, sleepHours: Double? = nil, spo2: Double? = nil, caloriesBurned: Double? = nil) {
+        self.heartRate = heartRate; self.glucose = glucose; self.steps = steps; self.activeMinutes = activeMinutes
+        self.bp = bp; self.sleepHours = sleepHours; self.spo2 = spo2; self.caloriesBurned = caloriesBurned
+    }
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(heartRate, forKey: .heartRate)
+        try c.encodeIfPresent(glucose, forKey: .glucose)
+        try c.encodeIfPresent(steps, forKey: .steps)
+        try c.encodeIfPresent(activeMinutes, forKey: .activeMinutes)
+        try c.encodeIfPresent(bp?.0, forKey: .bpSystolic)
+        try c.encodeIfPresent(bp?.1, forKey: .bpDiastolic)
+        try c.encodeIfPresent(sleepHours, forKey: .sleepHours)
+        try c.encodeIfPresent(spo2, forKey: .spo2)
+        try c.encodeIfPresent(caloriesBurned, forKey: .caloriesBurned)
+    }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        heartRate = try c.decodeIfPresent(Double.self, forKey: .heartRate)
+        glucose = try c.decodeIfPresent(Double.self, forKey: .glucose)
+        steps = try c.decodeIfPresent(Int.self, forKey: .steps)
+        activeMinutes = try c.decodeIfPresent(Int.self, forKey: .activeMinutes)
+        let sys = try c.decodeIfPresent(Int.self, forKey: .bpSystolic)
+        let dia = try c.decodeIfPresent(Int.self, forKey: .bpDiastolic)
+        bp = (sys != nil && dia != nil) ? (sys!, dia!) : nil
+        sleepHours = try c.decodeIfPresent(Double.self, forKey: .sleepHours)
+        spo2 = try c.decodeIfPresent(Double.self, forKey: .spo2)
+        caloriesBurned = try c.decodeIfPresent(Double.self, forKey: .caloriesBurned)
+    }
+}
+
+// MARK: - Insight Card
+
+struct InsightCard: Codable, Identifiable {
+    var id: UUID = UUID()
+    var agent: InsightAgent
+    var message: String
+    var category: InsightCategory2
+    var priority: InsightPriority = .normal
+    var action: InsightAction? = nil
+    var vitalSnapshot: VitalSnapshot? = nil
+    var createdAt: Date = Date()
+    var isDismissed: Bool = false
+}
+
+// MARK: - Ethnicity
+
+enum Ethnicity: String, Codable, CaseIterable, Identifiable {
+    case southAsian   = "South Asian"
+    case caucasian    = "Caucasian"
+    case african      = "African / Caribbean"
+    case eastAsian    = "East Asian"
+    case middleEastern = "Middle Eastern"
+    case hispanic     = "Hispanic / Latino"
+    case mixed        = "Mixed"
+    case other        = "Other"
+    case preferNotToSay = "Prefer not to say"
+
+    var id: String { rawValue }
+}
+
+// MARK: - Meal Pattern
+
+enum MealPattern: String, Codable, CaseIterable {
+    case regular               = "Regular"
+    case intermittentFasting   = "Intermittent Fasting"
+    case noEatingAfterSunset   = "No Eating After Sunset"
+    case twoMealsADay          = "Two Meals a Day"
+    case grazing               = "Grazing / Small Frequent"
+}
+
+// MARK: - Meal Timing Summary
+
+struct MealTimingSummary {
+    var breakfastTime: Date?
+    var lunchTime: Date?
+    var dinnerTime: Date?
+    var snackTimes: [Date]
+    var caloriesConsumed: Int
+    var caloriesRemaining: Int
+    var lastMealHoursAgo: Double?
+    var nextExpectedMeal: String
+}
+
+// MARK: - Cultural Profile
+
+struct CulturalProfile: Codable, Equatable {
+    var ethnicity: Ethnicity = .preferNotToSay
+    var religion: Religion = .none
+    var saatvik: Bool = false
+    var noEatingAfterSunset: Bool = false
+    var mealTimingPattern: MealPattern = .regular
+    var festivalAwareness: Bool = true
+}
+
+// MARK: - Evidence Block (AI response transparency)
+
+struct EvidenceBlock: Codable, Identifiable {
+    var id: UUID = UUID()
+    var claim: String
+    var mechanism: String
+    var evidence: String
+    var grade: String            // "A", "B", "C", "D", "NICE", "BNF"
+    var niceReference: String?   // Optional NICE guideline reference
 }
 
 // MARK: - Nutrition Goal Type
@@ -2826,35 +3293,35 @@ struct SmartHealthNotification: Identifiable, Codable {
     }
 }
 
-// MARK: - Insight Cards (Proactive Health Intelligence)
+// MARK: - Proactive Insight Cards (Health Intelligence Engine)
 
-enum InsightCardType: String, Codable {
+enum ProactiveInsightType: String, Codable {
     case insight, alert, motivation, summary, mealFeedback = "meal_feedback", labReview = "lab_review", medicationReminder = "medication_reminder"
 }
 
-enum InsightSeverity: String, Codable {
+enum ProactiveInsightSeverity: String, Codable {
     case info, success, warning, critical
 }
 
-struct InsightCardAction: Codable, Equatable {
+struct ProactiveInsightAction: Codable, Equatable {
     let label: String
     let deepLink: String
 }
 
-struct InsightCard: Codable, Identifiable, Equatable {
+struct ProactiveInsightCard: Codable, Identifiable, Equatable {
     var id: String
-    var type: InsightCardType
-    var severity: InsightSeverity
+    var type: ProactiveInsightType
+    var severity: ProactiveInsightSeverity
     var title: String
     var body: String
     var evidence: String?
-    var action: InsightCardAction?
+    var action: ProactiveInsightAction?
     var expiresAt: Date?
     var relatedMetrics: [String]
     var createdAt: Date = Date()
     var dismissed: Bool = false
 
-    static func == (lhs: InsightCard, rhs: InsightCard) -> Bool {
+    static func == (lhs: ProactiveInsightCard, rhs: ProactiveInsightCard) -> Bool {
         lhs.id == rhs.id
     }
 }
@@ -2996,6 +3463,20 @@ class HealthStore {
     var giftCodes        : [GiftCode]        = []    // Purchased/redeemed gift codes
     var deliveryAddress  : DeliveryAddress   = DeliveryAddress()  // Saved address
 
+    // ── Lab results ──────────────────────────────────────────────────────────
+    var labResults       : [LabResult]       = []   // User lab results (manual + scanned)
+
+    // ── Insight feed (proactive intelligence cards) ──────────────────────────
+    var insightFeed      : [InsightCard]     = []
+
+    func addInsight(_ card: InsightCard) {
+        insightFeed.insert(card, at: 0)
+        // Keep feed manageable — max 200 cards
+        if insightFeed.count > 200 {
+            insightFeed = Array(insightFeed.prefix(200))
+        }
+    }
+
     // ── Medical records & reviews ─────────────────────────────────────────────
     var medicalRecords   : [MedicalRecord]   = []   // User uploaded medical records
     var doctorReviews    : [DoctorReview]    = []   // Patient reviews for doctors
@@ -3023,9 +3504,28 @@ class HealthStore {
     var lastBPEscalation     : BPEscalationResponse?   = nil
     var smartNotifications   : [SmartHealthNotification] = []
     var insightCards         : [InsightCard] = []
+    var proactiveInsightCards: [ProactiveInsightCard] = []
 
     // ── Profile ───────────────────────────────────────────────────────────────
     var userProfile      : UserProfile       = UserProfile()
+
+    // ── Effective targets (computed from profile) ────────────────────────────
+
+    /// Glucose target range in mmol/L
+    var effectiveGlucoseTarget: (low: Double, high: Double) {
+        (userProfile.targetGlucoseMin / 18.0, userProfile.targetGlucoseMax / 18.0)
+    }
+
+    /// BP target
+    var effectiveBPTarget: (systolic: Int, diastolic: Int) {
+        (userProfile.targetSystolic, userProfile.targetDiastolic)
+    }
+
+    /// Today's food plan (convenience accessor)
+    var todayFoodPlan: TomorrowFoodPlan? {
+        guard let plan = tomorrowFoodPlan else { return nil }
+        return Calendar.current.isDateInToday(plan.date) ? plan : nil
+    }
 
     // Convenience
     var isDoctor: Bool { userProfile.isDoctor }
@@ -3741,6 +4241,7 @@ class HealthStore {
         enc(cachedGlobalPatterns, key: "cachedGlobalPatterns")
         enc(lastBPEscalation,    key: "lastBPEscalation")
         enc(insightCards,        key: "insightCards")
+        enc(proactiveInsightCards, key: "proactiveInsightCards")
         enc(tomorrowFoodPlan,    key: "tomorrowFoodPlan")
         defaults.set(totalXP,  forKey: "totalXP")
         defaults.set(dailyAIMessagesUsed, forKey: "dailyAIMessagesUsed")
@@ -3989,6 +4490,7 @@ class HealthStore {
         cachedGlobalPatterns = dec([AnonymisedHealthPattern].self, key: "cachedGlobalPatterns") ?? []
         lastBPEscalation     = dec(BPEscalationResponse.self,    key: "lastBPEscalation")
         insightCards         = dec([InsightCard].self,           key: "insightCards") ?? []
+        proactiveInsightCards = dec([ProactiveInsightCard].self, key: "proactiveInsightCards") ?? []
         tomorrowFoodPlan     = dec(TomorrowFoodPlan.self,        key: "tomorrowFoodPlan")
         totalXP           = defaults.integer(forKey: "totalXP")
         dailyAIMessagesUsed = defaults.integer(forKey: "dailyAIMessagesUsed")

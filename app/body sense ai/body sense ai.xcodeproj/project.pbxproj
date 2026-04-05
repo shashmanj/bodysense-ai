@@ -6,6 +6,14 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		7C640A2A2F82713200841E3D /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = AA000401FIREAUTH00001 /* FirebaseAuth */; };
+		7C640A2B2F82713200841E3D /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA000402FIRECORE00001 /* FirebaseCore */; };
+		7C640A2C2F82713200841E3D /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = AA000403FIRESTORE0001 /* FirebaseFirestore */; };
+		7C640A2D2F82713200841E3D /* FirebaseStorage in Frameworks */ = {isa = PBXBuildFile; productRef = AA000404FIRESTOR00001 /* FirebaseStorage */; };
+		7C640A2E2F82713200841E3D /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = AA000405GOOGSIGN00001 /* GoogleSignIn */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		7C4E9CDB2F5267DD006C6008 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -66,6 +74,11 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7C640A2E2F82713200841E3D /* GoogleSignIn in Frameworks */,
+				7C640A2D2F82713200841E3D /* FirebaseStorage in Frameworks */,
+				7C640A2C2F82713200841E3D /* FirebaseFirestore in Frameworks */,
+				7C640A2B2F82713200841E3D /* FirebaseCore in Frameworks */,
+				7C640A2A2F82713200841E3D /* FirebaseAuth in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -214,11 +227,11 @@
 			);
 			mainGroup = 7C4E9CBF2F5267DB006C6008;
 			minimizedProjectReferenceProxies = 1;
-			preferredProjectObjectVersion = 77;
 			packageReferences = (
 				AA000301FIREBASE00000001 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
 				AA000302GOOGSIGN000001 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
 			);
+			preferredProjectObjectVersion = 77;
 			productRefGroup = 7C4E9CC92F5267DB006C6008 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -345,12 +358,13 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
@@ -403,11 +417,12 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				VALIDATE_PRODUCT = YES;
 			};
@@ -432,7 +447,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.base693c0fe8f0479560056f69f4.app;
+				PRODUCT_BUNDLE_IDENTIFIER = co.uk.bodysenseai.app;
 				PRODUCT_NAME = "BodySense AI";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -463,7 +478,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.base693c0fe8f0479560056f69f4.app;
+				PRODUCT_BUNDLE_IDENTIFIER = co.uk.bodysenseai.app;
 				PRODUCT_NAME = "BodySense AI";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -483,9 +498,9 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 9VS5N5PW5N;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "none.body-sense-aiTests";
+				PRODUCT_BUNDLE_IDENTIFIER = co.uk.bodysenseai.appTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -505,9 +520,9 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 9VS5N5PW5N;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "none.body-sense-aiTests";
+				PRODUCT_BUNDLE_IDENTIFIER = co.uk.bodysenseai.appTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -527,7 +542,7 @@
 				DEVELOPMENT_TEAM = 9VS5N5PW5N;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "none.body-sense-aiUITests";
+				PRODUCT_BUNDLE_IDENTIFIER = co.uk.bodysenseai.appUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -547,7 +562,7 @@
 				DEVELOPMENT_TEAM = 9VS5N5PW5N;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "none.body-sense-aiUITests";
+				PRODUCT_BUNDLE_IDENTIFIER = co.uk.bodysenseai.appUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;

@@ -47,6 +47,7 @@ struct PatientProfileView: View {
     @Environment(HealthStore.self) var store
     @State private var showEdit           = false
     @State private var showRecords        = false
+    @State private var showLabResults     = false
     @State private var showDevices        = false
     @State private var showGiftCode       = false
     @State private var showSubPlans       = false
@@ -97,6 +98,7 @@ struct PatientProfileView: View {
         }
         .sheet(isPresented: $showEdit) { EditProfileSheet() }
         .sheet(isPresented: $showRecords) { MyDocumentsView() }
+        .sheet(isPresented: $showLabResults) { NavigationStack { LabResultsView() } }
         .sheet(isPresented: $showDevices) { ManageDevicesView() }
         .sheet(isPresented: $showGiftCode) { GiftCodeView() }
         .sheet(isPresented: $showSubPlans) { SubscriptionPlansSheet() }
@@ -262,6 +264,17 @@ struct PatientProfileView: View {
                 .pickerStyle(.menu).tint(.secondary)
             } label: {
                 Label { Text("Height Unit") } icon: { SettingsIcon(systemName: "ruler.fill", color: .brandTeal) }
+            }
+
+            Button { showLabResults = true } label: {
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Lab Results")
+                        Text("Blood tests, eGFR, HbA1c, potassium")
+                            .font(.caption).foregroundColor(.secondary)
+                    }
+                } icon: { SettingsIcon(systemName: "flask.fill", color: .brandPurple) }
+                    .foregroundColor(.primary)
             }
 
             Button { showRecords = true } label: {
@@ -554,6 +567,7 @@ struct DoctorUserProfileView: View {
     @AppStorage("doctorModeEnabled") private var doctorMode = false
     @State private var showEdit       = false
     @State private var showRecords    = false
+    @State private var showLabResults = false
     @State private var showDevices    = false
     @State private var showGiftCode   = false
     @State private var showSubPlans   = false
@@ -584,6 +598,16 @@ struct DoctorUserProfileView: View {
                     }
                     Button { showGiftCode = true } label: {
                         Label { Text("Gift Codes") } icon: { SettingsIcon(systemName: "gift.fill", color: .brandGreen) }
+                            .foregroundColor(.primary)
+                    }
+                    Button { showLabResults = true } label: {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Lab Results")
+                                Text("Blood tests, eGFR, HbA1c, potassium")
+                                    .font(.caption).foregroundColor(.secondary)
+                            }
+                        } icon: { SettingsIcon(systemName: "flask.fill", color: .brandPurple) }
                             .foregroundColor(.primary)
                     }
                     Button { showRecords = true } label: {
@@ -628,6 +652,7 @@ struct DoctorUserProfileView: View {
         }
         .sheet(isPresented: $showEdit) { EditProfileSheet() }
         .sheet(isPresented: $showRecords) { MyDocumentsView() }
+        .sheet(isPresented: $showLabResults) { NavigationStack { LabResultsView() } }
         .sheet(isPresented: $showDevices) { ManageDevicesView() }
         .sheet(isPresented: $showGiftCode) { GiftCodeView() }
         .sheet(isPresented: $showSubPlans) { SubscriptionPlansSheet() }

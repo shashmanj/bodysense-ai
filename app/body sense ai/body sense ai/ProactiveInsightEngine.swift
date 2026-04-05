@@ -3,7 +3,7 @@
 //  body sense ai
 //
 //  Calls /ai/insights with patient context + triggering event.
-//  Returns structured InsightCards for the home feed.
+//  Returns structured ProactiveInsightCards for the home feed.
 //
 
 import Foundation
@@ -16,7 +16,7 @@ enum ProactiveInsightEngine {
     // MARK: - Public API
 
     /// Generate insight cards for a triggering event.
-    static func generate(store: HealthStore, event: InsightEvent) async -> [InsightCard] {
+    static func generate(store: HealthStore, event: InsightEvent) async -> [ProactiveInsightCard] {
         let context = buildPatientContext(store: store)
         let eventPayload = event.toDict()
 
@@ -32,23 +32,23 @@ enum ProactiveInsightEngine {
     }
 
     /// Quick daily summary trigger.
-    static func dailySummary(store: HealthStore) async -> [InsightCard] {
+    static func dailySummary(store: HealthStore) async -> [ProactiveInsightCard] {
         await generate(store: store, event: .dailySummary)
     }
 
     /// Trigger after a meal is logged.
-    static func mealLogged(store: HealthStore, meal: NutritionLog) async -> [InsightCard] {
+    static func mealLogged(store: HealthStore, meal: NutritionLog) async -> [ProactiveInsightCard] {
         await generate(store: store, event: .mealLogged(meal))
     }
 
     /// Trigger after a vital reading.
-    static func vitalLogged(store: HealthStore, type: String, value: Double) async -> [InsightCard] {
+    static func vitalLogged(store: HealthStore, type: String, value: Double) async -> [ProactiveInsightCard] {
         await generate(store: store, event: .vitalLogged(type: type, value: value))
     }
 
     // MARK: - Backend Call
 
-    private static func callBackend(patientContext: [String: Any], currentEvent: [String: Any], email: String) async throws -> [InsightCard] {
+    private static func callBackend(patientContext: [String: Any], currentEvent: [String: Any], email: String) async throws -> [ProactiveInsightCard] {
         guard let url = URL(string: "\(backendURL)/ai/insights") else {
             throw URLError(.badURL)
         }
@@ -177,11 +177,11 @@ enum ProactiveInsightEngine {
 
     // MARK: - Local Fallback
 
-    private static func localFallback(store: HealthStore, event: InsightEvent) -> [InsightCard] {
+    private static func localFallback(store: HealthStore, event: InsightEvent) -> [ProactiveInsightCard] {
         let tips = PersonalisedInsightEngine.generate(from: store)
         let now = Date()
         return tips.prefix(3).enumerated().map { index, tip in
-            InsightCard(
+            ProactiveInsightCard(
                 id: "ins_local_\(Int(now.timeIntervalSince1970))_\(index)",
                 type: .insight,
                 severity: .info,
@@ -257,7 +257,7 @@ enum InsightEvent {
 // MARK: - Response Model
 
 private struct InsightResponse: Codable {
-    let insightCards: [InsightCard]
+    let insightCards: [ProactiveInsightCard]
     let updatedTargets: [String: Double]?
     let emergencyFlag: Bool?
 }

@@ -14,7 +14,9 @@
 //
 
 import Foundation
+#if canImport(FoundationModels)
 import FoundationModels
+#endif
 
 // MARK: - On-Device AI Manager
 
@@ -61,26 +63,34 @@ final class OnDeviceAIManager {
 
     /// Check if the device supports Apple Foundation Models (Apple Intelligence)
     func checkAvailability() -> Bool {
-        if case .available = SystemLanguageModel.default.availability {
-            return true
+        #if canImport(FoundationModels)
+        if #available(iOS 26.0, *) {
+            if case .available = SystemLanguageModel.default.availability {
+                return true
+            }
         }
+        #endif
         return false
     }
 
     /// Human-readable reason if on-device AI is unavailable
     var unavailableReason: String? {
-        if case .unavailable(let reason) = SystemLanguageModel.default.availability {
-            switch reason {
-            case .deviceNotEligible:
-                return "This device does not support Apple Intelligence. Cloud AI will be used."
-            case .appleIntelligenceNotEnabled:
-                return "Enable Apple Intelligence in Settings to use on-device AI."
-            case .modelNotReady:
-                return "The on-device AI model is still downloading. Cloud AI will be used meanwhile."
-            @unknown default:
-                return "On-device AI is temporarily unavailable. Cloud AI will be used."
+        #if canImport(FoundationModels)
+        if #available(iOS 26.0, *) {
+            if case .unavailable(let reason) = SystemLanguageModel.default.availability {
+                switch reason {
+                case .deviceNotEligible:
+                    return "This device does not support Apple Intelligence. Cloud AI will be used."
+                case .appleIntelligenceNotEnabled:
+                    return "Enable Apple Intelligence in Settings to use on-device AI."
+                case .modelNotReady:
+                    return "The on-device AI model is still downloading. Cloud AI will be used meanwhile."
+                @unknown default:
+                    return "On-device AI is temporarily unavailable. Cloud AI will be used."
+                }
             }
         }
+        #endif
         return nil
     }
 
@@ -169,13 +179,18 @@ final class OnDeviceAIManager {
     // MARK: - On-Device Generation (Apple Foundation Models)
 
     private func generateOnDevice(system: String, userMessage: String) async throws -> String {
-        guard case .available = SystemLanguageModel.default.availability else {
-            throw OnDeviceAIError.modelUnavailable
-        }
+        #if canImport(FoundationModels)
+        if #available(iOS 26.0, *) {
+            guard case .available = SystemLanguageModel.default.availability else {
+                throw OnDeviceAIError.modelUnavailable
+            }
 
-        let session = LanguageModelSession(instructions: system)
-        let response = try await session.respond(to: userMessage)
-        return response.content
+            let session = LanguageModelSession(instructions: system)
+            let response = try await session.respond(to: userMessage)
+            return response.content
+        }
+        #endif
+        throw OnDeviceAIError.modelUnavailable
     }
 
     private func generateOnDeviceWithHistory(
@@ -183,32 +198,37 @@ final class OnDeviceAIManager {
         history: [(role: String, content: String)],
         userMessage: String
     ) async throws -> String {
-        guard case .available = SystemLanguageModel.default.availability else {
-            throw OnDeviceAIError.modelUnavailable
+        #if canImport(FoundationModels)
+        if #available(iOS 26.0, *) {
+            guard case .available = SystemLanguageModel.default.availability else {
+                throw OnDeviceAIError.modelUnavailable
+            }
+
+            let session = LanguageModelSession(instructions: system)
+
+            if !history.isEmpty {
+                let contextStr = history.map { msg in
+                    let role = msg.role == "user" ? "User" : "Assistant"
+                    return "\(role): \(msg.content)"
+                }.joined(separator: "\n\n")
+
+                let fullPrompt = """
+                Previous conversation for context:
+                \(contextStr)
+
+                Now respond to the user's latest message:
+                \(userMessage)
+                """
+
+                let response = try await session.respond(to: fullPrompt)
+                return response.content
+            } else {
+                let response = try await session.respond(to: userMessage)
+                return response.content
+            }
         }
-
-        let session = LanguageModelSession(instructions: system)
-
-        if !history.isEmpty {
-            let contextStr = history.map { msg in
-                let role = msg.role == "user" ? "User" : "Assistant"
-                return "\(role): \(msg.content)"
-            }.joined(separator: "\n\n")
-
-            let fullPrompt = """
-            Previous conversation for context:
-            \(contextStr)
-
-            Now respond to the user's latest message:
-            \(userMessage)
-            """
-
-            let response = try await session.respond(to: fullPrompt)
-            return response.content
-        } else {
-            let response = try await session.respond(to: userMessage)
-            return response.content
-        }
+        #endif
+        throw OnDeviceAIError.modelUnavailable
     }
 
     // MARK: - Cloud Generation (Claude API via Railway Backend)

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Scheme
-   LastUpgradeVersion = "1620"
+   LastUpgradeVersion = "2630"
    version = "1.7">
    <BuildAction
       parallelizeBuildables = "YES"
@@ -16,7 +16,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "7C4E9CC72F5267DB006C6008"
-               BuildableName = "body sense ai.app"
+               BuildableName = "BodySense AI.app"
                BlueprintName = "body sense ai"
                ReferencedContainer = "container:body sense ai.xcodeproj">
             </BuildableReference>
@@ -69,7 +69,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "7C4E9CC72F5267DB006C6008"
-            BuildableName = "body sense ai.app"
+            BuildableName = "BodySense AI.app"
             BlueprintName = "body sense ai"
             ReferencedContainer = "container:body sense ai.xcodeproj">
          </BuildableReference>
@@ -86,7 +86,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "7C4E9CC72F5267DB006C6008"
-            BuildableName = "body sense ai.app"
+            BuildableName = "BodySense AI.app"
             BlueprintName = "body sense ai"
             ReferencedContainer = "container:body sense ai.xcodeproj">
          </BuildableReference>

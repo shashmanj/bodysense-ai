@@ -8,7 +8,9 @@
 //
 
 import Foundation
+#if canImport(FoundationModels)
 import FoundationModels
+#endif
 
 // MARK: - Agent Types
 
@@ -135,26 +137,34 @@ actor AIClient {
 
     /// Whether on-device AI specifically is available.
     nonisolated func isOnDeviceAvailable() -> Bool {
-        if case .available = SystemLanguageModel.default.availability {
-            return true
+        #if canImport(FoundationModels)
+        if #available(iOS 26.0, *) {
+            if case .available = SystemLanguageModel.default.availability {
+                return true
+            }
         }
+        #endif
         return false
     }
 
     /// Human-readable reason if the on-device model is unavailable.
     nonisolated func unavailableReason() -> String? {
-        if case .unavailable(let reason) = SystemLanguageModel.default.availability {
-            switch reason {
-            case .deviceNotEligible:
-                return "This device doesn't support Apple Intelligence. Using cloud AI."
-            case .appleIntelligenceNotEnabled:
-                return "Please enable Apple Intelligence in Settings > Apple Intelligence & Siri."
-            case .modelNotReady:
-                return "The AI model is still downloading. Using cloud AI meanwhile."
-            @unknown default:
-                return "On-device AI is temporarily unavailable. Using cloud AI."
+        #if canImport(FoundationModels)
+        if #available(iOS 26.0, *) {
+            if case .unavailable(let reason) = SystemLanguageModel.default.availability {
+                switch reason {
+                case .deviceNotEligible:
+                    return "This device doesn't support Apple Intelligence. Using cloud AI."
+                case .appleIntelligenceNotEnabled:
+                    return "Please enable Apple Intelligence in Settings > Apple Intelligence & Siri."
+                case .modelNotReady:
+                    return "The AI model is still downloading. Using cloud AI meanwhile."
+                @unknown default:
+                    return "On-device AI is temporarily unavailable. Using cloud AI."
+                }
             }
         }
+        #endif
         return nil
     }
 
@@ -172,26 +182,33 @@ actor AIClient {
 
         // Check user preference for on-device AI
         let preferOnDevice = UserDefaults.standard.object(forKey: "preferOnDeviceAI") as? Bool ?? true
-        let onDeviceAvailability = SystemLanguageModel.default.availability
 
-        #if DEBUG
-        print("🧠 [AIClient] preferOnDevice=\(preferOnDevice), availability=\(onDeviceAvailability)")
-        #endif
+        // Strategy 1: Try on-device if available and preferred (iOS 26+)
+        #if canImport(FoundationModels)
+        if preferOnDevice {
+            if #available(iOS 26.0, *) {
+                let onDeviceAvailability = SystemLanguageModel.default.availability
 
-        // Strategy 1: Try on-device if available and preferred
-        if preferOnDevice, case .available = onDeviceAvailability {
-            do {
                 #if DEBUG
-                print("🧠 [AIClient] Trying on-device generation...")
+                print("🧠 [AIClient] preferOnDevice=\(preferOnDevice), availability=\(onDeviceAvailability)")
                 #endif
-                return try await generateOnDevice(system: system, history: history, userMessage: userMessage)
-            } catch {
-                #if DEBUG
-                print("🧠 [AIClient] On-device FAILED: \(error.localizedDescription), falling back to cloud")
-                #endif
-                // Fall through to cloud fallback
+
+                if case .available = onDeviceAvailability {
+                    do {
+                        #if DEBUG
+                        print("🧠 [AIClient] Trying on-device generation...")
+                        #endif
+                        return try await generateOnDevice(system: system, history: history, userMessage: userMessage)
+                    } catch {
+                        #if DEBUG
+                        print("🧠 [AIClient] On-device FAILED: \(error.localizedDescription), falling back to cloud")
+                        #endif
+                        // Fall through to cloud fallback
+                    }
+                }
             }
         }
+        #endif
 
         // Strategy 2: Cloud fallback via Railway
         #if DEBUG
@@ -217,6 +234,8 @@ actor AIClient {
 
     // MARK: - On-Device Generation
 
+    #if canImport(FoundationModels)
+    @available(iOS 26.0, *)
     private func generateOnDevice(system: String,
                                    history: [(role: String, content: String)],
                                    userMessage: String) async throws -> String {
@@ -243,6 +262,7 @@ actor AIClient {
             return response.content
         }
     }
+    #endif
 
     // MARK: - Cloud Fallback (Claude API via Railway)
 

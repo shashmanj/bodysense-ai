@@ -7,7 +7,9 @@
 //
 
 import SwiftUI
+#if canImport(FoundationModels)
 import FoundationModels
+#endif
 
 struct AIAgentSettingsView: View {
     @Environment(\.dismiss) var dismiss
@@ -170,30 +172,39 @@ struct AIAgentSettingsView: View {
     // MARK: - Helpers
 
     private var isModelAvailable: Bool {
-        if case .available = SystemLanguageModel.default.availability {
-            return true
+        #if canImport(FoundationModels)
+        if #available(iOS 26.0, *) {
+            if case .available = SystemLanguageModel.default.availability {
+                return true
+            }
         }
+        #endif
         return false
     }
 
     private var unavailableText: String {
-        switch SystemLanguageModel.default.availability {
-        case .available:
-            return "Ready"
-        case .unavailable(let reason):
-            switch reason {
-            case .deviceNotEligible:
-                return "iPhone 16 or newer required"
-            case .modelNotReady:
-                return "AI model is downloading..."
-            case .appleIntelligenceNotEnabled:
-                return "Enable Apple Intelligence in Settings"
+        #if canImport(FoundationModels)
+        if #available(iOS 26.0, *) {
+            switch SystemLanguageModel.default.availability {
+            case .available:
+                return "Ready"
+            case .unavailable(let reason):
+                switch reason {
+                case .deviceNotEligible:
+                    return "iPhone 16 or newer required"
+                case .modelNotReady:
+                    return "AI model is downloading..."
+                case .appleIntelligenceNotEnabled:
+                    return "Enable Apple Intelligence in Settings"
+                @unknown default:
+                    return "Temporarily unavailable"
+                }
             @unknown default:
                 return "Temporarily unavailable"
             }
-        @unknown default:
-            return "Temporarily unavailable"
         }
+        #endif
+        return "On-device AI requires iOS 26 or later. Using cloud AI."
     }
 
     func infoRow(_ label: String, value: String, detail: String?) -> some View {

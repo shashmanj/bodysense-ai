@@ -25,7 +25,7 @@ struct DashboardView: View {
     @State private var showQuickBP      = false
     @State private var showQuickMeal    = false
     @State private var showQuickWater   = false
-    @State private var insightCards: [InsightCard] = []
+    @State private var insightCards: [ProactiveInsightCard] = []
     @State private var isLoadingInsights = false
     @AppStorage("detailsExpanded") private var detailsExpanded = true
 
@@ -147,7 +147,7 @@ struct DashboardView: View {
                     return true
                 }
                 // Persist to store
-                store.insightCards = insightCards
+                store.proactiveInsightCards = insightCards
                 store.save()
                 isLoadingInsights = false
             }
@@ -344,7 +344,7 @@ struct DashboardView: View {
         }
     }
 
-    private func insightCardView(_ card: InsightCard) -> some View {
+    private func insightCardView(_ card: ProactiveInsightCard) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Circle()
@@ -391,7 +391,7 @@ struct DashboardView: View {
         )
     }
 
-    private func severityColor(_ severity: InsightSeverity) -> Color {
+    private func severityColor(_ severity: ProactiveInsightSeverity) -> Color {
         switch severity {
         case .info: return .brandPurple
         case .success: return .brandGreen
@@ -400,7 +400,7 @@ struct DashboardView: View {
         }
     }
 
-    private func insightTypeIcon(_ type: InsightCardType) -> String {
+    private func insightTypeIcon(_ type: ProactiveInsightType) -> String {
         switch type {
         case .insight: return "lightbulb.fill"
         case .alert: return "exclamationmark.triangle.fill"
