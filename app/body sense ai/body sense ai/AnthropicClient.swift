@@ -332,6 +332,78 @@ actor AIClient {
         // Should not reach here, but satisfy compiler
         throw lastError ?? AIError.cloudError("Request failed after retries")
     }
+
+    // MARK: - Structured Chat (Claude as the Brain)
+
+    /// Sends a message to the structured AI endpoint that returns both
+    /// executable actions (log_meal, log_glucose, etc.) and a conversational response.
+    /// Always uses cloud — structured actions require Claude's full intelligence.
+    func sendStructured(system: String,
+                        history: [(role: String, content: String)],
+                        userMessage: String) async throws -> StructuredAIResponse {
+        guard let url = URL(string: "\(backendURL)/ai/structured-chat") else {
+            throw AIError.cloudError("Invalid backend URL")
+        }
+
+        var messages: [[String: String]] = []
+        for msg in history {
+            messages.append(["role": msg.role, "content": msg.content])
+        }
+        messages.append(["role": "user", "content": userMessage])
+
+        let body: [String: Any] = [
+            "system": system,
+            "messages": messages
+        ]
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 30
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        #if DEBUG
+        print("🧠 [AIClient] Structured POST \(url.absoluteString)")
+        #endif
+
+        var lastError: Error?
+        for attempt in 1...2 {
+            do {
+                let (data, response) = try await URLSession.shared.data(for: request)
+
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    throw AIError.cloudError("Invalid server response")
+                }
+
+                guard (200...299).contains(httpResponse.statusCode) else {
+                    let errorBody = String(data: data, encoding: .utf8) ?? "Unknown error"
+                    throw AIError.cloudError("Server error \(httpResponse.statusCode): \(errorBody)")
+                }
+
+                // Parse structured response
+                let decoded = try JSONDecoder().decode(StructuredAIResponse.self, from: data)
+
+                #if DEBUG
+                let actionTypes = decoded.actions.map(\.type).joined(separator: ", ")
+                print("🧠 [AIClient] Structured response: \(decoded.actions.count) actions [\(actionTypes)], \(decoded.response.prefix(80))...")
+                #endif
+
+                return decoded
+
+            } catch let error as URLError where attempt == 1 {
+                #if DEBUG
+                print("🧠 [AIClient] Structured attempt 1 failed: \(error.localizedDescription), retrying...")
+                #endif
+                lastError = error
+                try await Task.sleep(for: .seconds(2))
+                continue
+            } catch {
+                throw error
+            }
+        }
+
+        throw lastError ?? AIError.cloudError("Structured request failed after retries")
+    }
 }
 
 // MARK: - Errors

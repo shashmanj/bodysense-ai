@@ -282,12 +282,12 @@ final class FirebaseAuthManager {
             auth.userEmail = user.email ?? user.phoneNumber
 
             // Persist to Keychain for offline access
-            try? KeychainService.saveString(user.uid, forKey: "com.bodysenseai.auth.userIdentifier")
+            try? KeychainManager.shared.saveString(user.uid, forKey: "com.bodysenseai.auth.userIdentifier")
             if let name = user.displayName {
-                try? KeychainService.saveString(name, forKey: "com.bodysenseai.auth.userName")
+                try? KeychainManager.shared.saveString(name, forKey: "com.bodysenseai.auth.userName")
             }
             if let email = user.email {
-                try? KeychainService.saveString(email, forKey: "com.bodysenseai.auth.userEmail")
+                try? KeychainManager.shared.saveString(email, forKey: "com.bodysenseai.auth.userEmail")
             }
 
             // Scope agent memory to this user
@@ -297,9 +297,9 @@ final class FirebaseAuthManager {
             auth.userName = nil
             auth.userEmail = nil
 
-            try? KeychainService.delete(key: "com.bodysenseai.auth.userIdentifier")
-            try? KeychainService.delete(key: "com.bodysenseai.auth.userName")
-            try? KeychainService.delete(key: "com.bodysenseai.auth.userEmail")
+            try? KeychainManager.shared.delete(key: "com.bodysenseai.auth.userIdentifier")
+            try? KeychainManager.shared.delete(key: "com.bodysenseai.auth.userName")
+            try? KeychainManager.shared.delete(key: "com.bodysenseai.auth.userEmail")
 
             AgentMemoryStore.shared.setUser(nil)
         }
@@ -308,20 +308,11 @@ final class FirebaseAuthManager {
     // MARK: - Crypto Helpers
 
     private func randomNonceString(length: Int = 32) -> String {
-        precondition(length > 0)
-        var randomBytes = [UInt8](repeating: 0, count: length)
-        let errorCode = SecRandomCopyBytes(kSecRandomDefault, randomBytes.count, &randomBytes)
-        if errorCode != errSecSuccess {
-            fatalError("Unable to generate nonce. SecRandomCopyBytes failed with OSStatus \(errorCode)")
-        }
-        let charset: [Character] = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._")
-        return String(randomBytes.map { charset[Int($0) % charset.count] })
+        CryptoUtils.randomNonceString(length: length)
     }
 
     private func sha256(_ input: String) -> String {
-        let inputData = Data(input.utf8)
-        let hashed = SHA256.hash(data: inputData)
-        return hashed.compactMap { String(format: "%02x", $0) }.joined()
+        CryptoUtils.sha256(input)
     }
 
     // MARK: - Error Types

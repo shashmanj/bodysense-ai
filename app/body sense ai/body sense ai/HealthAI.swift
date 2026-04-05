@@ -56,6 +56,9 @@ class HealthAIEngine {
     var agentPersona: String { agent?.agentPersona ?? "HealthSense" }
     var agentLearningCount: Int { agent?.learningCount ?? 0 }
 
+    /// Action summaries from the last AI response (e.g., "Logged lunch: rice — 420 kcal")
+    var lastActionSummaries: [String] = []
+
     init(store: HealthStore) {
         self.store = store
         self.agent = HealthSenseAgent(store: store)
@@ -306,6 +309,9 @@ class HealthAIEngine {
             // Now update our conversation history
             conversationHistory.append((role: "user", content: input))
             conversationHistory.append((role: "assistant", content: result.response))
+
+            // Capture action summaries (e.g., "Logged lunch: rice and dal — 420 kcal")
+            lastActionSummaries = agent.lastActionSummaries
 
             isTyping = false
 

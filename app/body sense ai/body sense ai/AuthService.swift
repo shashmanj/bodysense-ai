@@ -62,21 +62,12 @@ final class AuthService {
 
     /// Generate a random nonce for Sign in with Apple (replay protection).
     func randomNonceString(length: Int = 32) -> String {
-        precondition(length > 0)
-        var randomBytes = [UInt8](repeating: 0, count: length)
-        let errorCode = SecRandomCopyBytes(kSecRandomDefault, randomBytes.count, &randomBytes)
-        if errorCode != errSecSuccess {
-            fatalError("Unable to generate nonce. SecRandomCopyBytes failed with OSStatus \(errorCode)")
-        }
-        let charset: [Character] = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._")
-        return String(randomBytes.map { charset[Int($0) % charset.count] })
+        CryptoUtils.randomNonceString(length: length)
     }
 
     /// SHA256 hash of the nonce (sent to Apple for verification).
     func sha256(_ input: String) -> String {
-        let inputData = Data(input.utf8)
-        let hashed = SHA256.hash(data: inputData)
-        return hashed.compactMap { String(format: "%02x", $0) }.joined()
+        CryptoUtils.sha256(input)
     }
 
     /// Process the ASAuthorization result from Sign in with Apple.
@@ -106,14 +97,14 @@ final class AuthService {
 
         // Persist to Keychain
         do {
-            try KeychainService.saveString(uid, forKey: Keys.userID)
+            try KeychainManager.shared.saveString(uid, forKey: Keys.userID)
 
             if let name = name {
-                try KeychainService.saveString(name, forKey: Keys.userName)
+                try KeychainManager.shared.saveString(name, forKey: Keys.userName)
             }
 
             if let email = email {
-                try KeychainService.saveString(email, forKey: Keys.userEmail)
+                try KeychainManager.shared.saveString(email, forKey: Keys.userEmail)
             }
         } catch {
             #if DEBUG
@@ -153,9 +144,9 @@ final class AuthService {
     /// Sign out the current user. Clears Keychain credentials but preserves local data.
     func signOut() {
         // Clear Keychain
-        try? KeychainService.delete(key: Keys.userID)
-        try? KeychainService.delete(key: Keys.userName)
-        try? KeychainService.delete(key: Keys.userEmail)
+        try? KeychainManager.shared.delete(key: Keys.userID)
+        try? KeychainManager.shared.delete(key: Keys.userName)
+        try? KeychainManager.shared.delete(key: Keys.userEmail)
 
         // Reset state
         userIdentifier = nil
@@ -183,7 +174,7 @@ final class AuthService {
         }
 
         // 3. Clear Keychain
-        KeychainService.deleteAll()
+        KeychainManager.shared.deleteAllKeys()
 
         // 4. Reset HealthStore in-memory
         store.resetAllData()
@@ -232,9 +223,9 @@ final class AuthService {
     /// Load stored credentials from Keychain on init.
     private func loadStoredCredentials() {
         do {
-            userIdentifier = try KeychainService.loadString(forKey: Keys.userID)
-            userName = try KeychainService.loadString(forKey: Keys.userName)
-            userEmail = try KeychainService.loadString(forKey: Keys.userEmail)
+            userIdentifier = try KeychainManager.shared.loadString(forKey: Keys.userID)
+            userName = try KeychainManager.shared.loadString(forKey: Keys.userName)
+            userEmail = try KeychainManager.shared.loadString(forKey: Keys.userEmail)
 
             // Restore per-user agent memory scope
             AgentMemoryStore.shared.setUser(userIdentifier)
@@ -332,7 +323,9 @@ struct SignInWithAppleButtonRepresentable: UIViewRepresentable {
         }
 
         func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
-            let scene = UIApplication.shared.connectedScenes.first as! UIWindowScene
+            guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene else {
+                return UIWindow(frame: .zero)
+            }
             return scene.windows.first ?? UIWindow(windowScene: scene)
         }
     }

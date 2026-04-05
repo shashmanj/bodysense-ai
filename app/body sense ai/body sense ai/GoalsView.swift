@@ -418,7 +418,7 @@ struct AddGoalSheet: View {
     @State private var goalType: GoalType  = .steps
     @State private var title               = ""
     @State private var targetValue         = ""
-    @State private var deadline            = Calendar.current.date(byAdding: .day, value: 30, to: Date())!
+    @State private var deadline            = Calendar.current.date(byAdding: .day, value: 30, to: Date()) ?? Date()
 
     var body: some View {
         NavigationStack {

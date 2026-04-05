@@ -445,9 +445,23 @@ struct ChatView: View {
             let queryText = userMessage.attachedDocument != nil
                 ? "\(trimmed) [User attached a document: \(userMessage.attachedDocument?.name ?? "document")]"
                 : trimmed
+
+            // Claude handles EVERYTHING — structured actions (log meal, glucose, BP, etc.)
+            // are extracted by the AI and executed automatically via AIActionExecutor.
             let reply = await ai?.respond(to: queryText)
-            if let r = reply {
-                await MainActor.run { messages.append(r) }
+
+            await MainActor.run {
+                // Show action confirmation banners (e.g., "Logged lunch: rice and dal — 420 kcal")
+                if let summaries = ai?.lastActionSummaries, !summaries.isEmpty {
+                    for summary in summaries {
+                        messages.append(ChatMessage(content: "✓ \(summary)", isUser: false))
+                    }
+                }
+
+                // Show the AI's conversational response
+                if let r = reply {
+                    messages.append(r)
+                }
             }
         }
     }
