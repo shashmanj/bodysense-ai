@@ -1655,6 +1655,7 @@ app.listen(PORT, () => {
   console.log(`    POST /gdpr/export (AUTH)`);
   console.log(`    DELETE /gdpr/delete (AUTH)`);
   console.log(`    POST /ai/chat (AI proxy → Anthropic)`);
+  console.log(`    POST /ai/structured-chat (Claude as Brain)`);
   console.log(`    POST /ai/upload-patterns (Layer 6)`);
   console.log(`    GET  /ai/global-patterns (Layer 6)`);
   console.log(`    POST /verify-gmc (GMC live lookup)`);

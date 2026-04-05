@@ -77,6 +77,7 @@ struct PatientProfileView: View {
                 aiSection
                 healthDataSection
                 devicesSection
+                shopAndCommunitySection
                 privacySection
                 supportSection
                 ceoSection
@@ -108,6 +109,8 @@ struct PatientProfileView: View {
         .sheet(isPresented: $showDoctorApproval) { NavigationStack { DoctorApprovalView() } }
         .sheet(isPresented: $showAPIKeys) { NavigationStack { APIKeysView() } }
         .sheet(isPresented: $showLaunchChecklist) { NavigationStack { LaunchChecklistView() } }
+        .sheet(isPresented: $showShop) { NavigationStack { ShopView() } }
+        .sheet(isPresented: $showCommunity) { NavigationStack { CommunityView() } }
         .sheet(isPresented: $showAgentTeam) { NavigationStack { AgentTeamView() } }
         .sheet(isPresented: $showCEOCodeEntry) { CEOActivationSheet() }
         .sheet(isPresented: $showDoctorRegistration) {
@@ -278,6 +281,34 @@ struct PatientProfileView: View {
                             .font(.caption).foregroundColor(.secondary)
                     }
                 } icon: { SettingsIcon(systemName: "applewatch.and.arrow.forward", color: .brandPurple) }
+                    .foregroundColor(.primary)
+            }
+        }
+    }
+
+    @State private var showShop = false
+    @State private var showCommunity = false
+
+    private var shopAndCommunitySection: some View {
+        Section("More") {
+            Button { showShop = true } label: {
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Shop")
+                        Text("BodySense Ring, subscriptions & more")
+                            .font(.caption).foregroundColor(.secondary)
+                    }
+                } icon: { SettingsIcon(systemName: "bag.fill", color: .brandPurple) }
+                    .foregroundColor(.primary)
+            }
+            Button { showCommunity = true } label: {
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Community")
+                        Text("Groups, challenges & support")
+                            .font(.caption).foregroundColor(.secondary)
+                    }
+                } icon: { SettingsIcon(systemName: "person.3.fill", color: .brandTeal) }
                     .foregroundColor(.primary)
             }
         }

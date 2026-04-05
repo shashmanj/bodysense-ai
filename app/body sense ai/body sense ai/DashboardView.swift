@@ -12,22 +12,34 @@ import Charts
 
 struct DashboardView: View {
     @Environment(HealthStore.self) var store
-    @State private var showChat        = false
     @State private var showAlerts      = false
     @State private var showHealthScore = false
     @State private var showNutrition   = false
     @State private var showHRVDetail   = false
     @State private var showStreaks     = false
     @State private var showChallenges  = false
+    @State private var currentMood: HealthMood?
+    @State private var showNudge       = false
+    @State private var nudgeText: String?
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
-                    guidanceCard
+                    // ── Smart Greeting with Mascot ──
+                    smartGreetingHeader
+
+                    // ── Health Mood Card ──
+                    healthMoodCard
+
+                    // ── Mascot Nudge ──
+                    if let nudge = nudgeText {
+                        mascotNudgeCard(nudge)
+                    }
+
                     if hasMinimumData {
                         healthScoreCard
-                        TipsCardView()     // AI Health Insights — prominent position, user-swipeable + auto-rotates
+                        TipsCardView()
                     } else {
                         gettingToKnowYouCard
                         healthScoreCardCollecting
@@ -78,23 +90,25 @@ struct DashboardView: View {
                 }
             }
         }
-        .overlay(alignment: .bottomTrailing) {
-            FloatingChatButton(showChat: $showChat).padding(.trailing, 20).padding(.bottom, 20)
-        }
         .sheet(isPresented: $showAlerts)      { AlertsView() }
-        .sheet(isPresented: $showChat)        { ChatView() }
         .sheet(isPresented: $showHealthScore) { HealthScoreDetailView() }
         .sheet(isPresented: $showNutrition)   { NutritionDashboardView() }
         .sheet(isPresented: $showHRVDetail)   { HRVDetailSheet(store: store) }
         .sheet(isPresented: $showStreaks)      { StreaksDetailSheet(store: store) }
         .sheet(isPresented: $showChallenges)  { ChallengesDetailSheet(store: store) }
         .task {
+            // Compute health mood
+            currentMood = HealthMoodEngine.computeMood(store: store)
+
+            // Get nudge from mascot brain
+            nudgeText = MascotBrain.nextNudge(store: store)
+
             // Compute lifestyle pillar scores
             store.lifestylePillarScores = LifestylePillarKnowledge.computeScores(store: store)
 
             // Generate tomorrow's food plan (if stale or missing)
             if store.tomorrowFoodPlan == nil ||
-               store.tomorrowFoodPlan!.generatedAt.timeIntervalSinceNow < -12 * 3600 {
+               (store.tomorrowFoodPlan?.generatedAt.timeIntervalSinceNow ?? -99999) < -12 * 3600 {
                 store.tomorrowFoodPlan = TomorrowFoodPlanEngine.generate(store: store)
             }
 
@@ -102,6 +116,135 @@ struct DashboardView: View {
             store.gpBridgeReport = GPBridgeProtocol.shouldSuggestGP(store: store)
 
             store.save()
+        }
+    }
+
+    // MARK: - Smart Greeting Header (Mascot + GreetingEngine)
+
+    private var smartGreetingHeader: some View {
+        let mood = currentMood ?? HealthMood(score: 50, level: .unknown, summary: "", indicators: [])
+        let greeting = GreetingEngine.generateGreeting(store: store, mood: mood)
+        return HStack(spacing: 14) {
+            HealthMoodFace(mood: mood.level, size: 56)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(greeting.title)
+                    .font(.title3).fontWeight(.bold)
+                Text(greeting.subtitle)
+                    .font(.subheadline).foregroundColor(.secondary)
+                    .lineLimit(2)
+            }
+            Spacer()
+        }
+        .padding()
+        .background(Color(.secondarySystemBackground))
+        .cornerRadius(16)
+        .shadow(color: .black.opacity(0.06), radius: 8, y: 2)
+    }
+
+    // MARK: - Health Mood Card
+
+    private var healthMoodCard: some View {
+        let mood = currentMood ?? HealthMood(score: 50, level: .unknown, summary: "Collecting your health data...", indicators: [])
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("How You're Doing")
+                    .font(.headline)
+                Spacer()
+                Text(moodLabel(mood.level))
+                    .font(.caption).fontWeight(.semibold)
+                    .padding(.horizontal, 10).padding(.vertical, 4)
+                    .background(moodColor(mood.level).opacity(0.12))
+                    .foregroundColor(moodColor(mood.level))
+                    .clipShape(Capsule())
+            }
+
+            if mood.level != .unknown {
+                // Score bar
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Color(.tertiarySystemBackground)).frame(height: 8)
+                        Capsule().fill(moodColor(mood.level))
+                            .frame(width: geo.size.width * CGFloat(mood.score) / 100, height: 8)
+                    }
+                }
+                .frame(height: 8)
+
+                Text(mood.summary)
+                    .font(.subheadline).foregroundColor(.secondary)
+
+                // Indicators
+                if !mood.indicators.isEmpty {
+                    let topIndicators = Array(mood.indicators.prefix(4))
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                        ForEach(topIndicators) { indicator in
+                            HStack(spacing: 6) {
+                                Circle()
+                                    .fill(indicatorColor(indicator.status))
+                                    .frame(width: 8, height: 8)
+                                Text(indicator.name)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                            }
+                        }
+                    }
+                }
+            } else {
+                Text(mood.summary)
+                    .font(.subheadline).foregroundColor(.secondary)
+            }
+        }
+        .padding()
+        .background(Color(.secondarySystemBackground))
+        .cornerRadius(16)
+        .shadow(color: .black.opacity(0.06), radius: 8, y: 2)
+    }
+
+    // MARK: - Mascot Nudge Card
+
+    private func mascotNudgeCard(_ text: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "lightbulb.fill")
+                .font(.title3)
+                .foregroundColor(.brandPurple)
+            Text(text)
+                .font(.subheadline)
+                .foregroundColor(.primary)
+            Spacer()
+        }
+        .padding()
+        .background(Color.brandPurple.opacity(0.06))
+        .cornerRadius(16)
+    }
+
+    private func moodLabel(_ level: HealthMoodLevel) -> String {
+        switch level {
+        case .thriving: return "Thriving"
+        case .good: return "Good"
+        case .okay: return "Okay"
+        case .needsAttention: return "Needs Attention"
+        case .unknown: return "Learning"
+        }
+    }
+
+    private func moodColor(_ level: HealthMoodLevel) -> Color {
+        switch level {
+        case .thriving: return .green
+        case .good: return .brandTeal
+        case .okay: return .orange
+        case .needsAttention: return .red
+        case .unknown: return .gray
+        }
+    }
+
+    private func indicatorColor(_ status: IndicatorStatus) -> Color {
+        switch status {
+        case .good: return .green
+        case .trending: return .blue
+        case .warning: return .orange
+        case .concern: return .red
+        case .noData: return .gray
         }
     }
 
@@ -195,22 +338,6 @@ struct DashboardView: View {
         .shadow(color: .black.opacity(0.06), radius: 8, y: 2)
     }
 
-    private var timeOfDayGreeting: String {
-        let hour = Calendar.current.component(.hour, from: Date())
-        switch hour {
-        case 5..<12:  return "Good morning"
-        case 12..<17: return "Good afternoon"
-        case 17..<22: return "Good evening"
-        default:      return "Good night"
-        }
-    }
-
-    private var userName: String {
-        let name = store.userProfile.name
-        if name.isEmpty { return "" }
-        return ", \(name.components(separatedBy: " ").first ?? name)"
-    }
-
     // MARK: - Data-First Gate
     private var hasMinimumData: Bool {
         let cal = Calendar.current
@@ -239,43 +366,7 @@ struct DashboardView: View {
     }
 
     // MARK: - Guidance Card
-    var guidanceCard: some View {
-        BSCard {
-            VStack(alignment: .leading, spacing: 10) {
-                // Always show a proper greeting
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("\(timeOfDayGreeting)\(userName)")
-                            .font(.title3).fontWeight(.bold)
-                        Text(hasMinimumData ? "Here's your health summary" : "Let's get started with your health journey")
-                            .font(.subheadline).foregroundColor(.secondary)
-                    }
-                    Spacer()
-                    Image(systemName: "sparkles")
-                        .font(.title2).foregroundColor(.brandPurple)
-                }
-
-                if hasMinimumData, let g = store.dailyGuidance {
-                    Text(g.insight).font(.subheadline).foregroundColor(.secondary)
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Today's actions").font(.caption.bold()).foregroundColor(.brandPurple)
-                        ForEach(g.actionItems.prefix(3), id: \.self) { action in
-                            HStack(spacing: 6) {
-                                Image(systemName: "checkmark.circle").font(.caption).foregroundColor(.brandGreen)
-                                Text(action).font(.caption)
-                            }
-                        }
-                    }
-                    .padding(10).background(Color.brandPurple.opacity(0.06)).cornerRadius(10)
-                    Text(g.quote).font(.caption.italic()).foregroundColor(.secondary)
-                } else {
-                    // No data yet — show a welcoming prompt
-                    Text("Start by logging your first health reading below, or sync from Apple Health in Settings.")
-                        .font(.subheadline).foregroundColor(.secondary)
-                }
-            }
-        }
-    }
+    // guidanceCard replaced by smartGreetingHeader + healthMoodCard above
 
     // MARK: - Getting to Know You (Data-First)
     private var gettingToKnowYouCard: some View {

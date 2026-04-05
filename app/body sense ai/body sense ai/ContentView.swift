@@ -57,19 +57,14 @@ struct MainTabView: View {
                 .tabItem { Label("Track", systemImage: "chart.bar.fill") }
                 .tag(1)
 
-            ShopView()
-                .tabItem { Label("Shop", systemImage: "bag.fill") }
+            // ── Chat: HealthSense AI — the brain of the app ──
+            ChatView()
+                .tabItem { Label("Chat", systemImage: "bubble.left.and.bubble.right.fill") }
                 .tag(2)
-
-            // ── Groups: everyone gets the same community view ──
-            // Doctor appointment features are in the Doctor dashboard (Home tab when Doctor Mode ON)
-            CommunityView()
-                .tabItem { Label("Groups", systemImage: "person.3.fill") }
-                .tag(3)
 
             ProfileView()
                 .tabItem { Label("Profile", systemImage: "person.crop.circle.fill") }
-                .tag(4)
+                .tag(3)
         }
         .tint(showDoctorHome ? .brandTeal : .brandPurple)
         .toolbarBackground(.ultraThinMaterial, for: .tabBar)
@@ -764,7 +759,12 @@ struct EmailSignInSheet: View {
                 onDone()
             }
         } catch let error as NSError {
-            if error.code == 17011 /* userNotFound */ && !isSignUp {
+            print("🔥 Firebase auth error — code: \(error.code), domain: \(error.domain), desc: \(error.localizedDescription)")
+            // Firebase error codes: 17011 = userNotFound, 17009 = invalidCredential
+            let userNotFoundCodes: Set<Int> = [17011, 17009, 17004, 17999]
+            let descLower = error.localizedDescription.lowercased()
+            let isMalformed = descLower.contains("malformed") || descLower.contains("no user record") || descLower.contains("user not found")
+            if (userNotFoundCodes.contains(error.code) || isMalformed) && !isSignUp {
                 // No account found — switch to sign-up mode
                 isSignUp = true
                 errorMessage = "No account found. Enter your name to create one."

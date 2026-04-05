@@ -64,7 +64,7 @@ enum AgentAnalyticsEngine {
 
     // Domain → friendly agent name mapping
     private static let agentNames: [HealthDomain: String] = [
-        .medical: "Dr. Sage",
+        .medical: "Sage",
         .nutrition: "Maya (Nutritionist)",
         .fitness: "Coach Alex",
         .chef: "Chef Kai",
