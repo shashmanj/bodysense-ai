@@ -2826,6 +2826,39 @@ struct SmartHealthNotification: Identifiable, Codable {
     }
 }
 
+// MARK: - Insight Cards (Proactive Health Intelligence)
+
+enum InsightCardType: String, Codable {
+    case insight, alert, motivation, summary, mealFeedback = "meal_feedback", labReview = "lab_review", medicationReminder = "medication_reminder"
+}
+
+enum InsightSeverity: String, Codable {
+    case info, success, warning, critical
+}
+
+struct InsightCardAction: Codable, Equatable {
+    let label: String
+    let deepLink: String
+}
+
+struct InsightCard: Codable, Identifiable, Equatable {
+    var id: String
+    var type: InsightCardType
+    var severity: InsightSeverity
+    var title: String
+    var body: String
+    var evidence: String?
+    var action: InsightCardAction?
+    var expiresAt: Date?
+    var relatedMetrics: [String]
+    var createdAt: Date = Date()
+    var dismissed: Bool = false
+
+    static func == (lhs: InsightCard, rhs: InsightCard) -> Bool {
+        lhs.id == rhs.id
+    }
+}
+
 struct LifestylePillarScore: Codable {
     let pillar: LifestylePillar
     let score: Double              // 0–100
@@ -2989,6 +3022,7 @@ class HealthStore {
     var lifestylePillarScores: LifestylePillarScores?  = nil
     var lastBPEscalation     : BPEscalationResponse?   = nil
     var smartNotifications   : [SmartHealthNotification] = []
+    var insightCards         : [InsightCard] = []
 
     // ── Profile ───────────────────────────────────────────────────────────────
     var userProfile      : UserProfile       = UserProfile()
@@ -3706,6 +3740,7 @@ class HealthStore {
         enc(agentCustomPrompts, key: "agentCustomPrompts")
         enc(cachedGlobalPatterns, key: "cachedGlobalPatterns")
         enc(lastBPEscalation,    key: "lastBPEscalation")
+        enc(insightCards,        key: "insightCards")
         enc(tomorrowFoodPlan,    key: "tomorrowFoodPlan")
         defaults.set(totalXP,  forKey: "totalXP")
         defaults.set(dailyAIMessagesUsed, forKey: "dailyAIMessagesUsed")
@@ -3953,6 +3988,7 @@ class HealthStore {
         agentCustomPrompts = dec([String: String].self,       key: "agentCustomPrompts") ?? [:]
         cachedGlobalPatterns = dec([AnonymisedHealthPattern].self, key: "cachedGlobalPatterns") ?? []
         lastBPEscalation     = dec(BPEscalationResponse.self,    key: "lastBPEscalation")
+        insightCards         = dec([InsightCard].self,           key: "insightCards") ?? []
         tomorrowFoodPlan     = dec(TomorrowFoodPlan.self,        key: "tomorrowFoodPlan")
         totalXP           = defaults.integer(forKey: "totalXP")
         dailyAIMessagesUsed = defaults.integer(forKey: "dailyAIMessagesUsed")

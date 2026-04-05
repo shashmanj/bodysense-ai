@@ -58,7 +58,7 @@ enum HealthDomain: String, Codable, CaseIterable {
 
     var persona: String {
         switch self {
-        case .medical:        return "Dr. Sage"
+        case .medical:        return "Sage"
         case .personalCare:   return "Cara"
         case .nutrition:      return "Maya"
         case .fitness:        return "Alex"
@@ -1064,7 +1064,7 @@ class HealthSenseAgent {
             chips.append("Ask Coach Alex")
         }
         if domain != .medical && (text.contains("symptom") || text.contains("pain") || text.contains("medicine")) {
-            chips.append("Ask Dr. Sage")
+            chips.append("Ask Sage")
         }
 
         return Array(chips.prefix(5))
@@ -1223,7 +1223,7 @@ class HealthSenseAgent {
         // MARK: Medical
         // ─────────────────────────────────────────────────────────────────────
         case .medical:
-            response = "**Dr. Sage here, \(name).**\n\n"
+            response = "**Sage here, \(name).**\n\n"
 
             // Show relevant vitals
             var hasVitals = false
@@ -1505,7 +1505,7 @@ class HealthSenseAgent {
             response += "• Steps today: \(store.todaySteps)/\(p.targetSteps)\n"
 
             response += "\n**I can help you with any of these:**\n"
-            response += "• Medical questions — ask Dr. Sage\n"
+            response += "• Medical questions — ask Sage\n"
             response += "• Nutrition advice — ask Maya\n"
             response += "• Fitness plans — ask Coach Alex\n"
             response += "• Recipes & meals — ask Chef Kai\n"
@@ -1521,7 +1521,7 @@ class HealthSenseAgent {
 
             response += insightContext
             response += "\n\nJust ask your question and I'll route you to the right expert!"
-            chips = ["Workout plan", "Meal plan", "My health data", "Ask Dr. Sage"]
+            chips = ["Workout plan", "Meal plan", "My health data", "Ask Sage"]
         }
 
         return (response, chips)
