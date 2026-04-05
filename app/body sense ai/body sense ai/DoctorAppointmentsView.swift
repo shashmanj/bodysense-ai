@@ -271,7 +271,7 @@ struct DoctorProfileDetailView: View {
                                 Circle().fill(Color(hex: doctor.avatarColor))
                                     .frame(width: 80, height: 80)
                                     .overlay(
-                                        Text(initials(doctor.name))
+                                        Text(doctor.name.initials)
                                             .font(.title.bold())
                                             .foregroundColor(.white)
                                     )
@@ -465,9 +465,6 @@ struct DoctorProfileDetailView: View {
         .padding(.horizontal, 16).padding(.vertical, 12)
     }
 
-    func initials(_ name: String) -> String {
-        name.components(separatedBy: " ").compactMap { $0.first.map { String($0) } }.prefix(2).joined()
-    }
 }
 
 // MARK: - Review Card
@@ -529,7 +526,7 @@ struct BookDoctorCard: View {
                                 .frame(width: 56, height: 56).clipShape(Circle())
                         } else {
                             Circle().fill(Color(hex: doctor.avatarColor)).frame(width: 56, height: 56)
-                                .overlay(Text(initials(doctor.name)).font(.title3.bold()).foregroundColor(.white))
+                                .overlay(Text(doctor.name.initials).font(.title3.bold()).foregroundColor(.white))
                         }
                         if doctor.isVerified {
                             Image(systemName: "cross.circle.fill")
@@ -616,9 +613,6 @@ struct BookDoctorCard: View {
         .cornerRadius(16).shadow(color: .black.opacity(0.06), radius: 8)
     }
 
-    func initials(_ name: String) -> String {
-        name.components(separatedBy: " ").compactMap { $0.first.map { String($0) } }.prefix(2).joined()
-    }
 }
 
 // MARK: - Book Appointment

@@ -718,6 +718,188 @@ app.post("/ai/chat", aiLimiter, async (req, res) => {
   }
 });
 
+// ── Structured AI Chat (Claude as the Brain) ──────────────────────────
+// Returns { actions: [...], response: "..." } — Claude extracts health data
+// from natural language AND responds conversationally in a single call.
+app.post("/ai/structured-chat", aiLimiter, async (req, res) => {
+  try {
+    const anthropicKey = process.env.ANTHROPIC_API_KEY;
+    if (!anthropicKey) {
+      return res.status(503).json({ error: "AI service not configured on server" });
+    }
+
+    const { system, messages, model, max_tokens, userEmail, subscription } = req.body;
+
+    if (!messages || !Array.isArray(messages) || messages.length === 0) {
+      return res.status(400).json({ error: "messages array is required" });
+    }
+    if (!system || typeof system !== "string") {
+      return res.status(400).json({ error: "system prompt is required" });
+    }
+
+    // ── Subscription-tier daily limit check ──
+    const email = (userEmail || "anonymous").toLowerCase();
+    const tier = (subscription || "free").toLowerCase();
+    const limit = getAILimit(tier);
+    const usage = checkAndIncrementUsage(email, limit);
+
+    if (!usage.allowed) {
+      const upgradeMsg = tier === "free"
+        ? "Upgrade to Pro (£3.99/mo) for 50 messages/day, or Premium (£8.99/mo) for 500."
+        : tier === "pro"
+        ? "Upgrade to Premium (£8.99/mo) for 500 messages/day."
+        : "Daily limit reached. Please try again tomorrow.";
+
+      return res.status(429).json({
+        error: `Daily AI limit reached (${usage.limit} messages for ${tier} plan). ${upgradeMsg}`,
+        used: usage.used,
+        limit: usage.limit,
+        subscription: tier,
+        upgradeAvailable: tier !== "premium" && tier !== "ceo"
+      });
+    }
+
+    // Inject the structured action extraction instruction into the system prompt
+    const structuredInstruction = `
+
+CRITICAL INSTRUCTION — STRUCTURED ACTIONS:
+You MUST respond with a JSON block wrapped in <actions> tags, followed by your conversational response.
+
+When the user mentions ANY health data (food, glucose, blood pressure, water, weight, steps, symptoms, medication, sleep), extract it into structured actions. Even if the user doesn't explicitly say "log", if they mention health data in conversation, extract it.
+
+<actions>
+[
+  {
+    "type": "log_meal",
+    "food_name": "food description",
+    "meal_type": "breakfast|lunch|dinner|snack",
+    "calories": 0,
+    "carbs": 0.0,
+    "protein": 0.0,
+    "fat": 0.0,
+    "fiber": 0.0,
+    "sugar": 0.0,
+    "salt": 0.0,
+    "serving_grams": 0
+  },
+  {
+    "type": "log_glucose",
+    "value_mmol": 0.0,
+    "context": "fasting|before_meal|after_meal|bedtime|random"
+  },
+  {
+    "type": "log_bp",
+    "systolic": 0,
+    "diastolic": 0,
+    "pulse": 0
+  },
+  {
+    "type": "log_water",
+    "ml": 0
+  },
+  {
+    "type": "log_weight",
+    "kg": 0.0
+  },
+  {
+    "type": "log_steps",
+    "steps": 0
+  },
+  {
+    "type": "log_symptom",
+    "symptom": "description",
+    "severity": "mild|moderate|severe"
+  },
+  {
+    "type": "set_reminder",
+    "message": "reminder text",
+    "minutes_from_now": 0
+  },
+  {
+    "type": "update_profile",
+    "field": "field_name",
+    "value": "new_value"
+  }
+]
+</actions>
+
+RULES FOR ACTIONS:
+1. If the user mentions food, ALWAYS estimate nutrition even if approximate. Use your knowledge of food databases. For Indian/South Asian foods, use accurate regional nutrition data.
+2. For glucose: convert to mmol/L if user gives mg/dL (divide by 18). Values under 33 are mmol/L.
+3. For multiple foods in one meal, create ONE log_meal action with combined nutrition and comma-separated food names.
+4. If no health data is mentioned, return an empty actions array: <actions>[]</actions>
+5. For ambiguous meal types, infer from time context or the food itself.
+6. Be generous with nutrition estimates — an approximate log is better than no log.
+7. If the user says "I had coffee", that counts as a meal/snack — log it.
+8. If the user mentions a symptom ("I have a headache", "feeling dizzy"), log it.
+9. If the user says things like "I took my metformin", acknowledge but don't create a log_meal — that's medication adherence.
+
+After the <actions> block, write your normal conversational response. Be warm, knowledgeable, and reference the specific data you extracted. If you logged food, mention the calories and key macros. If glucose, comment on whether it's in range.
+`;
+
+    const enhancedSystem = system + structuredInstruction;
+    const safeMaxTokens = Math.min(max_tokens || 2048, 4096);
+
+    const anthropicRes = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": anthropicKey,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        model: model || "claude-haiku-4-5-20251001",
+        max_tokens: safeMaxTokens,
+        system: enhancedSystem,
+        messages
+      })
+    });
+
+    const data = await anthropicRes.json();
+
+    if (!anthropicRes.ok) {
+      console.error("Anthropic API error:", anthropicRes.status, data);
+      return res.status(anthropicRes.status).json({
+        error: data.error?.message || "AI service error"
+      });
+    }
+
+    const rawText = data.content?.[0]?.text || "";
+
+    // Parse actions from <actions>...</actions> tags
+    let actions = [];
+    let responseText = rawText;
+
+    const actionsMatch = rawText.match(/<actions>([\s\S]*?)<\/actions>/);
+    if (actionsMatch) {
+      try {
+        actions = JSON.parse(actionsMatch[1]);
+        // Remove the actions block from the response text
+        responseText = rawText.replace(/<actions>[\s\S]*?<\/actions>/, "").trim();
+      } catch (parseErr) {
+        console.error("Failed to parse actions JSON:", parseErr.message);
+        // Actions parsing failed — still return the text response
+        actions = [];
+        responseText = rawText.replace(/<actions>[\s\S]*?<\/actions>/, "").trim();
+      }
+    }
+
+    res.json({
+      actions,
+      response: responseText,
+      model: data.model,
+      usage: { used: usage.used, limit: usage.limit, remaining: usage.limit - usage.used }
+    });
+
+    const actionTypes = actions.map(a => a.type).join(",") || "none";
+    console.log(`AI structured | ${tier} | ${email.substring(0, 3)}*** | msg ${usage.used}/${usage.limit} | actions: ${actionTypes} | tokens: ${data.usage?.output_tokens || "?"}`);
+
+  } catch (err) {
+    console.error("ai/structured-chat error:", err.message);
+    res.status(500).json({ error: "AI service temporarily unavailable" });
+  }
+});
+
 // ── GMC Live Verification ──────────────────────────────────────────────
 app.post("/verify-gmc", async (req, res) => {
   try {

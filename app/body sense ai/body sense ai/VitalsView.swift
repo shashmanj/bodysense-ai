@@ -10,8 +10,12 @@ import UserNotifications
 
 struct VitalsView: View {
     @Environment(HealthStore.self) var store
-    @State private var segment  = 0          // 0 = Glucose, 1 = BP
+    @State private var segment: Int          // 0 = Glucose, 1 = BP
     @State private var showAdd  = false
+
+    init(initialSegment: Int = 0) {
+        _segment = State(initialValue: initialSegment)
+    }
 
     var body: some View {
         NavigationStack {

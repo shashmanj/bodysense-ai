@@ -2157,6 +2157,18 @@ enum DietaryTransitionGoal: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+enum CuisineType: String, Codable, CaseIterable, Identifiable {
+    case none           = "No Preference"
+    case southIndian    = "South Indian"
+    case northIndian    = "North Indian"
+    case mediterranean  = "Mediterranean"
+    case eastAsian      = "East Asian"
+    case african        = "African"
+    case british        = "British"
+
+    var id: String { rawValue }
+}
+
 /// Which days of the week meat is allowed (for flexitarian or partial schedules).
 struct MeatSchedule: Codable, Equatable {
     /// Days when meat is allowed. 1 = Sunday, 2 = Monday ... 7 = Saturday (Calendar.weekday).
@@ -2187,9 +2199,29 @@ struct DietaryProfile: Codable, Equatable {
     var dislikedFoods: [String] = []
     var meatSchedule: MeatSchedule = MeatSchedule()
     var transitionGoal: DietaryTransitionGoal = .none
+    var cuisinePreference: CuisineType = .none
     var additionalNotes: String = ""
     var lastUpdated: Date = Date()
     var isConfigured: Bool = false
+
+    // Backward-compatible decoder: cuisinePreference defaults to .none if absent in saved data
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        base = try c.decodeIfPresent(DietaryBase.self, forKey: .base) ?? .omnivore
+        religiousDiet = try c.decodeIfPresent(ReligiousDiet.self, forKey: .religiousDiet) ?? .none
+        excludedMeats = try c.decodeIfPresent(Set<MeatType>.self, forKey: .excludedMeats) ?? []
+        allergens = try c.decodeIfPresent(Set<AllergenType>.self, forKey: .allergens) ?? []
+        intolerances = try c.decodeIfPresent([String].self, forKey: .intolerances) ?? []
+        dislikedFoods = try c.decodeIfPresent([String].self, forKey: .dislikedFoods) ?? []
+        meatSchedule = try c.decodeIfPresent(MeatSchedule.self, forKey: .meatSchedule) ?? MeatSchedule()
+        transitionGoal = try c.decodeIfPresent(DietaryTransitionGoal.self, forKey: .transitionGoal) ?? .none
+        cuisinePreference = try c.decodeIfPresent(CuisineType.self, forKey: .cuisinePreference) ?? .none
+        additionalNotes = try c.decodeIfPresent(String.self, forKey: .additionalNotes) ?? ""
+        lastUpdated = try c.decodeIfPresent(Date.self, forKey: .lastUpdated) ?? Date()
+        isConfigured = try c.decodeIfPresent(Bool.self, forKey: .isConfigured) ?? false
+    }
+
+    init() {}
 
     // MARK: - Computed Helpers
 
@@ -2237,6 +2269,9 @@ struct DietaryProfile: Codable, Equatable {
         }
         if transitionGoal != .none {
             parts.append("Transition goal: \(transitionGoal.description)")
+        }
+        if cuisinePreference != .none {
+            parts.append("Cuisine preference: \(cuisinePreference.rawValue)")
         }
         if !additionalNotes.isEmpty {
             parts.append("Notes: \(additionalNotes)")
@@ -2705,9 +2740,40 @@ struct PlannedMeal: Codable {
     let protein: Double
     let carbs: Double
     let fat: Double
+    let fiber: Double
     let reasoning: String
     let drugFoodWarnings: [String]
     let ingredients: [String]
+
+    // Backward-compatible decoder: fiber defaults to 0 if absent in saved data
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        type = try c.decode(String.self, forKey: .type)
+        name = try c.decode(String.self, forKey: .name)
+        description = try c.decode(String.self, forKey: .description)
+        calories = try c.decode(Int.self, forKey: .calories)
+        protein = try c.decode(Double.self, forKey: .protein)
+        carbs = try c.decode(Double.self, forKey: .carbs)
+        fat = try c.decode(Double.self, forKey: .fat)
+        fiber = try c.decodeIfPresent(Double.self, forKey: .fiber) ?? 0
+        reasoning = try c.decode(String.self, forKey: .reasoning)
+        drugFoodWarnings = try c.decode([String].self, forKey: .drugFoodWarnings)
+        ingredients = try c.decode([String].self, forKey: .ingredients)
+    }
+
+    init(type: String, name: String, description: String, calories: Int, protein: Double, carbs: Double, fat: Double, fiber: Double, reasoning: String, drugFoodWarnings: [String], ingredients: [String]) {
+        self.type = type
+        self.name = name
+        self.description = description
+        self.calories = calories
+        self.protein = protein
+        self.carbs = carbs
+        self.fat = fat
+        self.fiber = fiber
+        self.reasoning = reasoning
+        self.drugFoodWarnings = drugFoodWarnings
+        self.ingredients = ingredients
+    }
 }
 
 struct TomorrowFoodPlan: Codable {
@@ -2772,6 +2838,72 @@ struct LifestylePillarScores: Codable {
     let scores: [LifestylePillarScore]
     let overallScore: Double
     var generatedAt: Date = Date()
+}
+
+// MARK: - Health Mood (Mascot Expression + Overall Score)
+
+/// Overall health mood level — drives the mascot's facial expression
+enum HealthMoodLevel: Int, Codable {
+    case thriving = 4       // 80-100 — happy face
+    case good = 3           // 60-79  — content face
+    case okay = 2           // 40-59  — neutral face
+    case needsAttention = 1 // 20-39  — concerned face
+    case unknown = 0        // No data — curious face
+}
+
+/// Composite health mood computed from all available data
+struct HealthMood: Codable {
+    var score: Int              // 0-100
+    var level: HealthMoodLevel
+    var summary: String         // "Your body is doing well today"
+    var indicators: [MoodIndicator]
+
+    static let unknown = HealthMood(
+        score: 0,
+        level: .unknown,
+        summary: "I'm getting to know you — log some data and I'll tell you how you're doing",
+        indicators: []
+    )
+}
+
+/// Individual vital status within the mood
+struct MoodIndicator: Codable, Identifiable {
+    var id: UUID = UUID()
+    let name: String            // "Glucose", "Sleep", "Steps"
+    let status: IndicatorStatus
+    let icon: String            // SF Symbol
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, status, icon
+    }
+}
+
+/// Status of each individual indicator
+enum IndicatorStatus: String, Codable {
+    case good       // ✓ green — within range
+    case trending   // ↗ blue — improving
+    case warning    // ⚠ amber — approaching limits
+    case concern    // ↘ red — out of range
+    case noData     // ─ gray — no data available
+}
+
+// MARK: - Voice Log Result
+
+/// Structured result from AI voice transcript parsing
+struct VoiceLogResult: Codable {
+    let type: VoiceLogType
+    let rawTranscript: String
+    let confidence: Double
+    var meal: NutritionLog?
+    var glucose: GlucoseReading?
+    var bloodPressure: BPReading?
+    var water: WaterEntry?
+    var weight: Double?
+}
+
+/// Type of data extracted from voice input
+enum VoiceLogType: String, Codable {
+    case meal, glucose, bloodPressure, water, weight, medication, unknown
 }
 
 // MARK: - HealthStore (shared observable state)

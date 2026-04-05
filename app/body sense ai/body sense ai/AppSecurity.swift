@@ -350,7 +350,7 @@ enum CEOAccessManager {
 
     /// Check if CEO mode is currently activated on this device.
     static var isActivated: Bool {
-        guard let data = try? KeychainService.load(key: keychainKey),
+        guard let data = try? KeychainManager.shared.load(key: keychainKey),
               let stored = String(data: data, encoding: .utf8) else {
             return false
         }
@@ -366,14 +366,14 @@ enum CEOAccessManager {
 
         // Store activation in Keychain
         if let data = "active".data(using: .utf8) {
-            try? KeychainService.save(key: keychainKey, data: data)
+            try? KeychainManager.shared.save(key: keychainKey, data: data)
         }
         return true
     }
 
     /// Deactivate CEO mode on this device.
     static func deactivate() {
-        try? KeychainService.delete(key: keychainKey)
+        try? KeychainManager.shared.delete(key: keychainKey)
     }
 
     /// Hash a code string with SHA-256.

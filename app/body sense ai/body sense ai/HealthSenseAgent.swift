@@ -230,8 +230,13 @@ class HealthSenseAgent {
 
     // MARK: - Main Entry Point
 
+    /// Last set of action summaries from Claude's structured response.
+    /// ChatView reads this to show confirmation banners.
+    var lastActionSummaries: [String] = []
+
     func respond(to input: String, conversationHistory: [(role: String, content: String)]) async -> (response: String, domain: HealthDomain, chips: [String]) {
         isThinking = true
+        lastActionSummaries = []
 
         // 0. Emergency detection — prepend banner but still answer the query
         let emergencyKeywords = ["chest pain", "heart attack", "can't breathe", "cannot breathe",
@@ -247,20 +252,33 @@ class HealthSenseAgent {
         // 2. Build the mega-context (health data + memory + patterns)
         let systemPrompt = buildAdaptiveSystemPrompt(for: domain, query: input)
 
-        // 3. Try Haiku 4.5 with full agent context
+        // 3. Try STRUCTURED endpoint first (Claude extracts actions + responds)
+        //    Falls back to regular endpoint if structured fails.
         do {
-            let reply = try await AIClient.shared.sendWithHistory(
+            let structured = try await AIClient.shared.sendStructured(
                 system: systemPrompt,
                 history: conversationHistory.suffix(16).map { ($0.role, $0.content) },
                 userMessage: input
             )
 
+            // 3a. Execute any actions Claude returned (log meals, glucose, BP, etc.)
+            if !structured.actions.isEmpty {
+                let result = await MainActor.run {
+                    AIActionExecutor.execute(actions: structured.actions, store: store)
+                }
+                lastActionSummaries = result.summaries
+                #if DEBUG
+                print("🧠 [Agent] Executed \(result.totalActions) actions: \(result.summaries.joined(separator: ", "))")
+                #endif
+            }
+
+            let reply = structured.response
             isThinking = false
 
             // 4. Learn from this interaction
             await learnFromInteraction(query: input, response: reply, domain: domain)
 
-            // 5. Prepend emergency banner if needed (still returns full AI answer)
+            // 5. Prepend emergency banner if needed
             var finalReply = reply
             if isEmergency {
                 finalReply = "\u{26A0}\u{FE0F} **If this is a medical emergency, call 999 (UK) or 911 (US) immediately.**\n\nWhile waiting for help: stay calm, follow the operator's instructions, and do not move the person unless they are in danger.\n\n---\n\n" + reply
@@ -270,18 +288,57 @@ class HealthSenseAgent {
             let chips = generateSmartChips(for: domain, query: input, response: finalReply)
 
             return (finalReply, domain, chips)
-        } catch {
-            print("⚠️ HealthSenseAgent API error: \(error.localizedDescription) — full: \(error)")
-            print("⚠️ Falling back to local synthesised response for domain: \(domain)")
-            isThinking = false
 
-            // Intelligent fallback — synthesise from memory + health data
-            let fallback = synthesiseFallbackResponse(for: input, domain: domain)
-            var fallbackReply = fallback.response
-            if isEmergency {
-                fallbackReply = "\u{26A0}\u{FE0F} **If this is a medical emergency, call 999 (UK) or 911 (US) immediately.**\n\nWhile waiting for help: stay calm, follow the operator's instructions, and do not move the person unless they are in danger.\n\n---\n\n" + fallbackReply
+        } catch {
+            #if DEBUG
+            print("⚠️ Structured endpoint failed: \(error.localizedDescription), trying regular endpoint...")
+            #endif
+
+            // Fallback: try regular (non-structured) endpoint
+            do {
+                let reply = try await AIClient.shared.sendWithHistory(
+                    system: systemPrompt,
+                    history: conversationHistory.suffix(16).map { ($0.role, $0.content) },
+                    userMessage: input
+                )
+
+                isThinking = false
+
+                // Offline action parsing as fallback (regex-based)
+                if let parseResult = await MainActor.run(body: {
+                    ChatActionParser.parseAndLog(message: input, store: store)
+                }) {
+                    lastActionSummaries = [parseResult.userFacingMessage]
+                }
+
+                await learnFromInteraction(query: input, response: reply, domain: domain)
+
+                var finalReply = reply
+                if isEmergency {
+                    finalReply = "\u{26A0}\u{FE0F} **If this is a medical emergency, call 999 (UK) or 911 (US) immediately.**\n\nWhile waiting for help: stay calm, follow the operator's instructions, and do not move the person unless they are in danger.\n\n---\n\n" + reply
+                }
+
+                let chips = generateSmartChips(for: domain, query: input, response: finalReply)
+                return (finalReply, domain, chips)
+
+            } catch {
+                print("⚠️ HealthSenseAgent API error: \(error.localizedDescription)")
+                isThinking = false
+
+                // Offline action parsing as last resort
+                if let parseResult = await MainActor.run(body: {
+                    ChatActionParser.parseAndLog(message: input, store: store)
+                }) {
+                    lastActionSummaries = [parseResult.userFacingMessage]
+                }
+
+                let fallback = synthesiseFallbackResponse(for: input, domain: domain)
+                var fallbackReply = fallback.response
+                if isEmergency {
+                    fallbackReply = "\u{26A0}\u{FE0F} **If this is a medical emergency, call 999 (UK) or 911 (US) immediately.**\n\nWhile waiting for help: stay calm, follow the operator's instructions, and do not move the person unless they are in danger.\n\n---\n\n" + fallbackReply
+                }
+                return (fallbackReply, domain, fallback.chips)
             }
-            return (fallbackReply, domain, fallback.chips)
         }
     }
 
@@ -1256,7 +1313,7 @@ class HealthSenseAgent {
 
                 // Show recent nutrition data
                 let recentNutrition = store.nutritionLogs.filter {
-                    $0.date >= Calendar.current.date(byAdding: .day, value: -7, to: Date())!
+                    $0.date >= Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
                 }
                 if !recentNutrition.isEmpty {
                     let avgCal = recentNutrition.map { $0.calories }.reduce(0, +) / recentNutrition.count

@@ -117,6 +117,144 @@ final class KeychainManager {
 
 extension KeychainManager.Key: CaseIterable {}
 
+// MARK: - String-Key Convenience (bridging from legacy KeychainService callers)
+
+extension KeychainManager {
+
+    /// Save raw data to the Keychain using a string key.
+    func save(key: String, data: Data) throws {
+        let deleteQuery: [String: Any] = [
+            kSecClass       as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key
+        ]
+        SecItemDelete(deleteQuery as CFDictionary)
+
+        let addQuery: [String: Any] = [
+            kSecClass       as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key,
+            kSecValueData   as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        ]
+        let status = SecItemAdd(addQuery as CFDictionary, nil)
+        guard status == errSecSuccess else {
+            throw KeychainError.saveFailed(status)
+        }
+    }
+
+    /// Load raw data from the Keychain using a string key.
+    func load(key: String) throws -> Data? {
+        let query: [String: Any] = [
+            kSecClass       as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key,
+            kSecReturnData  as String: true,
+            kSecMatchLimit  as String: kSecMatchLimitOne
+        ]
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+
+        if status == errSecItemNotFound { return nil }
+        guard status == errSecSuccess else {
+            throw KeychainError.loadFailed(status)
+        }
+        return result as? Data
+    }
+
+    /// Delete an item from the Keychain using a string key.
+    func delete(key: String) throws {
+        let query: [String: Any] = [
+            kSecClass       as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key
+        ]
+        let status = SecItemDelete(query as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw KeychainError.deleteFailed(status)
+        }
+    }
+
+    /// Save a string value using a string key.
+    func saveString(_ value: String, forKey key: String) throws {
+        guard let data = value.data(using: .utf8) else {
+            throw KeychainError.dataConversionFailed
+        }
+        try save(key: key, data: data)
+    }
+
+    /// Load a string value using a string key.
+    func loadString(forKey key: String) throws -> String? {
+        guard let data = try load(key: key) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    /// Delete all generic password items for this app's service.
+    func deleteAllKeys() {
+        let query: [String: Any] = [
+            kSecClass       as String: kSecClassGenericPassword,
+            kSecAttrService as String: service
+        ]
+        SecItemDelete(query as CFDictionary)
+    }
+}
+
+// MARK: - Keychain Errors
+
+enum KeychainError: Error, LocalizedError {
+    case saveFailed(OSStatus)
+    case loadFailed(OSStatus)
+    case deleteFailed(OSStatus)
+    case dataConversionFailed
+
+    var errorDescription: String? {
+        switch self {
+        case .saveFailed(let s):   return "Keychain save failed (status: \(s))"
+        case .loadFailed(let s):   return "Keychain load failed (status: \(s))"
+        case .deleteFailed(let s): return "Keychain delete failed (status: \(s))"
+        case .dataConversionFailed: return "Keychain data conversion failed"
+        }
+    }
+}
+
+// MARK: - Crypto Utilities (shared across auth services)
+
+import CryptoKit
+
+enum CryptoUtils {
+
+    /// Generate a random nonce string for Sign in with Apple (replay protection).
+    static func randomNonceString(length: Int = 32) -> String {
+        precondition(length > 0)
+        var randomBytes = [UInt8](repeating: 0, count: length)
+        let errorCode = SecRandomCopyBytes(kSecRandomDefault, randomBytes.count, &randomBytes)
+        if errorCode != errSecSuccess {
+            fatalError("Unable to generate nonce. SecRandomCopyBytes failed with OSStatus \(errorCode)")
+        }
+        let charset: [Character] = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._")
+        return String(randomBytes.map { charset[Int($0) % charset.count] })
+    }
+
+    /// SHA-256 hash of the input string, returned as a lowercase hex string.
+    static func sha256(_ input: String) -> String {
+        let inputData = Data(input.utf8)
+        let hashed = SHA256.hash(data: inputData)
+        return hashed.compactMap { String(format: "%02x", $0) }.joined()
+    }
+}
+
+// MARK: - String Initials (shared utility)
+
+extension String {
+    /// Returns the first letter of each word (up to 2), e.g. "John Smith" -> "JS".
+    var initials: String {
+        components(separatedBy: " ")
+            .compactMap { $0.first.map { String($0) } }
+            .prefix(2)
+            .joined()
+    }
+}
+
 // MARK: - Biometric Authentication
 
 final class BiometricAuth {

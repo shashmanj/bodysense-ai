@@ -35,7 +35,7 @@ enum EncryptedStore {
     /// Retrieve the existing AES-256 key from Keychain, or generate and store a new one.
     static func getOrCreateEncryptionKey() -> SymmetricKey {
         // Try loading existing key
-        if let keyData = try? KeychainService.load(key: keychainKey) {
+        if let keyData = try? KeychainManager.shared.load(key: keychainKey) {
             return SymmetricKey(data: keyData)
         }
 
@@ -45,7 +45,7 @@ enum EncryptedStore {
 
         // Persist to Keychain
         do {
-            try KeychainService.save(key: keychainKey, data: keyData)
+            try KeychainManager.shared.save(key: keychainKey, data: keyData)
         } catch {
             // If Keychain save fails, the key is still usable for this session.
             // On next launch a new key will be created, but old data won't decrypt.

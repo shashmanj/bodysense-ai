@@ -68,12 +68,12 @@ struct ReportsView: View {
 
     // ── Filtered Data ──
     var filteredGlucose: [GlucoseReading] {
-        let cutoff = Calendar.current.date(byAdding: .day, value: -range, to: Date())!
+        let cutoff = Calendar.current.date(byAdding: .day, value: -range, to: Date()) ?? Date()
         return store.glucoseReadings.filter { $0.date >= cutoff }.sorted { $0.date < $1.date }
     }
 
     var filteredBP: [BPReading] {
-        let cutoff = Calendar.current.date(byAdding: .day, value: -range, to: Date())!
+        let cutoff = Calendar.current.date(byAdding: .day, value: -range, to: Date()) ?? Date()
         return store.bpReadings.filter { $0.date >= cutoff }.sorted { $0.date < $1.date }
     }
 
@@ -269,7 +269,7 @@ struct ReportsView: View {
             } else {
                 ForEach(activeMeds) { med in
                     let takenCount = med.logs.filter {
-                        let cutoff = Calendar.current.date(byAdding: .day, value: -range, to: Date())!
+                        let cutoff = Calendar.current.date(byAdding: .day, value: -range, to: Date()) ?? Date()
                         return $0.date >= cutoff && $0.taken
                     }.count
                     let expectedCount = range * med.timeOfDay.count

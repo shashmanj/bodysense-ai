@@ -16,6 +16,9 @@ struct DashboardView: View {
     @State private var showAlerts      = false
     @State private var showHealthScore = false
     @State private var showNutrition   = false
+    @State private var showHRVDetail   = false
+    @State private var showStreaks     = false
+    @State private var showChallenges  = false
 
     var body: some View {
         NavigationStack {
@@ -82,6 +85,9 @@ struct DashboardView: View {
         .sheet(isPresented: $showChat)        { ChatView() }
         .sheet(isPresented: $showHealthScore) { HealthScoreDetailView() }
         .sheet(isPresented: $showNutrition)   { NutritionDashboardView() }
+        .sheet(isPresented: $showHRVDetail)   { HRVDetailSheet(store: store) }
+        .sheet(isPresented: $showStreaks)      { StreaksDetailSheet(store: store) }
+        .sheet(isPresented: $showChallenges)  { ChallengesDetailSheet(store: store) }
         .task {
             // Compute lifestyle pillar scores
             store.lifestylePillarScores = LifestylePillarKnowledge.computeScores(store: store)
@@ -216,19 +222,19 @@ struct DashboardView: View {
     }
 
     private var hasRecentGlucose: Bool {
-        let cutoff = Calendar.current.date(byAdding: .day, value: -3, to: Date())!
+        let cutoff = Calendar.current.date(byAdding: .day, value: -3, to: Date()) ?? Date()
         return store.glucoseReadings.contains { $0.date >= cutoff }
     }
     private var hasRecentBP: Bool {
-        let cutoff = Calendar.current.date(byAdding: .day, value: -3, to: Date())!
+        let cutoff = Calendar.current.date(byAdding: .day, value: -3, to: Date()) ?? Date()
         return store.bpReadings.contains { $0.date >= cutoff }
     }
     private var hasRecentSleep: Bool {
-        let cutoff = Calendar.current.date(byAdding: .day, value: -3, to: Date())!
+        let cutoff = Calendar.current.date(byAdding: .day, value: -3, to: Date()) ?? Date()
         return store.sleepEntries.contains { $0.date >= cutoff }
     }
     private var hasRecentSteps: Bool {
-        let cutoff = Calendar.current.date(byAdding: .day, value: -3, to: Date())!
+        let cutoff = Calendar.current.date(byAdding: .day, value: -3, to: Date()) ?? Date()
         return store.stepEntries.contains { $0.date >= cutoff }
     }
 
@@ -534,10 +540,15 @@ struct DashboardView: View {
     var hrvCard: some View {
         Group {
             if let hrv = store.latestHRV {
+                Button { showHRVDetail = true } label: {
                 BSCard {
                     VStack(alignment: .leading, spacing: 10) {
-                        Label("Heart Rate Variability", systemImage: "waveform.path.ecg")
-                            .font(.subheadline.weight(.semibold)).foregroundColor(.brandGreen)
+                        HStack {
+                            Label("Heart Rate Variability", systemImage: "waveform.path.ecg")
+                                .font(.subheadline.weight(.semibold)).foregroundColor(.brandGreen)
+                            Spacer()
+                            Image(systemName: "chevron.right").font(.caption).foregroundColor(.secondary)
+                        }
                         HStack {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("\(Int(hrv.value)) ms").font(.title2).fontWeight(.bold).foregroundColor(.brandGreen)
@@ -565,6 +576,9 @@ struct DashboardView: View {
                             .font(.caption2).foregroundColor(.secondary)
                     }
                 }
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("View HRV details")
             } else {
                 EmptyView()
             }
@@ -573,10 +587,15 @@ struct DashboardView: View {
 
     // MARK: - Glucose Card
     var glucoseCard: some View {
+        NavigationLink(destination: VitalsView(initialSegment: 0)) {
         BSCard {
             VStack(alignment: .leading, spacing: 10) {
-                Label("Blood Glucose", systemImage: "drop.fill")
-                    .font(.subheadline.weight(.semibold)).foregroundColor(.brandPurple)
+                HStack {
+                    Label("Blood Glucose", systemImage: "drop.fill")
+                        .font(.subheadline.weight(.semibold)).foregroundColor(.brandPurple)
+                    Spacer()
+                    Image(systemName: "chevron.right").font(.caption).foregroundColor(.secondary)
+                }
                 if let g = store.latestGlucose {
                     let s = store.glucoseStatus(g.value)
                     HStack {
@@ -621,22 +640,30 @@ struct DashboardView: View {
                             .font(.title2).foregroundColor(Color(.tertiaryLabel))
                         Text("No readings yet")
                             .font(.subheadline).foregroundColor(.secondary)
-                        Text("Tap Track to log your glucose")
+                        Text("Tap to log your glucose")
                             .font(.caption).foregroundColor(Color(.tertiaryLabel))
                     }
                     .frame(maxWidth: .infinity, minHeight: 60)
                 }
             }
         }
+        }
+        .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
+        .accessibilityHint("View glucose details")
     }
 
     // MARK: - BP Card
     var bpCard: some View {
+        NavigationLink(destination: VitalsView(initialSegment: 1)) {
         BSCard {
             VStack(alignment: .leading, spacing: 10) {
-                Label("Blood Pressure", systemImage: "heart.fill")
-                    .font(.subheadline.weight(.semibold)).foregroundColor(.brandCoral)
+                HStack {
+                    Label("Blood Pressure", systemImage: "heart.fill")
+                        .font(.subheadline.weight(.semibold)).foregroundColor(.brandCoral)
+                    Spacer()
+                    Image(systemName: "chevron.right").font(.caption).foregroundColor(.secondary)
+                }
                 if let b = store.latestBP {
                     HStack {
                         HStack(spacing: 16) {
@@ -655,22 +682,30 @@ struct DashboardView: View {
                             .font(.title2).foregroundColor(Color(.tertiaryLabel))
                         Text("No readings yet")
                             .font(.subheadline).foregroundColor(.secondary)
-                        Text("Tap Track to log your blood pressure")
+                        Text("Tap to log your blood pressure")
                             .font(.caption).foregroundColor(Color(.tertiaryLabel))
                     }
                     .frame(maxWidth: .infinity, minHeight: 60)
                 }
             }
         }
+        }
+        .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
+        .accessibilityHint("View blood pressure details")
     }
 
     // MARK: - Streaks Row
     var streaksRow: some View {
+        Button { showStreaks = true } label: {
         BSCard {
             VStack(alignment: .leading, spacing: 10) {
-                Label("Streaks", systemImage: "flame.fill")
-                    .font(.subheadline.weight(.semibold)).foregroundColor(.brandCoral)
+                HStack {
+                    Label("Streaks", systemImage: "flame.fill")
+                        .font(.subheadline.weight(.semibold)).foregroundColor(.brandCoral)
+                    Spacer()
+                    Image(systemName: "chevron.right").font(.caption).foregroundColor(.secondary)
+                }
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 10) {
                         ForEach(store.userStreaks.prefix(4)) { streak in
@@ -691,15 +726,23 @@ struct DashboardView: View {
                 }
             }
         }
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("View all streaks")
     }
 
     // MARK: - Today's Meds Card
     var todayMedsCard: some View {
         let activeMeds = store.medications.filter { $0.isActive }
-        return BSCard {
+        return NavigationLink(destination: MedicationsView()) {
+        BSCard {
             VStack(alignment: .leading, spacing: 10) {
-                Label("Today's Medications", systemImage: "pill.fill")
-                    .font(.subheadline.weight(.semibold)).foregroundColor(.brandPurple)
+                HStack {
+                    Label("Today's Medications", systemImage: "pill.fill")
+                        .font(.subheadline.weight(.semibold)).foregroundColor(.brandPurple)
+                    Spacer()
+                    Image(systemName: "chevron.right").font(.caption).foregroundColor(.secondary)
+                }
                 if activeMeds.isEmpty {
                     VStack(spacing: 8) {
                         Image(systemName: "pill")
@@ -726,16 +769,24 @@ struct DashboardView: View {
                 }
             }
         }
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("View all medications")
     }
 
     // MARK: - Challenges Teaser
     var challengesCard: some View {
         let active = store.healthChallenges.filter { $0.isJoined && !$0.isCompleted }
         guard !active.isEmpty else { return AnyView(EmptyView()) }
-        return AnyView(BSCard {
+        return AnyView(Button { showChallenges = true } label: {
+        BSCard {
             VStack(alignment: .leading, spacing: 10) {
-                Label("Active Challenges", systemImage: "flag.fill")
-                    .font(.subheadline.weight(.semibold)).foregroundColor(.brandAmber)
+                HStack {
+                    Label("Active Challenges", systemImage: "flag.fill")
+                        .font(.subheadline.weight(.semibold)).foregroundColor(.brandAmber)
+                    Spacer()
+                    Image(systemName: "chevron.right").font(.caption).foregroundColor(.secondary)
+                }
                 ForEach(active.prefix(2)) { ch in
                     HStack {
                         Image(systemName: ch.type.icon).foregroundColor(ch.type.color)
@@ -751,6 +802,9 @@ struct DashboardView: View {
                     }.frame(height: 6)
                 }
             }
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("View all challenges")
         })
     }
 
@@ -1378,6 +1432,279 @@ struct ScoreDot: View {
         HStack(spacing: 3) {
             Circle().fill(color).frame(width: 7, height: 7)
             Text(label).font(.caption2).foregroundColor(.secondary)
+        }
+    }
+}
+
+// MARK: - HRV Detail Sheet
+
+struct HRVDetailSheet: View {
+    let store: HealthStore
+    @Environment(\.dismiss) var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    if let hrv = store.latestHRV {
+                        let status = hrv.value >= 50 ? ("Excellent", Color.brandGreen) :
+                                     hrv.value >= 35 ? ("Good", Color.brandTeal) :
+                                     hrv.value >= 20 ? ("Fair", Color.brandAmber) : ("Low", Color.brandCoral)
+
+                        BSCard {
+                            VStack(spacing: 12) {
+                                Text("\(Int(hrv.value)) ms")
+                                    .font(.system(size: 48, weight: .bold, design: .rounded))
+                                    .foregroundColor(status.1)
+                                Text(status.0)
+                                    .font(.headline).foregroundColor(status.1)
+                                Text("RMSSD \u{00B7} \(hrv.date.formatted(date: .abbreviated, time: .shortened))")
+                                    .font(.caption).foregroundColor(.secondary)
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+
+                        if store.hrvReadings.count > 1 {
+                            BSCard {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("7-Day Trend").font(.subheadline.bold())
+                                    Chart(store.hrvReadings.sorted { $0.date < $1.date }.suffix(7)) { r in
+                                        LineMark(x: .value("Date", r.date, unit: .day), y: .value("ms", r.value))
+                                            .foregroundStyle(Color.brandGreen).interpolationMethod(.catmullRom)
+                                        AreaMark(x: .value("Date", r.date, unit: .day), y: .value("ms", r.value))
+                                            .foregroundStyle(Color.brandGreen.opacity(0.1))
+                                        PointMark(x: .value("Date", r.date, unit: .day), y: .value("ms", r.value))
+                                            .foregroundStyle(Color.brandGreen)
+                                    }
+                                    .frame(height: 160)
+                                }
+                            }
+                        }
+
+                        BSCard {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Understanding HRV").font(.subheadline.bold())
+                                infoRow("50+ ms", "Excellent recovery and resilience", .brandGreen)
+                                infoRow("35\u{2013}50 ms", "Good autonomic balance", .brandTeal)
+                                infoRow("20\u{2013}35 ms", "Fair \u{2014} consider rest and stress management", .brandAmber)
+                                infoRow("< 20 ms", "Low \u{2014} may indicate stress, illness, or overtraining", .brandCoral)
+                            }
+                        }
+
+                        // All readings
+                        if store.hrvReadings.count > 1 {
+                            BSCard {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("Recent Readings").font(.subheadline.bold())
+                                    ForEach(store.hrvReadings.sorted { $0.date > $1.date }.prefix(10), id: \.id) { r in
+                                        HStack {
+                                            Text("\(Int(r.value)) ms").font(.subheadline.bold())
+                                            Spacer()
+                                            Text(r.date.formatted(date: .abbreviated, time: .shortened))
+                                                .font(.caption).foregroundColor(.secondary)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        BSCard {
+                            VStack(spacing: 12) {
+                                Image(systemName: "waveform.path.ecg")
+                                    .font(.system(size: 48)).foregroundColor(Color(.tertiaryLabel))
+                                Text("No HRV data yet")
+                                    .font(.headline).foregroundColor(.secondary)
+                                Text("HRV data syncs automatically from Apple Watch or compatible devices.")
+                                    .font(.subheadline).foregroundColor(.secondary)
+                                    .multilineTextAlignment(.center)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical)
+                        }
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.top, 8)
+            }
+            .background(Color.brandBg)
+            .navigationTitle("Heart Rate Variability")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func infoRow(_ range: String, _ desc: String, _ color: Color) -> some View {
+        HStack(spacing: 10) {
+            Circle().fill(color).frame(width: 8, height: 8)
+            Text(range).font(.caption.bold()).frame(width: 70, alignment: .leading)
+            Text(desc).font(.caption).foregroundColor(.secondary)
+        }
+    }
+}
+
+// MARK: - Streaks Detail Sheet
+
+struct StreaksDetailSheet: View {
+    let store: HealthStore
+    @Environment(\.dismiss) var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 16) {
+                    if store.userStreaks.isEmpty {
+                        BSCard {
+                            VStack(spacing: 12) {
+                                Image(systemName: "flame")
+                                    .font(.system(size: 48)).foregroundColor(Color(.tertiaryLabel))
+                                Text("No streaks yet")
+                                    .font(.headline).foregroundColor(.secondary)
+                                Text("Start logging daily health activities to build your streaks.")
+                                    .font(.subheadline).foregroundColor(.secondary)
+                                    .multilineTextAlignment(.center)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical)
+                        }
+                    } else {
+                        ForEach(store.userStreaks) { streak in
+                            BSCard {
+                                HStack(spacing: 16) {
+                                    ZStack {
+                                        Circle()
+                                            .fill(streak.currentCount > 0 ? Color.brandCoral.opacity(0.15) : Color.gray.opacity(0.1))
+                                            .frame(width: 56, height: 56)
+                                        Image(systemName: streak.type.icon)
+                                            .font(.title2)
+                                            .foregroundColor(streak.currentCount > 0 ? .brandCoral : .gray)
+                                    }
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(streak.type.rawValue)
+                                            .font(.headline)
+                                        HStack(spacing: 16) {
+                                            VStack(alignment: .leading) {
+                                                Text("\(streak.currentCount)")
+                                                    .font(.title2.bold())
+                                                    .foregroundColor(streak.currentCount > 0 ? .brandCoral : .secondary)
+                                                Text("Current").font(.caption).foregroundColor(.secondary)
+                                            }
+                                            VStack(alignment: .leading) {
+                                                Text("\(streak.longestCount)")
+                                                    .font(.title2.bold())
+                                                    .foregroundColor(.brandAmber)
+                                                Text("Best").font(.caption).foregroundColor(.secondary)
+                                            }
+                                        }
+                                    }
+                                    Spacer()
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.top, 8)
+            }
+            .background(Color.brandBg)
+            .navigationTitle("Streaks")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Challenges Detail Sheet
+
+struct ChallengesDetailSheet: View {
+    let store: HealthStore
+    @Environment(\.dismiss) var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 16) {
+                    let active = store.healthChallenges.filter { $0.isJoined && !$0.isCompleted }
+                    let completed = store.healthChallenges.filter { $0.isCompleted }
+
+                    if active.isEmpty && completed.isEmpty {
+                        BSCard {
+                            VStack(spacing: 12) {
+                                Image(systemName: "flag")
+                                    .font(.system(size: 48)).foregroundColor(Color(.tertiaryLabel))
+                                Text("No challenges yet")
+                                    .font(.headline).foregroundColor(.secondary)
+                                Text("Join health challenges to stay motivated and track your progress.")
+                                    .font(.subheadline).foregroundColor(.secondary)
+                                    .multilineTextAlignment(.center)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical)
+                        }
+                    }
+
+                    if !active.isEmpty {
+                        Text("Active").font(.headline).frame(maxWidth: .infinity, alignment: .leading)
+                        ForEach(active) { ch in
+                            BSCard {
+                                VStack(alignment: .leading, spacing: 10) {
+                                    HStack {
+                                        Image(systemName: ch.type.icon).foregroundColor(ch.type.color)
+                                        Text(ch.title).font(.subheadline.bold())
+                                        Spacer()
+                                        Text("\(Int(ch.progress * 100))%")
+                                            .font(.caption.bold()).foregroundColor(ch.type.color)
+                                    }
+                                    GeometryReader { g in
+                                        ZStack(alignment: .leading) {
+                                            RoundedRectangle(cornerRadius: 4)
+                                                .fill(ch.type.color.opacity(0.15)).frame(height: 8)
+                                            RoundedRectangle(cornerRadius: 4)
+                                                .fill(ch.type.color)
+                                                .frame(width: g.size.width * ch.progress, height: 8)
+                                        }
+                                    }.frame(height: 8)
+                                    if !ch.description.isEmpty {
+                                        Text(ch.description).font(.caption).foregroundColor(.secondary)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if !completed.isEmpty {
+                        Text("Completed").font(.headline).frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.top, 8)
+                        ForEach(completed) { ch in
+                            BSCard {
+                                HStack {
+                                    Image(systemName: "checkmark.circle.fill").foregroundColor(.brandGreen)
+                                    Text(ch.title).font(.subheadline)
+                                    Spacer()
+                                    Text("Done").font(.caption.bold()).foregroundColor(.brandGreen)
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.top, 8)
+            }
+            .background(Color.brandBg)
+            .navigationTitle("Challenges")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
         }
     }
 }

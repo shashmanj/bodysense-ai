@@ -173,7 +173,7 @@ struct VideoCallView: View {
                         .fill(Color(hex: session.doctor.avatarColor))
                         .frame(width: 120, height: 120)
                         .overlay(
-                            Text(initials(session.doctor.name))
+                            Text(session.doctor.name.initials)
                                 .font(.largeTitle.bold())
                                 .foregroundColor(.white)
                         )
@@ -194,7 +194,7 @@ struct VideoCallView: View {
                         .fill(Color(hex: session.doctor.avatarColor).opacity(0.3))
                         .frame(width: 100, height: 100)
                         .overlay(
-                            Text(initials(session.doctor.name))
+                            Text(session.doctor.name.initials)
                                 .font(.largeTitle.bold())
                                 .foregroundColor(.white)
                         )
@@ -345,13 +345,6 @@ struct VideoCallView: View {
     }
 
     // MARK: Helpers
-    func initials(_ name: String) -> String {
-        name.components(separatedBy: " ")
-            .compactMap { $0.first.map { String($0) } }
-            .prefix(2)
-            .joined()
-    }
-
     func timerString() -> String {
         let m = callDuration / 60
         let s = callDuration % 60

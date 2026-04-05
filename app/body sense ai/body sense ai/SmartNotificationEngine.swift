@@ -115,7 +115,7 @@ enum SmartNotificationEngine {
     // MARK: - BP Pattern Alerts
 
     private static func bpPatternAlerts(store: HealthStore) -> [SmartHealthNotification] {
-        let sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
+        let sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
         let recentBP = store.bpReadings.filter { $0.date >= sevenDaysAgo }
 
         guard recentBP.count >= 3 else { return [] }
@@ -137,7 +137,7 @@ enum SmartNotificationEngine {
     // MARK: - Glucose Trend Warnings
 
     private static func glucoseTrendWarnings(store: HealthStore) -> [SmartHealthNotification] {
-        let sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
+        let sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
         let recentGlucose = store.glucoseReadings.filter { $0.date >= sevenDaysAgo }
 
         guard recentGlucose.count >= 5 else { return [] }
@@ -197,7 +197,7 @@ enum SmartNotificationEngine {
 
     private static func achievementNotifications(store: HealthStore) -> [SmartHealthNotification] {
         var notifications: [SmartHealthNotification] = []
-        let sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
+        let sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
 
         // Check glucose streak
         let recentGlucose = store.glucoseReadings.filter { $0.date >= sevenDaysAgo }
